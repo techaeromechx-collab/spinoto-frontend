@@ -34,14 +34,8 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
 
-        // Offline fallback: serve /offline.html for any navigation request
-        // that fails when the user is offline
-        navigateFallback: '/offline.html',
-        navigateFallbackDenylist: [
-          // Don't intercept API calls or backend routes
-          /^\/api\//,
-          /^\/auth\//,
-        ],
+        // No offline fallback — avoids showing offline.html on refresh in production
+        navigateFallback: null,
 
         // ── Runtime caching strategies ──────────────────────────
         runtimeCaching: [
