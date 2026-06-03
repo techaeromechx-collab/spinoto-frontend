@@ -215,8 +215,7 @@ export default function LandingPage() {
       <nav className={`lp-nav${scrolled ? ' scrolled' : ''}`}>
         <div className="lp-nav-inner">
           <div className="lp-logo">
-            <div className="lp-logo-mark">S</div>
-            <span className="lp-logo-text">Spinoto</span>
+            <img src="/logo.svg" alt="Spinoto" style={{ height: 36, width: 'auto', display: 'block' }} />
           </div>
           <div className="lp-nav-links">
             <a href="#features">Features</a>
@@ -464,8 +463,7 @@ export default function LandingPage() {
         <div className="lp-footer-inner">
           <div className="lp-footer-brand">
             <div className="lp-logo">
-              <div className="lp-logo-mark lp-logo-sm">S</div>
-              <span className="lp-logo-text">Spinoto</span>
+              <img src="/favicon.ico" alt="Spinoto" style={{ height: 32, width: 'auto', display: 'block' }} />
             </div>
             <p className="lp-footer-tagline">
               The all-in-one CRM &amp; service management portal for automotive businesses.

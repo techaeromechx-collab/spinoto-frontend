@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useUpload } from '../context/UploadContext.jsx';
 import {
   UploadCloud, FileText, CheckCircle2, AlertCircle,
   Info, Download, X, ChevronDown, ChevronUp, AlertTriangle,
@@ -199,14 +200,8 @@ const UPLOAD_TYPES = [
 // Main page
 // ═════════════════════════════════════════════════════════════════════════════
 export default function BulkUploadPage() {
-  const [states, setStates] = useState({}); // { typeId: { status, data } }
-
-  const setTypeState = useCallback((id, patch) => {
-    setStates(prev => ({
-      ...prev,
-      [id]: { ...(prev[id] || {}), ...patch },
-    }));
-  }, []);
+  // Use global context so uploads continue even if user navigates away
+  const { states, setTypeState, resetTypeState } = useUpload();
 
   async function handleUpload(type, file) {
     const typeId = type.id;
@@ -296,7 +291,7 @@ export default function BulkUploadPage() {
   }
 
   function handleReset(typeId) {
-    setTypeState(typeId, { status: 'idle', data: null, progress: 0 });
+    resetTypeState(typeId);
   }
 
   return (
@@ -330,9 +325,24 @@ export default function BulkUploadPage() {
 // ═════════════════════════════════════════════════════════════════════════════
 function UploadCard({ type, state, onUpload, onReset }) {
   const inputRef      = useRef(null);
+  const triggerRef    = useRef(null);
   const [dragging, setDragging]       = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showErrors, setShowErrors]   = useState(false);
+  const [popoverPos, setPopoverPos]   = useState({ top: 0, right: 0 });
+
+  // Recalculate popover position on scroll so it stays anchored to the button
+  useEffect(() => {
+    if (!showPreview) return;
+    function updatePos() {
+      if (triggerRef.current) {
+        const rect = triggerRef.current.getBoundingClientRect();
+        setPopoverPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+      }
+    }
+    window.addEventListener('scroll', updatePos, true);
+    return () => window.removeEventListener('scroll', updatePos, true);
+  }, [showPreview]);
 
   const { status = 'idle', data, progress = 0 } = state;
   const isActive = status === 'uploading' || status === 'validating';
@@ -384,16 +394,23 @@ function UploadCard({ type, state, onUpload, onReset }) {
         {/* Help / preview icon */}
         <div className="preview-trigger-wrap">
           <button
+            ref={triggerRef}
             className="icon-btn"
             title="View sample format"
-            onClick={() => setShowPreview(v => !v)}
+            onClick={() => {
+              if (!showPreview && triggerRef.current) {
+                const rect = triggerRef.current.getBoundingClientRect();
+                setPopoverPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+              }
+              setShowPreview(v => !v);
+            }}
             aria-expanded={showPreview}
           >
             <Info size={16} />
           </button>
 
           {showPreview && (
-            <div className="preview-popover">
+            <div className="preview-popover" style={{ top: popoverPos.top, right: popoverPos.right }}>
               <div className="preview-popover-header">
                 <span>Sample Format — {type.title}</span>
                 <button className="icon-btn small" onClick={() => setShowPreview(false)}>
@@ -667,7 +684,15 @@ function UploadCard({ type, state, onUpload, onReset }) {
                             <span className="err-code">{err.code}</span>
                             <div className="err-msg">{err.message}</div>
                           </td>
-                          <td className="err-data">{err.rowData}</td>
+                          <td className="err-data">
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {String(err.rowData || '').split('|').map((v, i) => v.trim() && (
+                                <span key={i} style={{ background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontFamily: 'monospace', whiteSpace: 'nowrap', color: '#374151' }}>
+                                  {v.trim()}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

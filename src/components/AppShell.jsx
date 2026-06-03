@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 // search state is local to AppShell — no API change
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useUpload } from '../context/UploadContext.jsx';
 import {
   LayoutDashboard,
   MapPin,
@@ -115,6 +116,7 @@ export default function AppShell({ children }) {
   const { user, logout, can } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { activeEntries } = useUpload();
   const [masterOpen, setMasterOpen] = useState(location.pathname.startsWith('/master'));
 
   const [theme, setTheme] = useState(localStorage.getItem('spinoto_theme') || 'light');
@@ -293,12 +295,24 @@ export default function AppShell({ children }) {
     return () => document.removeEventListener('mousedown', onOut);
   }, []);
 
+  function getNotifRoute(n) {
+    // Appointment reminder → appointments page
+    if (n.type === 'appointment_reminder') return ['/appointments', {}];
+    // User-level alerts with no specific lead → leads page (general)
+    if (['daily_target', 'no_activity'].includes(n.type)) return ['/leads', {}];
+    // All lead-linked notifications → open that lead's detail modal
+    if (n.lead_id) return ['/leads', { state: { openLeadId: n.lead_id } }];
+    // Fallback
+    return [null, {}];
+  }
+
   async function handleMarkRead(n) {
     try {
       await api(`/api/notifications/${n.id}/read`, { method: 'PATCH' });
       setNotifItems(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
       setNotifCount(c => Math.max(0, c - 1));
-      if (n.lead_id) { setNotifOpen(false); navigate('/leads'); }
+      const [path, opts] = getNotifRoute(n);
+      if (path) { setNotifOpen(false); navigate(path, opts); }
     } catch { /* silent */ }
   }
 
@@ -376,8 +390,8 @@ export default function AppShell({ children }) {
 
       <aside className={`sidebar ${mobileMenuOpen ? 'open' : ''} ${effectiveCollapsed ? 'collapsed' : ''}`}>
         <div className="brand">
-          {!effectiveCollapsed && <span>Spinoto</span>}
-          {effectiveCollapsed && <span className="brand-mini">S</span>}
+          {!effectiveCollapsed && <img src="/logo.svg" alt="Spinoto" style={{ height: 24, width: 'auto', display: 'block' }} />}
+          {effectiveCollapsed && <img src="/logo.svg" alt="Spinoto" style={{ height: 18, width: 'auto', display: 'block' }} />}
           {!isMobile && (
             <button className="sidebar-toggle" onClick={() => setIsCollapsed(!isCollapsed)} title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}>
               {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
@@ -516,7 +530,6 @@ export default function AppShell({ children }) {
             <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)}>
               <Menu size={20} />
             </button>
-            <div className="topbar-brand-mobile">Spinoto</div>
             <div className="crumbs">
               <Link to="/">Home</Link>
               {location.pathname !== '/' && (
@@ -830,6 +843,48 @@ export default function AppShell({ children }) {
           <span>Invoices</span>
         </NavLink>
       </nav>
+
+      {/* ── Background upload floating indicator ── */}
+      {activeEntries.length > 0 && location.pathname !== '/bulk-upload' && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          {activeEntries.map(([typeId, state]) => {
+            const isActive  = state.status === 'uploading' || state.status === 'validating';
+            const isSuccess = state.status === 'success';
+            const isError   = state.status === 'error';
+            const bg        = isActive ? '#1e40af' : isSuccess ? '#166534' : '#991b1b';
+            const icon      = isActive ? '⬆' : isSuccess ? '✓' : '✕';
+            const label     = isActive
+              ? `Uploading ${typeId}${state.progress ? ` ${state.progress}%` : '…'}`
+              : isSuccess ? `${typeId} upload complete`
+              : `${typeId} upload failed`;
+            return (
+              <div
+                key={typeId}
+                onClick={() => navigate('/bulk-upload')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  background: bg, color: '#fff',
+                  padding: '10px 16px', borderRadius: 10,
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                  minWidth: 220,
+                }}
+              >
+                <span style={{ fontSize: 16 }}>{icon}</span>
+                <span>{label}</span>
+                {isActive && (
+                  <div style={{ marginLeft: 'auto', width: 60, height: 4, background: 'rgba(255,255,255,0.3)', borderRadius: 4 }}>
+                    <div style={{ width: `${state.progress || 0}%`, height: '100%', background: '#fff', borderRadius: 4, transition: 'width 0.3s' }} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
     </div>
   );

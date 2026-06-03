@@ -1260,12 +1260,12 @@ function HubLoginDetail({ hubLogin, catalog, onSaved }) {
           const HUB_FEATURES = [
             { label: 'View Estimates',            desc: 'See estimate list and details',                codes: ['VIEW_ESTIMATE'],                        staffOnly: false },
             { label: 'Create Estimates',           desc: 'Create new estimates for customers',           codes: ['CREATE_ESTIMATE'],                      staffOnly: false },
-            { label: 'Edit & Submit Estimates',    desc: 'Update items, submit, manage work status',     codes: ['EDIT_ESTIMATE'],                        staffOnly: false },
+            { label: 'Edit & Submit Estimates',    desc: 'Update items, submit, manage work status',     codes: ['EDIT_ESTIMATE','SUBMIT_ESTIMATE'],       staffOnly: false },
             { label: 'Generate Spinoto Invoice',   desc: 'Generate purchase invoice after work done',    codes: ['CREATE_INVOICE'],                       staffOnly: false },
             { label: 'View Purchase Invoices',     desc: 'See Spinoto invoices and payout history',      codes: ['VIEW_INVOICE'],                         staffOnly: false },
             { label: 'View Appointments',          desc: 'See appointment list and details',             codes: ['VIEW_APPOINTMENT'],                     staffOnly: false },
             { label: 'View Pricing',               desc: 'See service pricing rules',                    codes: ['VIEW_PRICING_RULE'],                    staffOnly: false },
-            { label: 'Approve Invoice',            desc: 'Approve & manage purchase invoices',           codes: ['MANAGE_HUBS'],                          staffOnly: false },
+            { label: 'Approve Invoice',            desc: 'Approve & manage purchase invoices',           codes: ['APPROVE_PURCHASE_INVOICE'],             staffOnly: false },
             { label: 'Manage Hub Settings',        desc: 'Edit hub details, services and documents',     codes: ['EDIT_HUB'],                             staffOnly: false },
           ];
           const ALL_HUB_CODES = HUB_FEATURES.flatMap(f => f.codes);

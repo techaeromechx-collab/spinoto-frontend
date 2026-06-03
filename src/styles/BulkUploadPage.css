@@ -214,7 +214,7 @@
 .error-table code { font-size: 11px; background: #fee2e2; padding: 1px 4px; border-radius: 3px; color: #991b1b; }
 .err-code { display: inline-block; font-size: 10px; font-weight: 700; background: #fca5a5; color: #7f1d1d; border-radius: 3px; padding: 1px 5px; margin-bottom: 3px; }
 .err-msg  { color: #374151; font-size: 12px; line-height: 1.4; }
-.err-data { color: #6b7280; font-family: monospace; font-size: 11px; max-width: 180px; word-break: break-all; }
+.err-data { color: #6b7280; font-size: 11px; min-width: 200px; max-width: 300px; }
 
 /* ── Card footer ─────────────────────────────────────────────────────────── */
 .uc-footer {
@@ -250,14 +250,15 @@
 .icon-btn.small { padding: 3px; }
 
 .preview-popover {
-  position: absolute;
-  right: 0; top: calc(100% + 8px);
+  position: fixed;
   width: 380px;
+  max-height: 80vh;
+  overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: var(--shadow);
-  z-index: 100;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  z-index: 9999;
   animation: fadeUp 0.15s ease;
 }
 .preview-popover-header {

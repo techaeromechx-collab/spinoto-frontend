@@ -22,8 +22,7 @@ export default defineConfig({
 
       // ── Dev options ─────────────────────────────────────────
       devOptions: {
-        enabled: true,
-        type: 'module',
+        enabled: false,
       },
 
       // ── Workbox configuration ────────────────────────────────
@@ -75,8 +74,8 @@ export default defineConfig({
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
-              // 5-minute network timeout before falling back to cache
-              networkTimeoutSeconds: 5,
+              // 30-second timeout — enough for Render free tier cold start
+              networkTimeoutSeconds: 30,
               expiration: {
                 maxEntries: 100,
                 maxAgeSeconds: 60 * 5, // 5 minutes

@@ -108,7 +108,7 @@ export default function LoginPage() {
       {/* Right Side: Form Section */}
       <div className="login-form-side">
         <div className="login-form-content">
-          <h2 className="login-form-brand">Spinoto</h2>
+          <img src="/logo.svg" alt="Spinoto" style={{ height: 48, width: 'auto', display: 'block', marginBottom: 8 }} />
           <div className="login-form-header">
             <h3 className="login-form-welcome">Welcome Back!</h3>
             <p className="login-form-signup">

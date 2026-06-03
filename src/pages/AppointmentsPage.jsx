@@ -2432,7 +2432,7 @@ export default function AppointmentsPage() {
                           onClick={() => setModal({ mode: 'view', appt: a })}>
                           <Eye size={14} />
                         </button>
-                        {canEdit && (
+                        {canEdit && statusCfg?.name !== 'Invoice Approved' && (
                           <button className="appt-icon-btn appt-icon-btn--edit" title="Edit"
                             onClick={() => setEditAppt(a)}>
                             <Pencil size={13} />

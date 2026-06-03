@@ -32,7 +32,7 @@ const DOC_TYPES = [
 ];
 
 const EMPTY_DOCS = () => ({
-  hub_image: null, aadhaar: null, pan: null, driving_license: null,
+  hub_image: [], aadhaar: null, pan: null, driving_license: null,
   agreement: null, gst_certificate: null, bank_proof: null,
 });
 
@@ -229,6 +229,7 @@ function HubModal({ hub, onClose, onSaved }) {
   const [docFiles, setDocFiles]         = useState(EMPTY_DOCS);
   const [existingDocs, setExistingDocs] = useState({});
   const [removingDoc, setRemovingDoc]   = useState(null);
+  const hubImgRef = useRef(null);
 
   const [errors, setErrors]         = useState({});
   const [saving, setSaving]         = useState(false);
@@ -252,7 +253,14 @@ function HubModal({ hub, onClose, onSaved }) {
           try {
             const dRes = await api(`/api/hubs/${hub.id}/documents`);
             const map  = {};
-            dRes.items.forEach(d => { map[d.doc_type] = d; });
+            dRes.items.forEach(d => {
+              if (d.doc_type === 'hub_image') {
+                if (!map['hub_image']) map['hub_image'] = [];
+                map['hub_image'].push(d);
+              } else {
+                map[d.doc_type] = d;
+              }
+            });
             setExistingDocs(map);
           } catch {}
         }
@@ -317,6 +325,18 @@ function HubModal({ hub, onClose, onSaved }) {
       setExistingDocs(d => { const n = { ...d }; delete n[docType]; return n; });
     } catch (err) {
       setApiErr(`Could not remove document: ${err.message}`);
+    } finally {
+      setRemovingDoc(null);
+    }
+  }
+
+  async function handleRemoveHubImage(docId) {
+    setRemovingDoc(docId);
+    try {
+      await api(`/api/hubs/${hub.id}/documents/${docId}`, { method: 'DELETE' });
+      setExistingDocs(d => ({ ...d, hub_image: (d.hub_image || []).filter(img => img.id !== docId) }));
+    } catch (err) {
+      setApiErr(`Could not remove image: ${err.message}`);
     } finally {
       setRemovingDoc(null);
     }
@@ -402,8 +422,19 @@ function HubModal({ hub, onClose, onSaved }) {
 
       const hubId = r.item.id;
 
-      // Upload any newly selected documents after hub is saved
-      for (const dt of DOC_TYPES) {
+      // Upload hub images (multiple, up to 5)
+      for (const file of (docFiles['hub_image'] || [])) {
+        try {
+          const fd = new FormData();
+          fd.append('doc_type', 'hub_image');
+          fd.append('document', file);
+          await apiUpload(`/api/hubs/${hubId}/documents`, fd);
+        } catch (err) {
+          console.warn('Hub image upload failed:', err.message);
+        }
+      }
+      // Upload other documents
+      for (const dt of DOC_TYPES.filter(d => d.key !== 'hub_image')) {
         const file = docFiles[dt.key];
         if (!file) continue;
         try {
@@ -555,18 +586,56 @@ function HubModal({ hub, onClose, onSaved }) {
           </Field>
 
           {/* ── Hub Image ── */}
-          <div className="hb-section-sep"><Image size={12} /> Hub Image</div>
-          <div className="hb-doc-grid">
-            <DocSlot
-              label="Hub Image (Photo of workshop/exterior)"
-              existing={existingDocs['hub_image'] || null}
-              selected={docFiles['hub_image']}
-              removing={removingDoc === 'hub_image'}
-              onSelect={file => setDocFiles(d => ({ ...d, hub_image: file }))}
-              onClearSelected={() => setDocFiles(d => ({ ...d, hub_image: null }))}
-              onRemoveExisting={() => handleRemoveExisting('hub_image')}
-            />
-          </div>
+          {(() => {
+            const existingImgs = existingDocs['hub_image'] || [];
+            const newImgs = docFiles['hub_image'] || [];
+            const totalCount = existingImgs.length + newImgs.length;
+            const canAdd = totalCount < 5;
+            return (
+              <>
+                <div className="hb-section-sep"><Image size={12} /> Hub Image <span className="hb-section-opt">(Max 5 images)</span></div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
+                  {existingImgs.map(img => (
+                    <div key={img.id} className="hb-doc-chosen hb-doc-chosen--saved">
+                      <FileText size={12} />
+                      <a className="hb-doc-fname" href={`${API_BASE}${img.file_url}`} target="_blank" rel="noreferrer" title={img.file_name}>{img.file_name}</a>
+                      <button type="button" className="hb-doc-rm-btn" onClick={() => handleRemoveHubImage(img.id)} disabled={removingDoc === img.id} title="Remove">
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  ))}
+                  {newImgs.map((file, idx) => (
+                    <div key={idx} className="hb-doc-chosen hb-doc-chosen--new">
+                      <FileText size={12} />
+                      <span className="hb-doc-fname">{file.name}</span>
+                      <button type="button" className="hb-doc-rm-btn" onClick={() => setDocFiles(d => ({ ...d, hub_image: d.hub_image.filter((_, i) => i !== idx) }))}>
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+                  {canAdd ? (
+                    <button type="button" className="hb-doc-upload-btn" onClick={() => hubImgRef.current?.click()}>
+                      <Upload size={12} /> Add Image ({totalCount}/5)
+                    </button>
+                  ) : (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Maximum 5 images reached</div>
+                  )}
+                  <input ref={hubImgRef} type="file" style={{ display: 'none' }} accept="image/*,.pdf"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setDocFiles(d => {
+                        const current = d.hub_image || [];
+                        const existCount = (existingDocs['hub_image'] || []).length;
+                        if (current.length + existCount >= 5) return d;
+                        return { ...d, hub_image: [...current, file] };
+                      });
+                      e.target.value = '';
+                    }} />
+                </div>
+              </>
+            );
+          })()}
 
           {/* ── Operational Details ── */}
           <div className="hb-section-sep">
@@ -1032,6 +1101,29 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
             </div>
           )}
 
+          {(hub.bank_name || hub.bank_account_number || hub.bank_ifsc || hub.account_holder_name) && (
+            <div className="hbv-section">
+              <div className="hbv-section-title"><CreditCard size={11} /> Bank Details</div>
+              <div className="hbv-grid2">
+                {hub.account_holder_name && (
+                  <div className="hbv-field"><span className="hbv-lbl">Account Holder</span><span className="hbv-val">{hub.account_holder_name}</span></div>
+                )}
+                {hub.bank_name && (
+                  <div className="hbv-field"><span className="hbv-lbl">Bank / Branch</span><span className="hbv-val">{hub.bank_name}</span></div>
+                )}
+                {hub.bank_account_number && (
+                  <div className="hbv-field"><span className="hbv-lbl">Account Number</span><span className="hbv-val">{hub.bank_account_number}</span></div>
+                )}
+                {hub.bank_ifsc && (
+                  <div className="hbv-field"><span className="hbv-lbl">IFSC Code</span><span className="hbv-val">{hub.bank_ifsc}</span></div>
+                )}
+                {hub.payout_terms && (
+                  <div className="hbv-field"><span className="hbv-lbl">Payout Terms</span><span className="hbv-val">{PAYOUT_TERMS_OPTS.find(o => o.value === hub.payout_terms)?.label || hub.payout_terms}{hub.payout_terms === 'custom' && hub.payout_cycle_days ? ` (${hub.payout_cycle_days} days)` : ''}</span></div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="hbv-section">
             <div className="hbv-section-title">
               Services Assigned
@@ -1070,13 +1162,33 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
             </div>
           )}
 
-          {/* Documents */}
-          {docs.length > 0 && (
+          {/* Hub Image */}
+          {docs.filter(d => d.doc_type === 'hub_image').length > 0 && (
+            <div className="hbv-section">
+              <div className="hbv-section-title"><Image size={11} /> Hub Image</div>
+              <div className="hbv-docs-list">
+                {docs.filter(d => d.doc_type === 'hub_image').map(doc => (
+                  <a key={doc.id} className="hbv-doc-item"
+                    href={`${API_BASE}${doc.file_url}`}
+                    target="_blank" rel="noreferrer">
+                    <FileText size={13} />
+                    <div>
+                      <div className="hbv-doc-type">Hub Image</div>
+                      <div className="hbv-doc-name">{doc.file_name}</div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* KYC Documents */}
+          {docs.filter(d => d.doc_type !== 'hub_image').length > 0 && (
             <div className="hbv-section">
               <div className="hbv-section-title"><FileText size={11} /> Documents</div>
               <div className="hbv-docs-list">
-                {docs.map(doc => {
-                  const dtConf = DOC_TYPES.find(d => d.key === doc.doc_type);
+                {docs.filter(d => d.doc_type !== 'hub_image').map(doc => {
+                  const dtConf = DOC_TYPES.find(dt => dt.key === doc.doc_type);
                   return (
                     <a key={doc.id} className="hbv-doc-item"
                       href={`${API_BASE}${doc.file_url}`}
@@ -1593,7 +1705,7 @@ export default function HubsPage() {
           <table className="data-table hb-table">
             <thead>
               <tr>
-                <th>HUB Name</th><th>Vehicle Type</th><th>Owner</th>
+                <th>HUB Name</th><th>Vehicle Type</th><th>Point of Contact</th>
                 <th>RM</th><th>Location</th><th>Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
@@ -1624,7 +1736,7 @@ export default function HubsPage() {
                       </span>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{h.hub_name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{h.person_name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{h.owner_name}</div>
                         {(h.open_time || h.close_time) && (
                           <div className="hb-timing-badge"><Clock size={9} />{fmtTime(h.open_time)} – {fmtTime(h.close_time)}</div>
                         )}
@@ -1634,8 +1746,8 @@ export default function HubsPage() {
                   </td>
                   <td><VehicleBadge value={h.vehicle_class} /></td>
                   <td>
-                    {h.owner_name
-                      ? <div><div style={{ fontWeight: 600, fontSize: 13 }}>{h.owner_name}</div>{h.owner_mobile && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{h.owner_mobile}</div>}</div>
+                    {h.person_name
+                      ? <div><div style={{ fontWeight: 600, fontSize: 13 }}>{h.person_name}</div>{h.contact_number && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{h.contact_number}</div>}</div>
                       : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>}
                   </td>
                   <td>

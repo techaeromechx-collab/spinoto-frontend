@@ -1570,7 +1570,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 {estimate.body_type_name && (
                   <div style={{ display: 'flex' }}>
                     <span className="est-info-label">Body Type</span>
-                    <span className="est-info-value">{estimate.body_type_name}</span>
+                    <span className="est-info-value">{estimate.body_type_name}{estimate.segment_names ? ` (${estimate.segment_names})` : ''}</span>
                   </div>
                 )}
                 {/* 2W: CC Category */}
@@ -1598,7 +1598,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             </div>
           </div>
 
-          {estimate.notes && (
+          {estimate.notes && !['fully_approved', 'partially_approved', 'work_in_progress', 'work_completed'].includes(status) && (
             <div className="est-no-print" style={{ background: 'var(--bg-soft)', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: 'var(--text)' }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Notes</div>
               {estimate.notes}

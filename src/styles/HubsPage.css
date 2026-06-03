@@ -73,7 +73,7 @@
         .hb-field-err { display:flex; align-items:center; gap:5px; font-size:11px; color:#dc2626; }
         .hb-err { display:flex; align-items:center; gap:8px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:10px 14px; font-size:13px; color:#b91c1c; }
         .hb-loading-hint { font-size:12px; color:var(--text-muted); text-align:center; }
-        .hb-section-sep { display:flex; align-items:center; gap:6px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:var(--text-muted); border-top:1.5px dashed var(--border); padding-top:14px; margin-top:2px; flex-wrap:wrap; }
+        .hb-section-sep { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:var(--text); background:var(--surface-2, #f3f4f6); padding:7px 12px; border-radius:7px; margin-top:10px; margin-bottom:2px; flex-wrap:wrap; }
         .hb-section-opt { font-weight:400; text-transform:none; letter-spacing:0; font-size:10px; }
         .hb-days-wrap { display:flex; flex-wrap:wrap; gap:6px; padding:2px 0; }
         .hb-day-chip { display:inline-flex; align-items:center; justify-content:center; width:44px; height:32px; border-radius:8px; border:1.5px solid var(--border); background:var(--bg); font-size:11px; font-weight:700; color:var(--text-muted); cursor:pointer; user-select:none; transition:border-color .13s,background .13s,color .13s; }
@@ -113,7 +113,7 @@
         .hbv-body { overflow-y:auto; flex:1; min-height:0; }
         .hbv-section { padding:16px 24px; border-bottom:1px solid var(--border); }
         .hbv-section:last-of-type { border-bottom:none; }
-        .hbv-section-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--text-muted); margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+        .hbv-section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:var(--text); background:var(--surface-2, #f3f4f6); padding:6px 10px; border-radius:6px; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
         .hbv-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px 20px; }
         .hbv-grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px 16px; }
         .hbv-field { display:flex; flex-direction:column; gap:4px; }

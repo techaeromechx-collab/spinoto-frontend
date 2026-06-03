@@ -575,7 +575,7 @@ async function approveInvoice() {
                   {inv.body_type_name && (
                     <div style={{ display: 'flex' }}>
                       <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Body Type</span>
-                      <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.body_type_name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.body_type_name}{inv.segment_names ? ` (${inv.segment_names})` : ''}</span>
                     </div>
                   )}
                   {/* 2W: CC Category */}
@@ -613,39 +613,6 @@ async function approveInvoice() {
               </div>
             )}
 
-            {/* ── Linked document links — screen only ── */}
-            {!isHubUser && (inv?.estimate_id || inv?.linked_purchase_invoice_id) && (
-              <div className="ci-internal" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {inv.estimate_id && (
-                  <button
-                    onClick={() => navigate('/estimates', { state: { openId: inv.estimate_id } })}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 7,
-                      padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
-                      background: '#f0fdf4', border: '1px solid #86efac',
-                      color: '#166534', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                    }}
-                  >
-                    <CheckCircle2 size={13} />
-                    View Estimate #EST-{String(inv.estimate_id).padStart(6, '0')}
-                  </button>
-                )}
-                {inv.linked_purchase_invoice_id && (
-                  <button
-                    onClick={() => navigate('/purchase-invoices', { state: { openId: inv.linked_purchase_invoice_id } })}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 7,
-                      padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
-                      background: '#f0f9ff', border: '1px solid #7dd3fc',
-                      color: '#0369a1', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                    }}
-                  >
-                    <CheckCircle2 size={13} />
-                    View Spinoto Invoice #{inv.linked_purchase_invoice_id}
-                  </button>
-                )}
-              </div>
-            )}
 
             {/* Line items */}
             <div>
@@ -802,6 +769,40 @@ async function approveInvoice() {
 
               </div>
             </div>
+
+            {/* ── Linked document links — screen only ── */}
+            {!isHubUser && (inv?.estimate_id || inv?.linked_purchase_invoice_id) && (
+              <div className="ci-internal" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+                {inv.estimate_id && (
+                  <button
+                    onClick={() => navigate('/estimates', { state: { openId: inv.estimate_id } })}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 7,
+                      padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
+                      background: '#f0fdf4', border: '1px solid #86efac',
+                      color: '#166534', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                    }}
+                  >
+                    <CheckCircle2 size={13} />
+                    View Estimate #EST-{String(inv.estimate_id).padStart(6, '0')}
+                  </button>
+                )}
+                {inv.linked_purchase_invoice_id && (
+                  <button
+                    onClick={() => navigate('/purchase-invoices', { state: { openId: inv.linked_purchase_invoice_id } })}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 7,
+                      padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
+                      background: '#f0f9ff', border: '1px solid #7dd3fc',
+                      color: '#0369a1', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                    }}
+                  >
+                    <CheckCircle2 size={13} />
+                    View Spinoto Invoice #{inv.linked_purchase_invoice_id}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Payments section */}
             <div>

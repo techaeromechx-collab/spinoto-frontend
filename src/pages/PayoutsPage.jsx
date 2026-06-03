@@ -6,7 +6,7 @@ import {
   Wallet, RefreshCw, AlertCircle, CheckCircle2, Clock,
   X, ChevronRight, ChevronLeft, Search, CreditCard,
   MoreVertical, AlertTriangle, Trophy, Calendar, CalendarDays,
-  History, Receipt,
+  History, Receipt, Info,
 } from 'lucide-react';
 import '../styles/PayoutsPage.css';
 
@@ -279,13 +279,16 @@ function GlobalPaymentHistory() {
       {/* Summary by hub */}
       {byHub.length > 0 && (
         <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:16 }}>
-          {byHub.map(h => (
-            <div key={h.hub_name} className="card" style={{ padding:'12px 16px', flex:'1 1 180px', cursor:'pointer', borderLeft:`3px solid var(--primary)` }} onClick={() => setHubFilter(h.hub_id)}>
-              <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:4 }}>{h.hub_name}</div>
-              <div style={{ fontSize:17, fontWeight:800, color:'#16a34a' }}>{fmt(h.total)}</div>
-              <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>{h.payments.length} payment{h.payments.length!==1?'s':''}</div>
-            </div>
-          ))}
+          {byHub.map(h => {
+            const isActive = String(hubFilter) === String(h.hub_id);
+            return (
+              <div key={h.hub_name} className="card" style={{ padding:'12px 16px', flex:'1 1 180px', cursor:'pointer', borderLeft:`3px solid ${isActive ? '#16a34a' : 'var(--primary)'}`, background: isActive ? '#f0fdf4' : undefined, outline: isActive ? '2px solid #16a34a' : undefined }} onClick={() => setHubFilter(isActive ? '' : h.hub_id)}>
+                <div style={{ fontSize:11, fontWeight:700, color: isActive ? '#16a34a' : 'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:4 }}>{h.hub_name}</div>
+                <div style={{ fontSize:17, fontWeight:800, color:'#16a34a' }}>{fmt(h.total)}</div>
+                <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>{h.payments.length} payment{h.payments.length!==1?'s':''}</div>
+              </div>
+            );
+          })}
           <div className="card" style={{ padding:'12px 16px', flex:'1 1 180px', borderLeft:'3px solid #7c3aed' }}>
             <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:4 }}>All Hubs Total</div>
             <div style={{ fontSize:17, fontWeight:800, color:'#7c3aed' }}>{fmt(total)}</div>
@@ -305,6 +308,7 @@ function GlobalPaymentHistory() {
           <option value="">All Hubs</option>
           {byHub.map(h => <option key={h.hub_id} value={h.hub_id}>{h.hub_name}</option>)}
         </select>
+        {hubFilter && <button className="po-btn-ghost" style={{ padding:'7px 14px', fontSize:13, display:'flex', alignItems:'center', gap:5 }} onClick={()=>setHubFilter('')}>← All Hubs</button>}
         {(search||hubFilter) && <button className="po-btn-ghost" style={{ padding:'7px 14px', fontSize:13 }} onClick={()=>{ setSearch(''); setHubFilter(''); }}>Clear</button>}
       </div>
 
@@ -990,34 +994,49 @@ export default function PayoutsPage() {
           </div>
           {allInvoices.length>0 && <span className="po-count-badge">{allInvoices.length}</span>}
         </div>
-        <button className="po-btn-ghost" onClick={load} disabled={loading} style={{ display:'flex', alignItems:'center', gap:6 }}>
-          <RefreshCw size={15} style={{ animation:loading?'spin 1s linear infinite':undefined }}/> Refresh
-        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {/* ── Info hover button ── */}
+          {!loading && data && (() => {
+            const totalOutstanding = allInvoices.reduce((s,pi)=>s+parseFloat(pi.grand_total)-parseFloat(pi.amount_paid||0),0);
+            const totalInvoiced    = totalOutstanding + totalPaid;
+            const paidPct          = totalInvoiced > 0 ? Math.round((totalPaid/totalInvoiced)*100) : 0;
+            return (
+              <div style={{ position:'relative' }}
+                onMouseEnter={e => e.currentTarget.querySelector('.po-info-popup').style.display='block'}
+                onMouseLeave={e => e.currentTarget.querySelector('.po-info-popup').style.display='none'}
+              >
+                <button style={{ display:'flex', alignItems:'center', justifyContent:'center', width:32, height:32, borderRadius:'50%', border:'1.5px solid var(--border)', background:'var(--bg)', cursor:'pointer', color:'var(--text-muted)' }}>
+                  <Info size={15}/>
+                </button>
+                <div className="po-info-popup" style={{ display:'none', position:'absolute', top:38, right:0, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'14px 18px', whiteSpace:'nowrap', boxShadow:'0 8px 24px rgba(0,0,0,0.12)', zIndex:100, minWidth:260 }}>
+                  <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', gap:24 }}>
+                      <span style={{ fontSize:12, color:'var(--text-muted)', fontWeight:500 }}>Total Invoiced</span>
+                      <span style={{ fontSize:13, fontWeight:700, color:'var(--text)' }}>{fmt(totalInvoiced)}</span>
+                    </div>
+                    <div style={{ height:1, background:'var(--border)' }}/>
+                    <div style={{ display:'flex', justifyContent:'space-between', gap:24 }}>
+                      <span style={{ fontSize:12, color:'var(--text-muted)', fontWeight:500 }}>Total Paid</span>
+                      <span style={{ fontSize:13, fontWeight:700, color:'#16a34a' }}>{fmt(totalPaid)} <span style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)' }}>({paidPct}% collected)</span></span>
+                    </div>
+                    <div style={{ height:1, background:'var(--border)' }}/>
+                    <div style={{ display:'flex', justifyContent:'space-between', gap:24 }}>
+                      <span style={{ fontSize:12, color:'var(--text-muted)', fontWeight:500 }}>Total Outstanding</span>
+                      <span style={{ fontSize:13, fontWeight:700, color: totalOutstanding>0?'#ef4444':'#16a34a' }}>{fmt(totalOutstanding)} <span style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)' }}>({100-paidPct}% pending)</span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+          <button className="po-btn-ghost" onClick={load} disabled={loading} style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <RefreshCw size={15} style={{ animation:loading?'spin 1s linear infinite':undefined }}/> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
       <SummaryCards data={data} allInvoices={allInvoices} techRate={techRate}/>
-
-      {/* ── Financial Summary Bar ── */}
-      {!loading && data && (() => {
-        const totalOutstanding = allInvoices.reduce((s,pi)=>s+parseFloat(pi.grand_total)-parseFloat(pi.amount_paid||0),0);
-        const totalInvoiced    = totalOutstanding + totalPaid;
-        const paidPct          = totalInvoiced > 0 ? Math.round((totalPaid/totalInvoiced)*100) : 0;
-        return (
-          <div className="card po-fin-bar">
-            <span className="po-fin-label">Total Invoiced</span>
-            <span className="po-fin-value" style={{ color:'var(--text)' }}>{fmt(totalInvoiced)}</span>
-            <div className="po-fin-divider"/>
-            <span className="po-fin-label">Total Paid</span>
-            <span className="po-fin-value" style={{ color:'#16a34a' }}>{fmt(totalPaid)}</span>
-            <span className="po-fin-sub">({paidPct}% collected)</span>
-            <div className="po-fin-divider"/>
-            <span className="po-fin-label">Total Outstanding</span>
-            <span className="po-fin-value" style={{ color: totalOutstanding>0?'#ef4444':'#16a34a' }}>{fmt(totalOutstanding)}</span>
-            <span className="po-fin-sub">({100-paidPct}% pending)</span>
-          </div>
-        );
-      })()}
 
       {/* Main tabs */}
       <div className="po-main-tabs">

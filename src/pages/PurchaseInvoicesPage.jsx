@@ -211,6 +211,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [payoutSchedule, setPayoutSchedule]     = useState('lump_sum');
   const [recalculating, setRecalculating]       = useState(false);
+  const [approvalItemRates, setApprovalItemRates] = useState({}); // { [item_id]: rateStr }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -246,10 +247,27 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
     }
   }
 
+  function openApproveModal() {
+    // Pre-fill per-item rates from current stored values
+    const rates = {};
+    (inv?.items || []).forEach(it => {
+      rates[it.id] = String(parseFloat(it.commission_percent ?? 0));
+    });
+    setApprovalItemRates(rates);
+    setPayoutSchedule('lump_sum');
+    setShowApproveModal(true);
+  }
+
   async function handleApprove() {
     setApproving(true);
     try {
-      await api(`/api/purchase-invoices/${invoiceId}/approve`, { method: 'POST', body: { payout_schedule: payoutSchedule } });
+      const body = { payout_schedule: payoutSchedule };
+      // Send per-item rates
+      body.item_rates = Object.entries(approvalItemRates).map(([id, rate]) => ({
+        item_id: Number(id),
+        take_rate: parseFloat(rate) || 0,
+      }));
+      await api(`/api/purchase-invoices/${invoiceId}/approve`, { method: 'POST', body });
       showToast('Purchase invoice approved. Payout schedule set — Customer Invoice can now be generated.');
       setShowApproveModal(false);
       await load();
@@ -375,7 +393,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                     { label: 'Hub',        value: inv.hub_name },
                     { label: 'Customer',   value: inv.customer_name },
                     { label: 'Mobile',     value: inv.mobile },
-                    { label: 'Commission', value: `${commPct}%` },
+                    { label: 'Commission', value: inv?.rate_mode === 'tech_rate' ? 'Take Rate Mode' : `${commPct}%` },
                   ].map(({ label, value }) => (
                     <div key={label} style={{ display: 'flex' }}>
                       <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 88, flexShrink: 0 }}>{label}</span>
@@ -401,7 +419,9 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                   {inv.body_type_name && (
                     <div style={{ display: 'flex' }}>
                       <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Body Type</span>
-                      <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.body_type_name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>
+                        {inv.body_type_name}{inv.segment_names ? ` (${inv.segment_names})` : ''}
+                      </span>
                     </div>
                   )}
                   {inv.cc_category_name && (
@@ -703,7 +723,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
               {inv.status === 'pending_approval' && (
                 <button
                   className="btn btn-amber"
-                  onClick={() => { setPayoutSchedule('lump_sum'); setShowApproveModal(true); }}
+                  onClick={openApproveModal}
                 >
                   <CheckCircle2 size={15} />
                   Approve Purchase Invoice
@@ -817,13 +837,84 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
         }} onClick={() => setShowApproveModal(false)}>
           <div style={{
             background: 'var(--bg)', borderRadius: 14, padding: 28,
-            width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+            width: '100%', maxWidth: 680, boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6 }}>Approve Purchase Invoice</div>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>Approve Purchase Invoice</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
-              Choose how the hub payout will be structured.
+              Edit take rate per item — hub rate updates live. Confirm when ready.
             </div>
 
+            {/* ── Live preview table ── */}
+            {(inv?.items || []).length > 0 && (() => {
+              let previewGrandTotal = 0;
+              const rows = (inv?.items || []).map(it => {
+                const custRate  = parseFloat(it.customer_rate ?? 0);
+                const qty       = parseFloat(it.quantity ?? 1);
+                const gstPct    = parseFloat(it.gst_percent ?? 0);
+                const takeRate  = parseFloat(approvalItemRates[it.id] ?? it.commission_percent ?? 0);
+                const discount  = parseFloat((custRate * (takeRate / 100)).toFixed(4));
+                const hubRate   = parseFloat((custRate - discount).toFixed(4));
+                const hubAmount = parseFloat((hubRate * qty).toFixed(2));
+                const gstAmt    = parseFloat((hubAmount * gstPct / 100).toFixed(2));
+                const total     = parseFloat((hubAmount + gstAmt).toFixed(2));
+                previewGrandTotal += total;
+                return { it, custRate, qty, takeRate, discount, hubRate, hubAmount, gstAmt, total };
+              });
+
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-soft,#f3f4f6)' }}>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Item</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Cust. Rate</th>
+                        <th style={{ textAlign: 'center', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Take Rate %</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Discount</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Hub Rate</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(({ it, custRate, takeRate, discount, hubRate, total }) => (
+                        <tr key={it.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '10px 10px' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text)' }}>{it.description || it.name}</div>
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                              background: it.item_type === 'service' ? '#eff6ff' : '#fef3c7',
+                              color: it.item_type === 'service' ? '#1e40af' : '#92400e' }}>
+                              {it.item_type === 'service' ? 'Service' : 'Part'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '10px 10px', color: 'var(--text-muted)' }}>₹{custRate.toFixed(2)}</td>
+                          <td style={{ textAlign: 'center', padding: '10px 10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                              <input
+                                type="number" min="0" max="100" step="0.1"
+                                value={approvalItemRates[it.id] ?? ''}
+                                onChange={e => setApprovalItemRates(prev => ({ ...prev, [it.id]: e.target.value }))}
+                                style={{ width: 60, padding: '4px 6px', borderRadius: 6, border: '1.5px solid var(--primary)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)', textAlign: 'right', fontWeight: 600 }}
+                              />
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '10px 10px', color: '#dc2626', fontWeight: 600 }}>-₹{discount.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', padding: '10px 10px', fontWeight: 600, color: '#166534' }}>₹{hubRate.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', padding: '10px 10px', fontWeight: 700 }}>₹{total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: 'var(--bg-soft,#f3f4f6)' }}>
+                        <td colSpan={5} style={{ padding: '10px 10px', fontWeight: 700, fontSize: 13, textAlign: 'right' }}>Grand Total</td>
+                        <td style={{ padding: '10px 10px', fontWeight: 800, fontSize: 14, textAlign: 'right', color: 'var(--primary)' }}>₹{previewGrandTotal.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              );
+            })()}
+
+            {/* ── Payout schedule ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
               {[
                 { value: 'lump_sum', label: 'Lump Sum',         desc: 'Single payment on the due date.' },
@@ -1040,7 +1131,7 @@ export default function PurchaseInvoicesPage() {
                           {inv.customer_name || inv.customer?.name || '—'}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          {inv.vehicle_display || [inv.vehicle_make, inv.vehicle_model].filter(Boolean).join(' ') || '—'}
+                          {inv.vehicle_number || [inv.make_name, inv.model_name].filter(Boolean).join(' ') || '—'}
                         </div>
                       </td>
                       <td style={{ fontSize: 13 }}>{inv.hub_name || inv.hub?.name || '—'}</td>
@@ -1049,7 +1140,7 @@ export default function PurchaseInvoicesPage() {
                           ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#fef3c7', color: '#92400e' }}>Take Rate</span>
                           : inv.commission_percent != null ? `${inv.commission_percent}%` : '—'}
                       </td>
-                      <td style={{ textAlign: 'right', fontSize: 13 }}>{inv.items_count ?? (inv.items?.length ?? '—')}</td>
+                      <td style={{ textAlign: 'right', fontSize: 13 }}>{inv.item_count ?? '—'}</td>
                       <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmt(inv.grand_total)}</td>
                       <td><StatusBadge status={inv.status} /></td>
                       <td>

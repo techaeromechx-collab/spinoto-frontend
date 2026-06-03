@@ -3104,7 +3104,7 @@ export default function LeadsPage() {
                 setFuFilter(tab.key);
                 setShowCustom(tab.key === 'custom');
                 setEventsDone({});
-                if (tab.key === 'custom') setFuDrawerOpen(true);
+                setFuDrawerOpen(true);
               }}
             >
               {tab.label}
@@ -3251,7 +3251,7 @@ export default function LeadsPage() {
       </AnimatePresence>
 
       {/* ── Analytics Panels Row (side by side) ── */}
-      {(showStageVelocity || showCompliancePanel) && (
+      {false && (showStageVelocity || showCompliancePanel) && (
         <div className="lp-panels-row">
 
           {/* ── Stage Velocity Panel ── */}
