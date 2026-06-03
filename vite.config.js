@@ -17,7 +17,6 @@ export default defineConfig({
         'favicon.ico',
         'apple-touch-icon.png',
         'icons/*.png',
-        'offline.html',
       ],
 
       // ── Dev options ─────────────────────────────────────────
@@ -34,8 +33,6 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
 
-        // No offline fallback — avoids showing offline.html on refresh in production
-        navigateFallback: null,
 
         // ── Runtime caching strategies ──────────────────────────
         runtimeCaching: [
