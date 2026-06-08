@@ -322,6 +322,7 @@ function ActionMenu({ lead, canEdit, canDelete, onView, onEdit, onDelete }) {
 // ── View Lead Modal ───────────────────────────────────────────────────────────
 function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
   useBodyLock();
+  const { user: currentUser } = useAuth();
   const [lead, setLead] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -872,28 +873,55 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
               <div className="lp-vm-card lp-vm-card--full lp-timeline-card">
                 <div className="lp-vm-card-hd"><MessageSquare size={13} /> Notes</div>
 
-                {/* Notes list */}
-                <div className="lp-timeline-list">
+                {/* Notes list — chat bubble style */}
+                <div className="lp-chat-list">
                   {timeline.length === 0 ? (
                     <div className="lp-timeline-empty">No notes added yet.</div>
                   ) : (
                     timeline.map((item) => {
+                      const isMine = Number(item.created_by) === Number(currentUser?.id);
                       const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
-                        day: '2-digit', month: 'short', year: 'numeric',
+                        day: '2-digit', month: 'short',
                         hour: '2-digit', minute: '2-digit',
                       });
                       return (
-                        <div key={item.id} className="lp-timeline-item lp-timeline-item--note">
-                          <div className="lp-timeline-dot">
-                            <MessageSquare size={10} />
+                        <div key={item.id} style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: isMine ? 'flex-end' : 'flex-start',
+                          marginBottom: 12,
+                          padding: '0 4px',
+                        }}>
+                          {!isMine && (
+                            <span style={{
+                              fontSize: 11, fontWeight: 600,
+                              color: 'var(--primary, #00b09b)',
+                              marginBottom: 3, marginLeft: 6,
+                            }}>
+                              {item.created_by_name || 'Unknown'}
+                            </span>
+                          )}
+                          <div style={{
+                            maxWidth: '75%',
+                            background: isMine ? 'var(--primary, #00b09b)' : '#f1f0f0',
+                            color: isMine ? '#fff' : 'var(--text-main, #1a1a1a)',
+                            borderRadius: isMine ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                            padding: '8px 12px',
+                            fontSize: 13,
+                            lineHeight: 1.5,
+                            wordBreak: 'break-word',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+                          }}>
+                            {item.note}
                           </div>
-                          <div className="lp-timeline-body">
-                            <div className="lp-timeline-meta">
-                              <span className="lp-timeline-who">{item.created_by_name || 'Unknown'}</span>
-                              <span className="lp-timeline-time">{timeStr}</span>
-                            </div>
-                            <p className="lp-timeline-note-text">{item.note}</p>
-                          </div>
+                          <span style={{
+                            fontSize: 10, color: 'var(--text-muted)',
+                            marginTop: 4,
+                            marginLeft: isMine ? 0 : 6,
+                            marginRight: isMine ? 6 : 0,
+                          }}>
+                            {timeStr}
+                          </span>
                         </div>
                       );
                     })
@@ -3036,11 +3064,11 @@ export default function LeadsPage() {
     return () => window.removeEventListener('lead-created', loadLeads);
   }, [loadLeads]);
 
-  // Unique creators for dropdown
-  const creators = useMemo(() => {
+  // Unique assignees for dropdown
+  const assignees = useMemo(() => {
     const map = {};
     for (const l of leads) {
-      if (l.created_by_id && l.created_by_name) map[l.created_by_id] = l.created_by_name;
+      if (l.assigned_to && l.assigned_to_name) map[l.assigned_to] = l.assigned_to_name;
     }
     return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [leads]);
@@ -3067,7 +3095,7 @@ export default function LeadsPage() {
       const matchesStatus = l.status && statusFilters.includes(l.status);
       if (!matchesNew && !matchesStatus) return false;
     }
-    if (createdByFilter && String(l.created_by_id) !== createdByFilter) return false;
+    if (createdByFilter && String(l.assigned_to) !== createdByFilter) return false;
 
     // Date range
     if (dateFrom || dateTo) {
@@ -3597,12 +3625,12 @@ export default function LeadsPage() {
               {fSource && <button className="lp-creator-clear" onClick={() => setFSource('')}><X size={11} /></button>}
             </div>
 
-            {creators.length > 1 && (
+            {assignees.length > 0 && (
               <div className="lp-creator-wrap">
-                <User size={13} className="lp-creator-icon" />
+                <UserCheck size={13} className="lp-creator-icon" />
                 <select className="lp-creator-select" value={createdByFilter} onChange={e => setCreatedByFilter(e.target.value)}>
-                  <option value="">All team members</option>
-                  {creators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <option value="">All assignees</option>
+                  {assignees.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
                 <ChevronDown size={13} className="lp-creator-caret" />
                 {createdByFilter && <button className="lp-creator-clear" onClick={() => setCreatedByFilter('')}><X size={11} /></button>}
@@ -3885,9 +3913,21 @@ export default function LeadsPage() {
                   <td>
                     <div className="lp-customer-row">
                       {(() => {
-                        const av = getAvatarStyle(l.name || l.mobile); return (
-                          <div className="lp-cust-avatar" style={{ background: av.bg, color: av.color }}>
-                            {getAvatarInitials(l.name, l.mobile)}
+                        const av = getAvatarStyle(l.name || l.mobile);
+                        const hasOverdue = l.next_follow_up_date && (() => { const d = new Date(l.next_follow_up_date); const today = new Date(); today.setHours(0,0,0,0); return d < today; })();
+                        return (
+                          <div style={{ position: 'relative', display: 'inline-block' }}>
+                            <div className="lp-cust-avatar" style={{ background: av.bg, color: av.color }}>
+                              {getAvatarInitials(l.name, l.mobile)}
+                            </div>
+                            {hasOverdue && (
+                              <span style={{
+                                position: 'absolute', top: 0, right: 0,
+                                width: 9, height: 9, borderRadius: '50%',
+                                background: '#dc2626', border: '2px solid #fff',
+                                display: 'block'
+                              }} />
+                            )}
                           </div>
                         );
                       })()}

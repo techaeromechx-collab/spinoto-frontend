@@ -92,7 +92,7 @@ const NAV_ITEMS = [
       { label: 'Locations',          to: '/master/locations',     permissions: ['MANAGE_MASTER_DATA'],                                          icon: MapPin    },
       { label: 'Vehicles',           to: '/master/vehicles',      permissions: ['VIEW_VEHICLE','CREATE_VEHICLE','UPDATE_VEHICLE','MANAGE_MASTER_DATA'], icon: Car       },
       { label: 'Services & Pricing', to: '/master/services',      permissions: ['VIEW_SERVICE','VIEW_PRICING_RULE','MANAGE_MASTER_DATA','MANAGE_PRICING'], icon: Wrench    },
-      { label: 'Lead Statuses',      to: '/master/lead-statuses', permissions: ['MANAGE_MASTER_DATA'],                                          icon: Tag       },
+      { label: 'Lead Status',        to: '/master/lead-statuses', permissions: ['MANAGE_MASTER_DATA'],                                          icon: Tag       },
       { label: 'Departments',        to: '/master/departments',   permissions: ['MANAGE_MASTER_DATA'],                                          icon: Building2 },
       { label: 'Parts',              to: '/master/parts',         permissions: ['MANAGE_PARTS','CREATE_PART','EDIT_PART','DELETE_PART','MANAGE_MASTER_DATA'], icon: Package   },
       { label: 'Discounts',          to: '/master/discounts',     permissions: ['MANAGE_DISCOUNTS','CREATE_DISCOUNT','EDIT_DISCOUNT','DELETE_DISCOUNT','MANAGE_MASTER_DATA'], icon: Percent   },

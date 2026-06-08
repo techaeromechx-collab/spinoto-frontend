@@ -547,7 +547,9 @@ function HubModal({ hub, onClose, onSaved }) {
             <Field label="Status">
               <select className="hb-input" value={form.is_active ? 'true' : 'false'}
                 onChange={e => set('is_active', e.target.value === 'true')}>
-                <option value="true">Active</option>
+                <option value="true" disabled={isEdit && hub?.verification_status !== 'verified'}>
+                  Active{isEdit && hub?.verification_status !== 'verified' ? ' (verify first)' : ''}
+                </option>
                 <option value="false">Inactive</option>
               </select>
             </Field>
