@@ -329,6 +329,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
   // ── Notes & Activity state ─────────────────────────────────────────────────
   const [notes, setNotes] = useState([]);
   const [activities, setActivities] = useState([]);
+  const [followUps, setFollowUps] = useState([]);
   const [noteText, setNoteText] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState('');
@@ -342,15 +343,21 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
       .finally(() => setLoading(false));
   }, [leadId]);
 
-  // Load notes + activities once lead is fetched
+  // Load notes + activities + follow-ups once lead is fetched
   useEffect(() => {
     if (!leadId) return;
     Promise.all([
       api(`/api/lead-notes/${leadId}`).catch(() => ({ items: [] })),
       api(`/api/lead-activities/${leadId}`).catch(() => ({ items: [] })),
-    ]).then(([n, a]) => {
+      api(`/api/lead-events?lead_id=${leadId}&all=true`).catch(() => ({ items: [] })),
+    ]).then(([n, a, fu]) => {
       setNotes(n.items || []);
       setActivities(a.items || []);
+      // Pending first (soonest at top), done ones at the bottom
+      setFollowUps((fu.items || []).sort((a, b) => {
+        if (a.is_done !== b.is_done) return a.is_done ? 1 : -1;
+        return new Date(a.due_date) - new Date(b.due_date);
+      }));
     });
   }, [leadId]);
 
@@ -623,6 +630,47 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
                 </div>
               </div>
 
+              {/* ── Follow-ups — beside Lead Info ── */}
+              <div className="lp-vm-card">
+                <div className="lp-vm-card-hd"><Calendar size={13} /> Follow-ups</div>
+                {followUps.length === 0 ? (
+                  <div className="lp-vm-empty-row">No follow-ups scheduled.</div>
+                ) : (
+                  <div className="lp-fu-detail-wrap">
+                  <div className="lp-fu-detail-list">
+                    {followUps.map(fu => {
+                      const d       = new Date(fu.due_date);
+                      const today   = new Date(); today.setHours(0,0,0,0);
+                      const diff    = Math.round((d - today) / 86400000);
+                      const isOverdue  = !fu.is_done && diff < 0;
+                      const isToday    = !fu.is_done && diff === 0;
+                      const dateLabel  = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                      const timeLabel  = fu.due_at
+                        ? new Date(fu.due_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                        : null;
+                      return (
+                        <div key={fu.id} className={`lp-fu-detail-row${fu.is_done ? ' lp-fu-detail-row--done' : isOverdue ? ' lp-fu-detail-row--overdue' : ''}`}>
+                          <div className="lp-fu-detail-dot" style={{
+                            background: fu.is_done ? '#16a34a' : isOverdue ? '#dc2626' : isToday ? '#d97706' : '#2563eb'
+                          }} />
+                          <div className="lp-fu-detail-body">
+                            <div className="lp-fu-detail-date">
+                              {dateLabel}{timeLabel && ` · ${timeLabel}`}
+                              {fu.is_done && <span className="lp-fu-detail-done-tag">✓ Done</span>}
+                              {isOverdue  && <span className="lp-fu-detail-overdue-tag">⚠ Overdue</span>}
+                              {isToday    && <span className="lp-fu-detail-today-tag">Today</span>}
+                            </div>
+                            {fu.note && <div className="lp-fu-detail-note">{fu.note}</div>}
+                            <div className="lp-fu-detail-meta">Status: <strong>{fu.status_name || '—'}</strong></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  </div>
+                )}
+              </div>
+
               {/* ── Services (includes category-only interests) ── */}
               {(lead.services?.length > 0 || lead.categories?.length > 0) && (
                 <div className="lp-vm-card lp-vm-card--full">
@@ -730,7 +778,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
               </div>
 
               {/* ── Assignment History ── */}
-              <div className="lp-vm-card lp-vm-card--full">
+              <div className="lp-vm-card">
                 <div className="lp-vm-card-hd"><UserCheck size={13} /> Assignment History</div>
                 {assignHistory.length === 0 ? (
                   <div className="lp-vm-empty-card">No assignment changes recorded yet.</div>
@@ -778,7 +826,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
               </div>
 
               {/* ── Service History ── */}
-              <div className="lp-vm-card lp-vm-card--full">
+              <div className="lp-vm-card">
                 <div className="lp-vm-card-hd"><Wrench size={13} /> Service History</div>
                 {serviceHistory.length === 0 ? (
                   <div className="lp-vm-empty-card">No service changes recorded yet.</div>
@@ -901,6 +949,7 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [priceRecalcNotice, setPriceRecalcNotice] = useState(false); // shown after vehicle-change recalc
   const [lostModal, setLostModal] = useState(null); // { statusName } when intercepting Lost
   const [existingCustomer, setExistingCustomer] = useState(null);
 
@@ -1153,7 +1202,51 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
     e.preventDefault();
     if (!form.mobile.trim()) return setError('Mobile number is required');
     setError(''); setSaving(true);
+    setPriceRecalcNotice(false);
+
     try {
+      // ── Detect vehicle field changes ──────────────────────────────────────
+      const vehicleChanged =
+        String(vForm.vehicle_type_id || '') !== String(lead.vehicle_type_id || '') ||
+        String(vForm.make_id          || '') !== String(lead.make_id          || '') ||
+        String(vForm.model_id         || '') !== String(lead.model_id         || '') ||
+        String(vForm.body_type_id     || '') !== String(lead.body_type_id     || '') ||
+        (ccCategoryId || null) !== (lead.cc_category_id || null) ||
+        JSON.stringify(vForm.segment_ids || []) !== JSON.stringify(lead.segment_ids || []);
+
+      // ── Re-lookup prices if vehicle changed and there are services ─────────
+      let finalServices = selectedServices.map(s => ({ service_id: s.service_id, price: s.price }));
+
+      if (vehicleChanged && selectedServices.length > 0) {
+        const dims = {
+          vehicle_type_id: Number(vForm.vehicle_type_id) || null,
+          make_id:         Number(vForm.make_id)         || null,
+          model_id:        Number(vForm.model_id)        || null,
+          body_type_id:    vehicleClass === '4W' ? (Number(vForm.body_type_id) || null) : null,
+          cc_category_id:  vehicleClass === '2W' ? (ccCategoryId || null) : null,
+          segment_id:      vForm.segment_ids?.length ? Number(vForm.segment_ids[0]) : null,
+        };
+
+        const recalculated = await Promise.all(
+          selectedServices.map(async s => {
+            try {
+              const r = await api('/api/leads/price-lookup', {
+                method: 'POST',
+                body: { service_id: s.service_id, ...dims },
+              });
+              // Keep old price if no rule found for new vehicle
+              return { service_id: s.service_id, price: r.price != null ? r.price : s.price };
+            } catch {
+              return { service_id: s.service_id, price: s.price };
+            }
+          })
+        );
+
+        finalServices = recalculated;
+        setPriceRecalcNotice(true);
+      }
+
+      // ── Save ──────────────────────────────────────────────────────────────
       const r = await api(`/api/leads/${lead.id}`, {
         method: 'PATCH',
         body: {
@@ -1174,7 +1267,7 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
           cc_category_id: vehicleClass === '2W' ? (ccCategoryId || null) : null,
           segment_ids: vForm.segment_ids || [],
           assigned_to: Number(assignedTo) || null,
-          services: selectedServices.map(s => ({ service_id: s.service_id, price: s.price })),
+          services: finalServices,
           category_ids: selectedCategories.map(c => c.category_id),
         },
       });
@@ -1205,6 +1298,11 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
         </div>
         <form className="lp-modal-body" onSubmit={handleSubmit}>
           {error && <div className="lp-error"><AlertCircle size={14} /> {error}</div>}
+          {priceRecalcNotice && (
+            <div className="lp-recalc-notice">
+              <CheckCircle2 size={13} /> Vehicle details changed — service prices updated to match new pricing rules.
+            </div>
+          )}
 
           {/* ── Customer ── */}
           <div className="elm-card">
@@ -3717,6 +3815,7 @@ export default function LeadsPage() {
                 <th>Status</th>
                 <th><div className="th-cell"><Tag size={13} /> Source</div></th>
                 <th><div className="th-cell"><UserCheck size={13} /> Assign To</div></th>
+                <th><div className="th-cell"><Calendar size={13} /> Next Follow-up</div></th>
                 <th style={{ width: 44 }} />
               </tr>
             </thead>
@@ -3830,6 +3929,28 @@ export default function LeadsPage() {
                         <span>{l.assigned_to_name}</span>
                       </div>
                     ) : <span className="lp-muted">—</span>}
+                  </td>
+                  {/* Next Follow-up column */}
+                  <td>
+                    {l.next_follow_up_date ? (() => {
+                      const d     = new Date(l.next_follow_up_date);
+                      const today = new Date(); today.setHours(0,0,0,0);
+                      const diff  = Math.round((d - today) / 86400000);
+                      const isOverdue  = diff < 0;
+                      const isToday    = diff === 0;
+                      const isTomorrow = diff === 1;
+                      const label = isOverdue  ? 'Overdue'
+                                  : isToday    ? 'Today'
+                                  : isTomorrow ? 'Tomorrow'
+                                  : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                      const color = isOverdue ? '#dc2626' : isToday ? '#d97706' : '#16a34a';
+                      const bg    = isOverdue ? '#fee2e2' : isToday ? '#fef3c7' : '#dcfce7';
+                      return (
+                        <span className="lp-followup-badge" style={{ background: bg, color }}>
+                          {isOverdue && '⚠ '}{label}
+                        </span>
+                      );
+                    })() : <span className="lp-muted">—</span>}
                   </td>
                   <td onClick={e => e.stopPropagation()}>
                     <ActionMenu lead={l} canEdit={canEdit} canDelete={canDelete}

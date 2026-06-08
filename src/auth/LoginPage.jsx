@@ -56,8 +56,8 @@ function Spinner() {
 export default function LoginPage() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('super@spinoto.local');
-  const [password, setPassword] = useState('super123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);

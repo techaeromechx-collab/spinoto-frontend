@@ -29,6 +29,9 @@ export default defineConfig({
         // Precache all Vite build outputs (JS, CSS, HTML)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,woff,ttf}'],
 
+        // Raise precache limit to 4 MB (main bundle is ~2.2 MB)
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+
         // Skip waiting so the new SW activates immediately after install
         skipWaiting: true,
         clientsClaim: true,

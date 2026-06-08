@@ -893,8 +893,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   );
 
   const pickerCatServices = (() => {
-    // 'tw' = 2-wheeler services, 'fw' = 4-wheeler services (backend naming)
-    const vcFilter = selectedAppt ? (isTwo ? 'tw' : 'fw') : null;
+    const vcFilter = selectedAppt ? (isTwo ? '2W' : '4W') : null;
 
     const byVehicle = (s) => {
       if (!vcFilter) return true; // no appointment selected — show all

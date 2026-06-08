@@ -32,10 +32,21 @@ const P = {
 // ═════════════════════════════════════════════════════════════════════════════
 export default function VehiclesPage() {
   // permissions
-  const canCreate = useCan(...P.create);
-  const canUpdate = useCan(...P.update);
-  const canDelete = useCan(...P.delete);
-  const canUpload = useCan(...P.upload);
+  const canCreate           = useCan(...P.create);
+  const canUpdate           = useCan(...P.update);
+  const canDelete           = useCan(...P.delete);
+  const canUpload           = useCan(...P.upload);
+  const canViewReferenceData = useCan(
+    'VIEW_REFERENCE_DATA', 'MANAGE_VEHICLE_TYPES', 'MANAGE_BODY_TYPES',
+    'MANAGE_SEGMENTS', 'VIEW_CC_CATEGORY', 'CREATE_CC_CATEGORY',
+    'EDIT_CC_CATEGORY', 'DELETE_CC_CATEGORY', 'MANAGE_CC_CATEGORY',
+    'MANAGE_MASTER_DATA',
+  );
+  // Granular write permissions for reference data panels
+  const canManageVehicleTypes = useCan('MANAGE_VEHICLE_TYPES', 'MANAGE_MASTER_DATA');
+  const canManageBodyTypes    = useCan('MANAGE_BODY_TYPES',    'MANAGE_MASTER_DATA');
+  const canManageSegments     = useCan('MANAGE_SEGMENTS',      'MANAGE_MASTER_DATA');
+  const canManageCCCategories = useCan('CREATE_CC_CATEGORY', 'EDIT_CC_CATEGORY', 'DELETE_CC_CATEGORY', 'MANAGE_CC_CATEGORY', 'MANAGE_MASTER_DATA');
 
   // table state
   const [vehicles, setVehicles] = useState([]);
@@ -253,7 +264,7 @@ export default function VehiclesPage() {
         >
           <Car size={16} /> 4W · Four-Wheeler
         </button>
-        {canUpdate && (
+        {canViewReferenceData && (
           <button
             className={`vp-tab-btn ${activeTab === 'reference' ? 'active' : ''}`}
             onClick={() => setActiveTab('reference')}
@@ -509,7 +520,7 @@ export default function VehiclesPage() {
       )}
 
       {/* ── Reference Data Management ────────────────────────────────────── */}
-      {activeTab === 'reference' && canUpdate && (
+      {activeTab === 'reference' && canViewReferenceData && (
         <div className="vp-refdata-section">
           <div className="vp-refdata-heading">
             <Settings2 size={15} />
@@ -524,6 +535,7 @@ export default function VehiclesPage() {
               updateUrl={id => `/api/vehicles/types/${id}`}
               deleteUrl={id => `/api/vehicles/types/${id}`}
               placeholder="e.g. Two-Wheeler"
+              canManage={canManageVehicleTypes}
             />
             <RefDataPanel
               title="Body Types"
@@ -533,6 +545,7 @@ export default function VehiclesPage() {
               deleteUrl={id => `/api/vehicles/body-types/${id}`}
               placeholder="e.g. Hatchback"
               onChanged={loadRefs}
+              canManage={canManageBodyTypes}
             />
             <RefDataPanel
               title="Segments / Fuel Types"
@@ -542,6 +555,7 @@ export default function VehiclesPage() {
               deleteUrl={id => `/api/vehicles/segments/${id}`}
               placeholder="e.g. Petrol"
               onChanged={loadRefs}
+              canManage={canManageSegments}
             />
           </div>
 
@@ -551,7 +565,7 @@ export default function VehiclesPage() {
               <span>🏍️ CC Categories (Two-Wheeler Engine Capacity)</span>
               <span className="vp-refdata-hint">Defines price segments by engine CC for Two-Wheelers. Ranges must not overlap.</span>
             </div>
-            <CCCategoriesPanel />
+            <CCCategoriesPanel canManage={canManageCCCategories} />
           </div>
         </div>
       )}
@@ -1247,7 +1261,7 @@ function BulkUploadPanel({ vehicleClass, onClose, onSuccess }) {
 // CC Categories Panel  (Two-Wheeler engine capacity segmentation)
 // Full CRUD with overlap-safe validation. Soft-delete when in use.
 // ═════════════════════════════════════════════════════════════════════════════
-function CCCategoriesPanel() {
+function CCCategoriesPanel({ canManage = false }) {
   const [items,   setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [err,     setErr]     = useState('');
@@ -1326,7 +1340,9 @@ function CCCategoriesPanel() {
     <div className="cc-panel card">
       <div className="cc-panel-header">
         <span className="cc-panel-title">CC Range Master</span>
-        <button className="rdp-add-btn" onClick={openAdd}><Plus size={13} /> Add Category</button>
+        {canManage && (
+          <button className="rdp-add-btn" onClick={openAdd}><Plus size={13} /> Add Category</button>
+        )}
       </div>
 
       {err && <div className="rdp-err"><AlertCircle size={12} /> {err}</div>}
@@ -1355,11 +1371,13 @@ function CCCategoriesPanel() {
                   <td className="cc-desc">{item.description || <em className="cc-empty">—</em>}</td>
                   <td><span className="cc-status cc-status--active">Active</span></td>
                   <td className="cc-actions">
-                    <button className="rdp-btn" title="Edit" onClick={() => openEdit(item)}><Pencil size={12} /></button>
-                    <button className="rdp-btn rdp-btn--toggle" title="Deactivate" onClick={() => handleToggle(item)}>
-                      <ToggleRight size={16} color="#16a34a" />
-                    </button>
-                    <button className="rdp-btn rdp-btn--del" title="Delete" onClick={() => handleDelete(item)}><Trash2 size={12} /></button>
+                    {canManage && (<>
+                      <button className="rdp-btn" title="Edit" onClick={() => openEdit(item)}><Pencil size={12} /></button>
+                      <button className="rdp-btn rdp-btn--toggle" title="Deactivate" onClick={() => handleToggle(item)}>
+                        <ToggleRight size={16} color="#16a34a" />
+                      </button>
+                      <button className="rdp-btn rdp-btn--del" title="Delete" onClick={() => handleDelete(item)}><Trash2 size={12} /></button>
+                    </>)}
                   </td>
                 </tr>
               ))}
@@ -1371,9 +1389,11 @@ function CCCategoriesPanel() {
                   <td className="cc-desc">{item.description || <em className="cc-empty">—</em>}</td>
                   <td><span className="cc-status cc-status--inactive">Inactive</span></td>
                   <td className="cc-actions">
-                    <button className="rdp-btn rdp-btn--toggle" title="Reactivate" onClick={() => handleToggle(item)}>
-                      <ToggleLeft size={16} />
-                    </button>
+                    {canManage && (
+                      <button className="rdp-btn rdp-btn--toggle" title="Reactivate" onClick={() => handleToggle(item)}>
+                        <ToggleLeft size={16} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -1440,7 +1460,7 @@ function CCCategoriesPanel() {
 // ═════════════════════════════════════════════════════════════════════════════
 // Reference Data Panel  (Vehicle Types / Body Types / Segments)
 // ═════════════════════════════════════════════════════════════════════════════
-function RefDataPanel({ title, fetchUrl, createUrl, updateUrl, deleteUrl, placeholder, onChanged }) {
+function RefDataPanel({ title, fetchUrl, createUrl, updateUrl, deleteUrl, placeholder, onChanged, canManage = false }) {
   const [items,      setItems]      = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [adding,     setAdding]     = useState(false);   // show "add" input row
@@ -1515,9 +1535,11 @@ function RefDataPanel({ title, fetchUrl, createUrl, updateUrl, deleteUrl, placeh
     <div className="rdp-card card">
       <div className="rdp-header">
         <span className="rdp-title">{title}</span>
-        <button className="rdp-add-btn" onClick={() => { setAdding(true); setEditId(null); }}>
-          <Plus size={13} /> Add
-        </button>
+        {canManage && (
+          <button className="rdp-add-btn" onClick={() => { setAdding(true); setEditId(null); }}>
+            <Plus size={13} /> Add
+          </button>
+        )}
       </div>
 
       {err && <div className="rdp-err"><AlertCircle size={12} /> {err}</div>}
@@ -1526,8 +1548,8 @@ function RefDataPanel({ title, fetchUrl, createUrl, updateUrl, deleteUrl, placeh
         <div className="rdp-loading">Loading…</div>
       ) : (
         <ul className="rdp-list">
-          {/* Add row */}
-          {adding && (
+          {/* Add row — only when canManage */}
+          {adding && canManage && (
             <li className="rdp-item rdp-item--adding">
               <form onSubmit={handleAdd} className="rdp-inline-form">
                 <input
@@ -1575,19 +1597,21 @@ function RefDataPanel({ title, fetchUrl, createUrl, updateUrl, deleteUrl, placeh
               ) : (
                 <>
                   <span className="rdp-name">{item.name}</span>
-                  <div className="rdp-actions">
-                    <button className="rdp-btn" title="Rename" onClick={() => { setEditId(item.id); setEditName(item.name); setAdding(false); }}>
-                      <Pencil size={12} />
-                    </button>
-                    <button className="rdp-btn rdp-btn--toggle" title="Deactivate" onClick={() => handleToggle(item)}>
-                      <ToggleRight size={16} color="#16a34a" />
-                    </button>
-                    {deleteUrl && (
-                      <button className="rdp-btn rdp-btn--del" title="Delete" onClick={() => { setConfirmDel(item); setErr(''); }}>
-                        <Trash2 size={12} />
+                  {canManage && (
+                    <div className="rdp-actions">
+                      <button className="rdp-btn" title="Rename" onClick={() => { setEditId(item.id); setEditName(item.name); setAdding(false); }}>
+                        <Pencil size={12} />
                       </button>
-                    )}
-                  </div>
+                      <button className="rdp-btn rdp-btn--toggle" title="Deactivate" onClick={() => handleToggle(item)}>
+                        <ToggleRight size={16} color="#16a34a" />
+                      </button>
+                      {deleteUrl && (
+                        <button className="rdp-btn rdp-btn--del" title="Delete" onClick={() => { setConfirmDel(item); setErr(''); }}>
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </li>
@@ -1608,16 +1632,18 @@ function RefDataPanel({ title, fetchUrl, createUrl, updateUrl, deleteUrl, placeh
                   ) : (
                     <>
                       <span className="rdp-name">{item.name}</span>
-                      <div className="rdp-actions">
-                        <button className="rdp-btn rdp-btn--toggle" title="Reactivate" onClick={() => handleToggle(item)}>
-                          <ToggleLeft size={16} />
-                        </button>
-                        {deleteUrl && (
-                          <button className="rdp-btn rdp-btn--del" title="Delete" onClick={() => { setConfirmDel(item); setErr(''); }}>
-                            <Trash2 size={12} />
+                      {canManage && (
+                        <div className="rdp-actions">
+                          <button className="rdp-btn rdp-btn--toggle" title="Reactivate" onClick={() => handleToggle(item)}>
+                            <ToggleLeft size={16} />
                           </button>
-                        )}
-                      </div>
+                          {deleteUrl && (
+                            <button className="rdp-btn rdp-btn--del" title="Delete" onClick={() => { setConfirmDel(item); setErr(''); }}>
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
                 </li>

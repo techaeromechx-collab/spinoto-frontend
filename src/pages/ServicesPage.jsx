@@ -50,6 +50,10 @@ function is2WType(name = '') {
 // The API returns vehicle_type_name alongside each rule, so we use that to
 // decide whether to open the modal in 4W ('4W') or 2W ('2W') or universal mode.
 function inferRuleVehicleClass(rule) {
+  // Dimension-first: body_type implies 4W, cc_category implies 2W
+  if (rule?.body_type_id) return '4W';
+  if (rule?.cc_category_id) return '2W';
+  // Fall back to vehicle_type_id if set
   if (!rule?.vehicle_type_id) return 'both';
   const name = (rule.vehicle_type_name || '').toLowerCase();
   if (name.includes('two') || name.includes('2')) return '2W';
@@ -220,7 +224,8 @@ export default function ServicesPage() {
   async function toggleServiceStatus(svc, e) {
     e?.stopPropagation();
     const r = await api(`/api/services/services/${svc.id}`, { method: 'PATCH', body: { is_active: !svc.is_active } });
-    if (selService?.id === svc.id) setSelService(r.item);
+    // Preserve category_name from the original since PATCH response doesn't include the join
+    if (selService?.id === svc.id) setSelService({ ...r.item, category_name: svc.category_name });
     refreshServices(svc.category_id);
   }
 
@@ -361,7 +366,7 @@ export default function ServicesPage() {
                     {expanded[cat.id] ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                   </span>
                   <Layers size={13} className="sp-cat-icon" />
-                  <span className="sp-cat-name">{cat.name}</span>
+                  <span className="sp-cat-name" title={cat.name}>{cat.name}</span>
                   <span className="sp-cat-count">{cat.service_count ?? 0}</span>
                   <div className="sp-cat-actions" onClick={e => e.stopPropagation()}>
                     {P.canViewPricing && (
@@ -584,7 +589,11 @@ function OverviewTab({ service: svc, perms: P, onEdit, onDelete, onToggle }) {
         </div>
         <div className="sp-ov-hero-actions">
           {P.canUpdateService && (
-            <button className="sp-ov-action-btn sp-ov-action-btn--toggle" onClick={() => onToggle(svc)} title={svc.is_active ? 'Deactivate' : 'Activate'}>
+            <button
+              className={`sp-ov-action-btn ${svc.is_active ? 'sp-ov-action-btn--toggle' : 'sp-ov-action-btn--toggle-off'}`}
+              onClick={() => onToggle(svc)}
+              title={svc.is_active ? 'Deactivate' : 'Activate'}
+            >
               {svc.is_active ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
               {svc.is_active ? 'Active' : 'Inactive'}
             </button>
@@ -1175,27 +1184,49 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load makes scoped to vehicle class
+  // Load makes scoped to vehicle class — also re-runs when vehicle type changes in 'both' mode
   useEffect(() => {
     const params = new URLSearchParams();
-    if (isTW)                params.set('type_class', '2W');
-    else if (isFW)           params.set('type_class', '4W');
+    // Compute dynamic class inline so we always have fresh vehicleTypes in closure
+    const vt = isBoth && form.vehicle_type_id
+      ? vehicleTypes.find(v => String(v.id) === String(form.vehicle_type_id))
+      : null;
+    const dynTW = isTW || (vt && is2WType(vt.name));
+    const dynFW = isFW || (vt && !is2WType(vt.name));
+    if (dynTW)                  params.set('type_class', '2W');
+    else if (dynFW)             params.set('type_class', '4W');
     else if (form.body_type_id) params.set('body_type_id', form.body_type_id);
     api(`/api/vehicles/makes?${params}`).then(r => setMakes(r.items || []));
-    if (!isTW && form.body_type_id) setForm(f => ({ ...f, make_id: '', model_id: '' }));
-  }, [form.body_type_id]); // eslint-disable-line react-hooks/exhaustive-deps
+    // NOTE: do NOT clear make/model here — body_type_id can change via auto-fill from model selection,
+    // and clearing would wipe the user's selection. Manual body_type changes handle clearing themselves.
+  }, [form.body_type_id, form.vehicle_type_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reload models when make changes
+  // In 'both' mode: when vehicle type changes, clear make/model/body_type and reset price rows
+  const prevVehicleTypeId = useRef(form.vehicle_type_id);
+  useEffect(() => {
+    if (!isBoth) return;
+    if (String(form.vehicle_type_id) === String(prevVehicleTypeId.current)) return;
+    prevVehicleTypeId.current = form.vehicle_type_id;
+    setForm(f => ({ ...f, make_id: '', model_id: '', body_type_id: '' }));
+    const vt = vehicleTypes.find(v => String(v.id) === String(form.vehicle_type_id));
+    if (vt && is2WType(vt.name)) {
+      setSegRows([{ id: 1, segment_id: '', price: '' }]);
+    } else if (vt && !is2WType(vt.name)) {
+      setCcRows([{ id: 1, cc_category_id: '', price: '' }]);
+    }
+  }, [form.vehicle_type_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload models when make changes — body_type_id intentionally excluded from deps.
+  // Including it would re-fetch with body_type filter when auto-fill fires, returning
+  // different model_id variants and breaking the selected model display.
   useEffect(() => {
     if (!form.make_id) { setModels([]); setForm(f => ({ ...f, model_id: '' })); return; }
-    const params = new URLSearchParams({ make_id: form.make_id });
-    if (form.body_type_id) params.set('body_type_id', form.body_type_id);
-    api(`/api/vehicles/models?${params}`).then(r => setModels(r.items || []));
-  }, [form.make_id, form.body_type_id]); // eslint-disable-line react-hooks/exhaustive-deps
+    api(`/api/vehicles/models?make_id=${form.make_id}`).then(r => setModels(r.items || []));
+  }, [form.make_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill body_type from selected model (4W only)
   useEffect(() => {
-    if (!form.model_id || isTW) return;
+    if (!form.model_id || effectiveTW) return;
     const model = models.find(m => String(m.id) === String(form.model_id));
     if (model?.body_type_id && !form.body_type_id) {
       setForm(f => ({ ...f, body_type_id: String(model.body_type_id) }));
@@ -1203,6 +1234,9 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
   }, [form.model_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const f = v => setForm(p => ({ ...p, ...v }));
+
+  // Deduplicate models by name for the dropdown (each model has multiple rows for different segments)
+  const dedupedModels = models.filter((m, idx, arr) => arr.findIndex(x => x.name === m.name) === idx);
 
   // Segment row helpers (4W / both)
   const addSegRow    = () => setSegRows(r => [...r, { id: Date.now(), segment_id: '', price: '' }]);
@@ -1221,6 +1255,17 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
     return true;
   });
 
+  // Lock vehicle type when the rule's class is forced by a dimension
+  // body_type → always 4W, cc_category → always 2W
+  const isVehicleTypeLocked = !!(rule?.body_type_id || rule?.cc_category_id);
+
+  // In 'both' mode, derive effective 2W/4W from the currently selected vehicle type
+  const selectedVehicleType = isBoth && form.vehicle_type_id
+    ? vehicleTypes.find(vt => String(vt.id) === String(form.vehicle_type_id))
+    : null;
+  const effectiveTW = isTW || (isBoth && !!selectedVehicleType && is2WType(selectedVehicleType.name));
+  const effectiveFW = isFW || (isBoth && !!selectedVehicleType && !is2WType(selectedVehicleType.name));
+
   // Preview
   const previewBase = previewAppliesTo(
     { ...form, segment_id: '' },
@@ -1230,8 +1275,8 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
     const dims = [];
     if (form.model_id)     dims.push('Model');
     else if (form.make_id) dims.push('Make');
-    if (form.body_type_id && !isTW) dims.push('Body Type');
-    return dims.length ? dims.join(' + ') : (isTW ? 'CC Category' : 'Universal');
+    if (form.body_type_id && !effectiveTW) dims.push('Body Type');
+    return dims.length ? dims.join(' + ') : (effectiveTW ? 'CC Category' : 'Universal');
   })());
 
   async function handleSubmit(e) {
@@ -1245,12 +1290,12 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
       model_id:        form.model_id        || null,
       is_active:       form.is_active,
       // class-specific dimensions
-      body_type_id:    !isTW ? (form.body_type_id || null) : null,
+      body_type_id:    !effectiveTW ? (form.body_type_id || null) : null,
       segment_id:      null,       // overridden below for fw/both
       cc_category_id:  null,       // overridden below for tw/both
     };
 
-    if (isTW) {
+    if (effectiveTW) {
       // 2W — iterate CC Category rows
       const validRows = ccRows.filter(r => r.price && Number(r.price) > 0);
       if (!validRows.length) { setError('Enter a price for at least one CC Category row.'); return; }
@@ -1311,7 +1356,7 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
   }
 
   // CC row count for button label
-  const activeRows = isTW ? ccRows : segRows;
+  const activeRows = effectiveTW ? ccRows : segRows;
 
   return (
     <div className="sp-modal-backdrop" onClick={onClose}>
@@ -1322,10 +1367,10 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
             {/* Vehicle class badge */}
             <span style={{
               fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-              background: isTW ? '#dcfce7' : isFW ? '#dbeafe' : '#f3f4f6',
-              color:      isTW ? '#166534' : isFW ? '#1d4ed8' : '#374151',
+              background: effectiveTW ? '#dcfce7' : effectiveFW ? '#dbeafe' : '#f3f4f6',
+              color:      effectiveTW ? '#166534' : effectiveFW ? '#1d4ed8' : '#374151',
             }}>
-              {isTW ? '🏍️ 2W Pricing' : isFW ? '🚗 4W Pricing' : '🚗🏍️ Universal'}
+              {effectiveTW ? '🏍️ 2W Pricing' : effectiveFW ? '🚗 4W Pricing' : '🚗🏍️ Universal'}
             </span>
             <button className="sp-modal-close" onClick={onClose}><X size={18} /></button>
           </div>
@@ -1343,27 +1388,32 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
           {/* ── Dimension hint ────────────────────────────────────────────── */}
           <div className="sp-rule-dims-hint">
             <Info size={12} />
-            {isTW
+            {effectiveTW
               ? '2W pricing uses CC Category — set Make / Model for specific bike pricing.'
-              : isFW
+              : effectiveFW
               ? '4W pricing — Body Type auto-fills when you pick a model.'
               : 'Set dimensions below. Specific rules take precedence over broader ones.'}
           </div>
 
           {/* ── Dimension grid ────────────────────────────────────────────── */}
           <div className="sp-dims-grid">
-            {/* Vehicle Type — filtered to class */}
+            {/* Vehicle Type — filtered to class; locked when dimension forces the class */}
             <div className="sp-form-field">
-              <label>Vehicle Type</label>
+              <label>Vehicle Type
+                {isVehicleTypeLocked && (
+                  <span className="sp-field-note"> · locked by dimension</span>
+                )}
+              </label>
               <select className="sp-input" value={form.vehicle_type_id}
-                onChange={e => f({ vehicle_type_id: e.target.value })}>
-                <option value="">Any</option>
+                onChange={e => f({ vehicle_type_id: e.target.value })}
+                disabled={isVehicleTypeLocked}>
+                <option value="">{isVehicleTypeLocked ? (isFW ? '4W Only' : '2W Only') : 'Any'}</option>
                 {filteredTypes.map(vt => <option key={vt.id} value={vt.id}>{vt.name}</option>)}
               </select>
             </div>
 
-            {/* Body Type — 4W / both only */}
-            {!isTW && (
+            {/* Body Type — hidden when vehicle type is 2W */}
+            {!effectiveTW && (
               <div className="sp-form-field">
                 <label>Body Type
                   {form.make_id && !form.body_type_id && (
@@ -1371,7 +1421,7 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
                   )}
                 </label>
                 <select className="sp-input" value={form.body_type_id}
-                  onChange={e => f({ body_type_id: e.target.value })}>
+                  onChange={e => f({ body_type_id: e.target.value, make_id: '', model_id: '' })}>
                   <option value="">Any</option>
                   {allBodyTypes.filter(b => !is2WType(b.name)).map(bt => (
                     <option key={bt.id} value={bt.id}>{bt.name}</option>
@@ -1383,29 +1433,31 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
             {/* Make */}
             <div className="sp-form-field">
               <label>Make
-                {!isTW && form.body_type_id && <span className="sp-field-note"> · filtered by body type</span>}
+                {!effectiveTW && form.body_type_id && <span className="sp-field-note"> · filtered by body type</span>}
               </label>
-              <select className="sp-input" value={form.make_id}
-                onChange={e => f({ make_id: e.target.value, model_id: '' })}>
-                <option value="">Any</option>
-                {makes.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
+              <SearchSel
+                value={form.make_id}
+                onChange={v => f({ make_id: v, model_id: '' })}
+                options={[{ id: '', name: 'Any' }, ...makes]}
+                placeholder="Select Make"
+              />
             </div>
 
             {/* Model */}
             <div className="sp-form-field">
               <label>Model</label>
-              <select className="sp-input" value={form.model_id}
-                onChange={e => f({ model_id: e.target.value })}
-                disabled={!form.make_id}>
-                <option value="">{form.make_id ? 'Any' : 'Select make first'}</option>
-                {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
+              <SearchSel
+                value={form.model_id}
+                onChange={v => f({ model_id: v })}
+                options={form.make_id ? [{ id: '', name: 'Any' }, ...dedupedModels] : []}
+                placeholder={form.make_id ? 'Select Model' : 'Select make first'}
+                disabled={!form.make_id}
+              />
             </div>
           </div>
 
           {/* ── 2W: CC Category × Price rows ─────────────────────────────── */}
-          {isTW && (
+          {effectiveTW && (
             <div className="sp-seg-section">
               <div className="sp-seg-header">
                 <span className="sp-seg-label">CC Category / Price</span>
@@ -1450,7 +1502,7 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
           )}
 
           {/* ── 4W / Both: Segment × Price rows ──────────────────────────── */}
-          {!isTW && (
+          {!effectiveTW && (
             <div className="sp-seg-section">
               <div className="sp-seg-header">
                 <span className="sp-seg-label">Segment / Price</span>
@@ -1500,7 +1552,7 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
             </span>
             {mode === 'create' && activeRows.length > 1 && (
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                × {activeRows.length} {isTW ? 'CC category' : 'segment'} rules
+                × {activeRows.length} {effectiveTW ? 'CC category' : 'segment'} rules
               </span>
             )}
           </div>
@@ -1679,7 +1731,6 @@ function DimensionConfigModal({ category, currentConfig, onSave, onClose }) {
   }
 
   async function handleSave() {
-    if (selected.size === 0) { setError('Please select at least one pricing dimension.'); return; }
     setSaving(true); setError('');
     try {
       await onSave(selectedKeysToDims(selected));
@@ -1760,8 +1811,13 @@ function DimensionConfigModal({ category, currentConfig, onSave, onClose }) {
         </div>
 
         <div className="sp-modal-footer" style={{ padding: '0 22px 22px' }}>
+          {selected.size === 0 && (
+            <p style={{ fontSize: 12, color: '#92400e', margin: '0 auto 0 0' }}>
+              No dimensions selected — saves a universal price (one price for all vehicles).
+            </p>
+          )}
           <button className="button secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="button primary" onClick={handleSave} disabled={saving || selected.size === 0}>
+          <button className="button primary" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -2473,7 +2529,7 @@ function CategoryModal({ mode, item, onSave, onClose }) {
 // ══════════════════════════════════════════════════════════════════════════
 // SERVICE MODAL
 // ══════════════════════════════════════════════════════════════════════════
-const VC_LABELS = { both: '🚗🏍️ Both (2W + 4W)', fw: '🚗 4W Only', tw: '🏍️ 2W Only' };
+const VC_LABELS = { both: '🚗🏍️ Both (2W + 4W)', '4W': '🚗 4W Only', '2W': '🏍️ 2W Only' };
 
 function ServiceModal({ mode, item, categories, defaultCatId, onSave, onClose }) {
   const [form, setForm] = useState({

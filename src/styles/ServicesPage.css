@@ -89,7 +89,8 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  min-height: 600px;
+  height: calc(100vh - 200px);
+  min-height: 500px;
 }
 
 .sp-search-wrap {
@@ -125,17 +126,21 @@
   position: relative;
 }
 .sp-cat-row:hover { background: var(--bg-soft); }
-.sp-cat-row:hover .sp-cat-actions { opacity: 1; }
+.sp-cat-row:hover .sp-cat-actions { opacity: 1; pointer-events: auto; }
+.sp-cat-row:hover .sp-cat-count { opacity: 0; }
 .sp-cat-chevron, .sp-cat-icon { flex-shrink: 0; color: var(--text-muted); }
 .sp-cat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-cat-count {
   font-size: 11px; font-weight: 700; background: var(--bg-soft);
   border: 1px solid var(--border); border-radius: 999px;
   padding: 1px 7px; color: var(--text-muted); flex-shrink: 0;
+  transition: opacity 0.15s;
 }
 .sp-cat-actions {
   display: flex; align-items: center; gap: 2px;
-  opacity: 0; transition: opacity 0.15s; flex-shrink: 0;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s;
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: var(--bg-soft);
 }
 
 .sp-svc-list { padding-left: 20px; }
@@ -197,7 +202,8 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 600px;
+  height: calc(100vh - 200px);
+  min-height: 500px;
 }
 
 .sp-empty-right {
@@ -226,7 +232,7 @@
 .sp-tab--active { border-bottom-color: var(--primary); color: var(--primary); background: var(--panel); }
 
 /* ── Overview tab (redesigned) ───────────────────────────────────────── */
-.sp-ov { display: flex; flex-direction: column; gap: 0; }
+.sp-ov { display: flex; flex-direction: column; gap: 0; flex: 1; overflow-y: auto; }
 
 /* Hero */
 .sp-ov-hero {
@@ -283,6 +289,9 @@
 .sp-ov-action-btn--toggle { color: #16a34a; border-color: #bbf7d0; background: #f0fdf4; }
 .sp-ov-action-btn--toggle:hover { background: #dcfce7; }
 [data-theme="dark"] .sp-ov-action-btn--toggle { background: #14532d33; border-color: #166534; color: #86efac; }
+.sp-ov-action-btn--toggle-off { color: #6b7280; border-color: #d1d5db; background: #f9fafb; }
+.sp-ov-action-btn--toggle-off:hover { background: #f3f4f6; }
+[data-theme="dark"] .sp-ov-action-btn--toggle-off { background: #1f293733; border-color: #374151; color: #9ca3af; }
 .sp-ov-action-btn--edit:hover { border-color: var(--primary); color: var(--primary); background: #eff6ff; }
 .sp-ov-action-btn--del { color: #dc2626; border-color: #fca5a5; background: #fef2f2; }
 .sp-ov-action-btn--del:hover { background: #fee2e2; }
@@ -336,7 +345,7 @@
 .sp-status-pill--inactive { background: var(--bg-soft); color: var(--text-muted); }
 
 /* ── Pricing tab ─────────────────────────────────────────────────────── */
-.sp-pricing { display: flex; flex-direction: column; flex: 1; }
+.sp-pricing { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
 
 .sp-pricing-toolbar {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -352,7 +361,7 @@
 }
 .sp-filter-sel:focus { border-color: var(--primary); }
 
-.sp-pricing-table-wrap { overflow-x: auto; flex: 1; }
+.sp-pricing-table-wrap { overflow-x: auto; overflow-y: auto; flex: 1; }
 
 .sp-pricing-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sp-pricing-table th {

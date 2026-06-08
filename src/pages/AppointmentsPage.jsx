@@ -671,6 +671,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [priceRecalcNotice, setPriceRecalcNotice] = useState(false);
 
   // ── Load master data + pre-warm cascaded dropdowns on mount ──────────────
   useEffect(() => {
@@ -755,7 +756,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
         ? vTypes.find(t => String(t.id) === String(form.vehicle_type_id))?.name
         : appt.vehicle_type_name
       )?.toLowerCase().match(/two|2w/);
-      const vc = isVeh2W ? 'tw' : 'fw';
+      const vc = isVeh2W ? '2W' : '4W';
       const filtered = cats.map(c => ({
         ...c,
         services: c.services
@@ -874,8 +875,40 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
     if (!form.scheduled_date) { setError('Scheduled date is required'); return; }
     if (form.pickup_required && !form.pickup_address_line1.trim()) { setError('Pickup address line 1 is required'); return; }
     if (form.drop_required && !form.drop_address_line1.trim()) { setError('Drop address line 1 is required'); return; }
-    setSaving(true); setError('');
+    setSaving(true); setError(''); setPriceRecalcNotice(false);
+
     try {
+      // ── Detect vehicle field changes ──────────────────────────────────────
+      const vehicleChanged = !locked && (
+        String(form.vehicle_type_id || '') !== String(appt.vehicle_type_id || '') ||
+        String(form.make_id          || '') !== String(appt.make_id          || '') ||
+        String(form.model_id         || '') !== String(appt.model_id         || '') ||
+        String(form.body_type_id     || '') !== String(appt.body_type_id     || '') ||
+        String(form.cc_category_id   || '') !== String(appt.cc_category_id   || '') ||
+        JSON.stringify(form.segment_ids || []) !== JSON.stringify(appt.segment_ids || [])
+      );
+
+      // ── Re-lookup prices if vehicle changed and services exist ────────────
+      let finalServices = apptServices;
+      if (vehicleChanged && apptServices.length > 0) {
+        const recalculated = await Promise.all(
+          apptServices.map(async s => {
+            const newPrice = await lookupPrice(s.id, s.category_id);
+            // Keep old price if lookup returns 0 (no rule found)
+            return { ...s, price: newPrice > 0 ? newPrice : s.price };
+          })
+        );
+        finalServices = recalculated;
+        setPriceRecalcNotice(true);
+      }
+
+      // Only send scheduled_date/time if they actually changed — prevents
+      // auto-Rescheduled status trigger when only other fields were edited
+      const origDate = appt.scheduled_date?.slice(0, 10) || '';
+      const origTime = appt.scheduled_time?.slice(0, 5) || '';
+      const dateChanged = form.scheduled_date !== origDate;
+      const timeChanged = (form.scheduled_time || '') !== origTime;
+
       const r = await api(`/api/appointments/${appt.id}`, {
         method: 'PATCH',
         body: {
@@ -890,8 +923,8 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
           cc_category_id: form.cc_category_id ? Number(form.cc_category_id) : null,
           segment_ids: form.segment_ids || [],
           hub_id: form.hub_id ? Number(form.hub_id) : null,
-          scheduled_date: form.scheduled_date,
-          scheduled_time: form.scheduled_time || null,
+          ...(dateChanged ? { scheduled_date: form.scheduled_date } : {}),
+          ...(timeChanged ? { scheduled_time: form.scheduled_time || null } : {}),
           notes: form.notes.trim() || null,
           pickup_required: form.pickup_required,
           pickup_address_line1: form.pickup_required ? (form.pickup_address_line1.trim() || null) : null,
@@ -903,7 +936,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
           drop_address_line2: form.drop_required ? (form.drop_address_line2.trim() || null) : null,
           drop_city: form.drop_required ? (form.drop_city.trim() || null) : null,
           drop_pincode: form.drop_required ? (form.drop_pincode.trim() || null) : null,
-          services: apptServices.map(s => ({ service_id: s.id, category_id: s.category_id, price: s.price })),
+          services: finalServices.map(s => ({ service_id: s.id, category_id: s.category_id, price: s.price })),
         },
       });
       onSaved(r.item);
@@ -1033,9 +1066,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
                               disabled={locked}
                               onClick={() => !locked && setForm(p => ({
                                 ...p,
-                                segment_ids: on
-                                  ? p.segment_ids.filter(x => x !== s.id)
-                                  : [...p.segment_ids, s.id],
+                                segment_ids: on ? [] : [s.id],
                               }))}
                               style={{ padding: '4px 12px', borderRadius: 20, border: `1.5px solid ${on ? 'var(--primary)' : 'var(--border)'}`, background: on ? 'rgba(22,185,148,0.12)' : 'var(--bg)', color: on ? 'var(--primary)' : 'var(--text)', fontSize: 12, fontWeight: 600, cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.6 : 1 }}>
                               {s.name}
@@ -1077,18 +1108,19 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
             </div>
           </div>
 
-          {/* ── Pickup & Drop ── */}
+          {/* ── Pickup ── */}
           <div className="ea-section">
-            <div className="ea-sec-title"><MapPin size={11} /> Pickup &amp; Drop</div>
+            <div className="ea-sec-title"><MapPin size={11} /> Pickup</div>
 
-            {/* Pickup toggle */}
+            {/* Visit ——[toggle]—— Pickup Required */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.pickup_required ? 10 : 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: !form.pickup_required ? 'var(--text)' : 'var(--text-muted)' }}>Visit</span>
               <button type="button"
                 onClick={() => setForm(p => ({ ...p, pickup_required: !p.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '' }))}
                 className={`ea-toggle${form.pickup_required ? ' ea-toggle--on' : ''}`}>
                 <span className="ea-toggle-knob" />
               </button>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>Pickup Required</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: form.pickup_required ? 'var(--text)' : 'var(--text-muted)' }}>Pickup Required</span>
             </div>
             {form.pickup_required && (
               <div className="ea-grid" style={{ marginBottom: 14 }}>
@@ -1108,37 +1140,6 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
                   <label>Pincode</label>
                   <input className="ea-input" placeholder="6-digit pincode" maxLength={6} value={form.pickup_pincode}
                     onChange={e => setForm(p => ({ ...p, pickup_pincode: e.target.value.replace(/\D/g, '') }))} />
-                </div>
-              </div>
-            )}
-
-            {/* Drop toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.drop_required ? 10 : 0 }}>
-              <button type="button"
-                onClick={() => setForm(p => ({ ...p, drop_required: !p.drop_required, drop_address_line1: '', drop_address_line2: '', drop_city: '', drop_pincode: '' }))}
-                className={`ea-toggle${form.drop_required ? ' ea-toggle--on' : ''}`}>
-                <span className="ea-toggle-knob" />
-              </button>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>Drop Required</span>
-            </div>
-            {form.drop_required && (
-              <div className="ea-grid">
-                <div className="ea-field ea-full">
-                  <label>Address Line 1 *</label>
-                  <input className="ea-input" placeholder="Flat / Building / Street" value={form.drop_address_line1} onChange={f('drop_address_line1')} />
-                </div>
-                <div className="ea-field ea-full">
-                  <label>Address Line 2</label>
-                  <input className="ea-input" placeholder="Landmark / Area (optional)" value={form.drop_address_line2} onChange={f('drop_address_line2')} />
-                </div>
-                <div className="ea-field">
-                  <label>City</label>
-                  <input className="ea-input" placeholder="City" value={form.drop_city} onChange={f('drop_city')} />
-                </div>
-                <div className="ea-field">
-                  <label>Pincode</label>
-                  <input className="ea-input" placeholder="6-digit pincode" maxLength={6} value={form.drop_pincode}
-                    onChange={e => setForm(p => ({ ...p, drop_pincode: e.target.value.replace(/\D/g, '') }))} />
                 </div>
               </div>
             )}
@@ -1209,6 +1210,11 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
           {error && (
             <div style={{ margin: '0 18px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '9px 13px', fontSize: 13, color: '#dc2626', fontWeight: 600 }}>
               {error}
+            </div>
+          )}
+          {priceRecalcNotice && (
+            <div style={{ margin: '0 18px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '9px 13px', fontSize: 13, color: '#15803d', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 7 }}>
+              ✓ Vehicle details changed — service prices updated to match new pricing rules.
             </div>
           )}
         </div>
@@ -1520,7 +1526,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
       // Filter by vehicle type
       const isVeh2W = selectedVeh?.vehicle_type_name?.toLowerCase().includes('two') ||
         selectedVeh?.vehicle_type_name?.toLowerCase().includes('2');
-      const vcFilter = isVeh2W ? 'tw' : 'fw';
+      const vcFilter = isVeh2W ? '2W' : '4W';
       const filteredCats = cats.map(c => ({
         ...c,
         services: c.services
@@ -1711,7 +1717,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                   {custResults.length > 0 && (
                     <div className="ca-results">
                       {custResults.map(c => (
-                        <button key={c.mobile} className="ca-result-row" onClick={() => { setError(''); pickCustomer(c); }}>
+                        <button key={c.mobile || c.customer_name || String(Math.random())} className="ca-result-row" onClick={() => { setError(''); pickCustomer(c); }}>
                           <div className="ca-result-avatar">{(c.customer_name || c.mobile)[0].toUpperCase()}</div>
                           <div className="ca-result-info">
                             <div className="ca-result-name">{c.customer_name || '—'}</div>
@@ -2002,21 +2008,23 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                 </div>
               </div>
 
-              {/* ── Pickup & Drop ── */}
+              {/* ── Pickup ── */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--bg-soft,#f8fafc)', border: '1.5px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
                 <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <MapPin size={11} /> Pickup &amp; Drop
+                  <MapPin size={11} /> Pickup
                 </div>
 
-                {/* Pickup row */}
+                {/* Visit ——[toggle]—— Pickup Required */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: !apptForm.pickup_required ? 'var(--text)' : 'var(--text-muted)' }}>Visit</span>
                   <button type="button"
                     onClick={() => setApptForm(f => ({ ...f, pickup_required: !f.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '' }))}
                     className={`ea-toggle${apptForm.pickup_required ? ' ea-toggle--on' : ''}`}>
                     <span className="ea-toggle-knob" />
                   </button>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>Pickup Required</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: apptForm.pickup_required ? 'var(--text)' : 'var(--text-muted)' }}>Pickup Required</span>
                 </div>
+
                 {apptForm.pickup_required && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 4 }}>
                     <div>
@@ -2043,46 +2051,6 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                         <input className="ca-input" placeholder="6-digit pincode" maxLength={6}
                           value={apptForm.pickup_pincode}
                           onChange={e => setApptForm(f => ({ ...f, pickup_pincode: e.target.value.replace(/\D/g, '') }))} />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Drop row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: apptForm.pickup_required ? 6 : 0 }}>
-                  <button type="button"
-                    onClick={() => setApptForm(f => ({ ...f, drop_required: !f.drop_required, drop_address_line1: '', drop_address_line2: '', drop_city: '', drop_pincode: '' }))}
-                    className={`ea-toggle${apptForm.drop_required ? ' ea-toggle--on' : ''}`}>
-                    <span className="ea-toggle-knob" />
-                  </button>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>Drop Required</span>
-                </div>
-                {apptForm.drop_required && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 4 }}>
-                    <div>
-                      <label className="ca-lbl">Address Line 1 <span style={{ color: '#dc2626' }}>*</span></label>
-                      <input className="ca-input" placeholder="Flat / Building / Street"
-                        value={apptForm.drop_address_line1}
-                        onChange={e => setApptForm(f => ({ ...f, drop_address_line1: e.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="ca-lbl">Address Line 2</label>
-                      <input className="ca-input" placeholder="Landmark / Area (optional)"
-                        value={apptForm.drop_address_line2}
-                        onChange={e => setApptForm(f => ({ ...f, drop_address_line2: e.target.value }))} />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <div>
-                        <label className="ca-lbl">City</label>
-                        <input className="ca-input" placeholder="City"
-                          value={apptForm.drop_city}
-                          onChange={e => setApptForm(f => ({ ...f, drop_city: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className="ca-lbl">Pincode</label>
-                        <input className="ca-input" placeholder="6-digit pincode" maxLength={6}
-                          value={apptForm.drop_pincode}
-                          onChange={e => setApptForm(f => ({ ...f, drop_pincode: e.target.value.replace(/\D/g, '') }))} />
                       </div>
                     </div>
                   </div>
@@ -2434,7 +2402,14 @@ export default function AppointmentsPage() {
                         </button>
                         {canEdit && statusCfg?.name !== 'Invoice Approved' && (
                           <button className="appt-icon-btn appt-icon-btn--edit" title="Edit"
-                            onClick={() => setEditAppt(a)}>
+                            onClick={async () => {
+                              try {
+                                const r = await api(`/api/appointments/${a.id}`);
+                                setEditAppt(r.item);
+                              } catch {
+                                setEditAppt(a);
+                              }
+                            }}>
                             <Pencil size={13} />
                           </button>
                         )}

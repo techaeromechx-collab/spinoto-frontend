@@ -3060,6 +3060,19 @@
   color: #dc2626;
 }
 
+.lp-recalc-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #15803d;
+  font-weight: 500;
+}
+
 .lp-error {
   display: flex;
   align-items: center;
@@ -3466,6 +3479,80 @@
   font-style: italic;
 }
 
+/* ── Next Follow-up badge in lead list ─────────────────────────── */
+.lp-followup-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ── Empty row text in modal ───────────────────────────────────── */
+.lp-vm-empty-row {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 10px 0 4px;
+}
+
+/* ── Follow-up detail list inside ViewLeadModal ────────────────── */
+.lp-fu-detail-wrap {
+  position: relative;
+  margin-top: 8px;
+}
+.lp-fu-detail-wrap::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 56px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 90%);
+  pointer-events: none;
+  border-radius: 0 0 10px 10px;
+}
+.lp-fu-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 148px;   /* ~1 full card + half of next */
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+}
+.lp-fu-detail-list::-webkit-scrollbar { display: none; }
+.lp-fu-detail-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+}
+.lp-fu-detail-row--done    { opacity: 0.5; }
+.lp-fu-detail-row--overdue { background: #fef2f2; border-color: #fca5a5; }
+.lp-fu-detail-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 3px;
+}
+.lp-fu-detail-body  { flex: 1; min-width: 0; }
+.lp-fu-detail-date  { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lp-fu-detail-note  { font-size: 12px; color: var(--text-muted); margin-top: 3px; font-style: italic; }
+.lp-fu-detail-meta  { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.lp-fu-detail-done-tag {
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  background: #dcfce7; color: #16a34a;
+}
+.lp-fu-detail-overdue-tag {
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  background: #fee2e2; color: #dc2626;
+}
+.lp-fu-detail-today-tag {
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  background: #fef3c7; color: #d97706;
+}
+
 .lp-vm-master-warn {
   display: flex;
   align-items: flex-start;
@@ -3587,7 +3674,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
   margin-bottom: 4px;
 }
 
@@ -3595,6 +3683,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .lp-sh-arrow {
@@ -3608,6 +3698,11 @@
   border-radius: 20px;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+  flex-shrink: 1;
 }
 
 .lp-sh-badge--created {
