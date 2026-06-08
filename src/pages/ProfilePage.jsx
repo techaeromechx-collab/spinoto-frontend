@@ -940,6 +940,7 @@ export default function ProfilePage() {
     ...(hasTeam        ? [{ key: 'team',      label: 'Team',       Icon: Users   }] : []),
     ...(isAdmin        ? [{ key: 'admin',     label: 'Admin',      Icon: Shield  }] : []),
     ...(isSuperAdmin   ? [{ key: 'superadmin',label: 'Super Admin',Icon: Zap     }] : []),
+    ...(isSuperAdmin   ? [{ key: 'push',      label: 'Push Alerts', Icon: Bell   }] : []),
     { key: 'security',   label: 'Security',    Icon: Lock       },
     { key: 'settings',   label: 'Settings',    Icon: Settings   },
   ];
@@ -983,6 +984,13 @@ export default function ProfilePage() {
   const [pwErr,  setPwErr]  = useState('');
   const [pwOk,   setPwOk]   = useState(false);
 
+  // ── Push admin tab state ─────────────────────────────────────────────────
+  const [pushStats,      setPushStats]      = useState(null);
+  const [pushLoading,    setPushLoading]    = useState(false);
+  const [pushTestUser,   setPushTestUser]   = useState('');
+  const [pushTestResult, setPushTestResult] = useState('');
+  const [pushTestBusy,   setPushTestBusy]   = useState(false);
+
   // ── Notification settings ────────────────────────────────────────────────
   const [notifSettings, setNotifSettings] = useState({
     overdue_lead: true, missed_followup: true, high_priority_lead: true,
@@ -1023,6 +1031,26 @@ export default function ProfilePage() {
       setNotifSettings(prev => ({ ...prev, ...user.notification_settings }));
     }
   }, [user]);
+
+  useEffect(() => {
+    if (activeTab === 'push' && !pushStats) {
+      setPushLoading(true);
+      api('/api/push/admin/stats').then(r => setPushStats(r)).catch(() => {}).finally(() => setPushLoading(false));
+    }
+  }, [activeTab, pushStats]);
+
+  async function sendTestPush() {
+    setPushTestBusy(true); setPushTestResult('');
+    try {
+      const body = pushTestUser ? { user_id: parseInt(pushTestUser, 10) } : {};
+      const r = await api('/api/push/admin/test', { method: 'POST', body });
+      setPushTestResult(`✅ Sent to ${r.sent} device(s)${r.failed ? `, ${r.failed} failed` : ''}`);
+    } catch (e) {
+      setPushTestResult(`❌ ${e.message}`);
+    } finally {
+      setPushTestBusy(false);
+    }
+  }
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   function startEdit() {
@@ -1344,6 +1372,88 @@ export default function ProfilePage() {
               ].map(({ label, icon, g }) => (
                 <ComingSoon key={label} label={label} icon={icon} gradient={g} />
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* ───── PUSH ALERTS (super admin only) ───── */}
+        {activeTab === 'push' && (
+          <div className="prfl-tab-body">
+            <div className="prfl-card">
+              <SectionHeader icon={<Bell size={15}/>} title="Push Notification Devices" count={pushStats?.total_devices} />
+              <p className="prfl-card-desc">
+                All devices where users have installed the Spinoto PWA and allowed notifications.
+                Notifications respect each user's personal toggles in their Settings tab.
+              </p>
+              {pushLoading && <div style={{ padding: '16px 0', color: 'var(--text-muted)', fontSize: 13 }}>Loading…</div>}
+              {pushStats && (
+                <div className="logs-table-wrap" style={{ marginTop: 12 }}>
+                  <table className="logs-table">
+                    <thead>
+                      <tr>
+                        <th>User</th>
+                        <th>Email</th>
+                        <th style={{ textAlign: 'center' }}>Devices</th>
+                        <th>Last Subscribed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pushStats.users.map(u => (
+                        <tr key={u.id}>
+                          <td>{u.name || '—'}</td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{u.email}</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '2px 10px',
+                              borderRadius: 12,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              background: u.device_count > 0 ? 'rgba(22,163,74,.12)' : 'var(--bg-hover)',
+                              color: u.device_count > 0 ? '#16a34a' : 'var(--text-muted)',
+                            }}>
+                              {u.device_count}
+                            </span>
+                          </td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                            {u.last_subscribed ? new Date(u.last_subscribed).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="prfl-card">
+              <SectionHeader icon={<Zap size={15}/>} title="Send Test Notification" />
+              <p className="prfl-card-desc">Send a test push to verify delivery is working. Leave user blank to test your own device.</p>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
+                <select
+                  value={pushTestUser}
+                  onChange={e => setPushTestUser(e.target.value)}
+                  style={{ flex: 1, minWidth: 180, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13 }}
+                >
+                  <option value="">My device (self)</option>
+                  {(pushStats?.users || []).filter(u => u.device_count > 0).map(u => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.device_count} device{u.device_count > 1 ? 's' : ''})</option>
+                  ))}
+                </select>
+                <button
+                  className="prfl-btn-primary"
+                  onClick={sendTestPush}
+                  disabled={pushTestBusy}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  {pushTestBusy ? 'Sending…' : '🔔 Send Test'}
+                </button>
+              </div>
+              {pushTestResult && (
+                <div style={{ marginTop: 10, fontSize: 13, color: pushTestResult.startsWith('✅') ? '#16a34a' : '#dc2626' }}>
+                  {pushTestResult}
+                </div>
+              )}
             </div>
           </div>
         )}

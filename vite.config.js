@@ -8,9 +8,12 @@ export default defineConfig({
 
     VitePWA({
       // ── Registration strategy ────────────────────────────────
-      // autoUpdate: silently updates the SW whenever a new build is deployed.
-      // No prompt needed – next page load picks up the new version.
       registerType: 'autoUpdate',
+
+      // Use injectManifest so we can add push handlers to the SW
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
 
       // Include all built assets in the SW precache
       includeAssets: [
@@ -24,71 +27,11 @@ export default defineConfig({
         enabled: false,
       },
 
-      // ── Workbox configuration ────────────────────────────────
-      workbox: {
-        // Precache all Vite build outputs (JS, CSS, HTML)
+      // ── injectManifest config ────────────────────────────────
+      // Caching strategies are defined in src/sw.js directly.
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,woff,ttf}'],
-
-        // Raise precache limit to 4 MB (main bundle is ~2.2 MB)
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-
-        // Skip waiting so the new SW activates immediately after install
-        skipWaiting: true,
-        clientsClaim: true,
-
-
-        // ── Runtime caching strategies ──────────────────────────
-        runtimeCaching: [
-          // ── Google Fonts ──────────────────────────────────────
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gstatic-fonts-cache',
-              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-
-          // ── Safe API caching (GET only, network-first) ────────
-          // This caches successful API responses so the app shows
-          // stale data when offline rather than a blank screen.
-          {
-            urlPattern: ({ url, request }) =>
-              url.pathname.startsWith('/api/') && request.method === 'GET',
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              // 30-second timeout — enough for Render free tier cold start
-              networkTimeoutSeconds: 30,
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 5, // 5 minutes
-              },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-
-          // ── Static image assets ───────────────────────────────
-          {
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'images-cache',
-              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
       },
 
       // ── Web App Manifest ─────────────────────────────────────

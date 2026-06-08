@@ -3,6 +3,7 @@ import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 // search state is local to AppShell — no API change
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useUpload } from '../context/UploadContext.jsx';
+import { usePushNotifications } from '../hooks/usePushNotifications.js';
 import {
   LayoutDashboard,
   MapPin,
@@ -114,6 +115,7 @@ const NAV_ITEMS = [
 
 export default function AppShell({ children }) {
   const { user, logout, can } = useAuth();
+  usePushNotifications(user); // register push subscription silently after login
   const navigate = useNavigate();
   const location = useLocation();
   const { activeEntries } = useUpload();
