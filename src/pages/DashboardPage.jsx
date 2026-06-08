@@ -794,50 +794,43 @@ export default function DashboardPage() {
               ) : id === 'row2' ? (
       <div className={`db-${row2Cols}col`}>
 
-        {/* Recent Leads */}
-        {canViewDashLeads && (
-          <div className="db-card">
-            <div className="db-card-hd">
-              <div className="db-card-title">
-                <span className="db-card-dot" style={{ background: '#3b82f6' }} />
-                Recent Leads
-                {!loading && <span className="db-count-badge">{recentLeads.length} of {leads.length}</span>}
-              </div>
-              <Link to="/leads" className="db-view-all">View all <ArrowRight size={12} /></Link>
+        {/* Quick Actions */}
+        <div className="db-card">
+          <div className="db-card-hd">
+            <div className="db-card-title">
+              <span className="db-card-dot" style={{ background: '#f59e0b' }} />
+              Quick Actions
             </div>
-            {loading ? <SkeletonList n={5} h={44} /> : recentLeads.length === 0 ? (
-              <EmptyState label="No leads yet." cta="Create your first lead →" />
-            ) : (
-              <div className="db-lead-list">
-                {recentLeads.map((lead, i) => {
-                  const cfg = getStatusCfg(lead.status);
-                  const initials = (lead.name || lead.mobile || '?').charAt(0).toUpperCase();
-                  return (
-                    <motion.div key={lead.id} className="db-lead-row"
-                      initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.05 }}
-                      onClick={() => navigate('/leads', { state: { openLeadId: lead.id } })}
-                      style={{ cursor: 'pointer' }}>
-                      <div className="db-lead-avatar" style={{ background: cfg.bg, color: cfg.color }}>{initials}</div>
-                      <div className="db-lead-info">
-                        <div className="db-lead-name">{lead.name || lead.mobile}</div>
-                        <div className="db-lead-meta">
-                          {lead.name && lead.mobile && <span>{lead.mobile}</span>}
-                          {lead.city_name && <><span className="db-sep">·</span><span className="db-meta-tag"><MapPin size={9} />{lead.city_name}</span></>}
-                        </div>
-                      </div>
-                      <div className="db-lead-right">
-                        <span className="db-status-pill" style={{ background: cfg.bg, color: cfg.color }}>{lead.status}</span>
-                        <div className="db-lead-val">{Number(lead.total_price) > 0 ? '₹' + fmtINR(Number(lead.total_price)) : '—'}</div>
-                      </div>
-                      <ChevronRight size={13} className="db-chevron" />
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
           </div>
-        )}
+          <div className="db-qa-grid">
+            {(canViewDashLeads || isSuperAdmin) &&
+              <QA to="/leads" icon={<Users size={16} />} color="#3b82f6" label="Add New Lead" onClick={() => window.dispatchEvent(new Event('open-lead-modal'))} />}
+            {canViewDashAppointments &&
+              <QA to="/appointments" icon={<Calendar size={16} />} color="#8b5cf6" label="Schedule Appointment" />}
+            {canViewDashEstimates &&
+              <QA to="/estimates" icon={<ClipboardList size={16} />} color="#10b981" label="Create Estimate" />}
+            {canViewDashRevenue &&
+              <QA to="/customer-invoices" icon={<Receipt size={16} />} color="#f59e0b" label="Create Invoice" />}
+            {canViewDashCustomers &&
+              <QA to="/customers" icon={<UserPlus size={16} />} color="#06b6d4" label="Add Customer" />}
+            {canViewReports &&
+              <QA to="/reports" icon={<BarChart2 size={16} />} color="#ef4444" label="View Reports" />}
+            {(isSuperAdmin || user?.permissions?.includes('VIEW_HUB') || user?.permissions?.includes('MANAGE_HUBS')) &&
+              <QA to="/payouts" icon={<Wallet size={16} />} color="#0ea5e9" label="Hub Payouts" />}
+            {canViewDashInvoices &&
+              <QA to="/purchase-invoices" icon={<Package size={16} />} color="#f97316" label="Purchase Invoice" />}
+            {canViewDashParts &&
+              <QA to="/master/parts" icon={<Wrench size={16} />} color="#64748b" label="Parts Catalogue" />}
+            {(isSuperAdmin || user?.permissions?.includes('VIEW_SERVICE') || user?.permissions?.includes('MANAGE_PRICING')) &&
+              <QA to="/master/services" icon={<Tag size={16} />} color="#10b981" label="Services & Pricing" />}
+            {canViewDashFollowups &&
+              <QA to="/leads" icon={<ListChecks size={16} />} color="#ec4899" label="View Follow-ups" />}
+            {canViewDashCustomers &&
+              <QA to="/customers" icon={<Users size={16} />} color="#7c3aed" label="All Customers" />}
+            {user?.permissions?.includes('BULK_UPLOAD') &&
+              <QA to="/bulk-upload" icon={<UploadCloud size={16} />} color="#6b7280" label="Bulk Upload" />}
+          </div>
+        </div>
 
         {/* Revenue Trend — area chart */}
         {canViewDashRevenueTrend && (
@@ -883,43 +876,50 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Quick Actions */}
-        <div className="db-card">
-          <div className="db-card-hd">
-            <div className="db-card-title">
-              <span className="db-card-dot" style={{ background: '#f59e0b' }} />
-              Quick Actions
+        {/* Recent Leads */}
+        {canViewDashLeads && (
+          <div className="db-card">
+            <div className="db-card-hd">
+              <div className="db-card-title">
+                <span className="db-card-dot" style={{ background: '#3b82f6' }} />
+                Recent Leads
+                {!loading && <span className="db-count-badge">{recentLeads.length} of {leads.length}</span>}
+              </div>
+              <Link to="/leads" className="db-view-all">View all <ArrowRight size={12} /></Link>
             </div>
+            {loading ? <SkeletonList n={5} h={44} /> : recentLeads.length === 0 ? (
+              <EmptyState label="No leads yet." cta="Create your first lead →" />
+            ) : (
+              <div className="db-lead-list">
+                {recentLeads.map((lead, i) => {
+                  const cfg = getStatusCfg(lead.status);
+                  const initials = (lead.name || lead.mobile || '?').charAt(0).toUpperCase();
+                  return (
+                    <motion.div key={lead.id} className="db-lead-row"
+                      initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      onClick={() => navigate('/leads', { state: { openLeadId: lead.id } })}
+                      style={{ cursor: 'pointer' }}>
+                      <div className="db-lead-avatar" style={{ background: cfg.bg, color: cfg.color }}>{initials}</div>
+                      <div className="db-lead-info">
+                        <div className="db-lead-name">{lead.name || lead.mobile}</div>
+                        <div className="db-lead-meta">
+                          {lead.name && lead.mobile && <span>{lead.mobile}</span>}
+                          {lead.city_name && <><span className="db-sep">·</span><span className="db-meta-tag"><MapPin size={9} />{lead.city_name}</span></>}
+                        </div>
+                      </div>
+                      <div className="db-lead-right">
+                        <span className="db-status-pill" style={{ background: cfg.bg, color: cfg.color }}>{lead.status}</span>
+                        <div className="db-lead-val">{Number(lead.total_price) > 0 ? '₹' + fmtINR(Number(lead.total_price)) : '—'}</div>
+                      </div>
+                      <ChevronRight size={13} className="db-chevron" />
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          <div className="db-qa-grid">
-            {(canViewDashLeads || isSuperAdmin) &&
-              <QA to="/leads" icon={<Users size={16} />} color="#3b82f6" label="Add New Lead" onClick={() => window.dispatchEvent(new Event('open-lead-modal'))} />}
-            {canViewDashAppointments &&
-              <QA to="/appointments" icon={<Calendar size={16} />} color="#8b5cf6" label="Schedule Appointment" />}
-            {canViewDashEstimates &&
-              <QA to="/estimates" icon={<ClipboardList size={16} />} color="#10b981" label="Create Estimate" />}
-            {canViewDashRevenue &&
-              <QA to="/customer-invoices" icon={<Receipt size={16} />} color="#f59e0b" label="Create Invoice" />}
-            {canViewDashCustomers &&
-              <QA to="/customers" icon={<UserPlus size={16} />} color="#06b6d4" label="Add Customer" />}
-            {canViewReports &&
-              <QA to="/reports" icon={<BarChart2 size={16} />} color="#ef4444" label="View Reports" />}
-            {(isSuperAdmin || user?.permissions?.includes('VIEW_HUB') || user?.permissions?.includes('MANAGE_HUBS')) &&
-              <QA to="/payouts" icon={<Wallet size={16} />} color="#0ea5e9" label="Hub Payouts" />}
-            {canViewDashInvoices &&
-              <QA to="/purchase-invoices" icon={<Package size={16} />} color="#f97316" label="Purchase Invoice" />}
-            {canViewDashParts &&
-              <QA to="/master/parts" icon={<Wrench size={16} />} color="#64748b" label="Parts Catalogue" />}
-            {(isSuperAdmin || user?.permissions?.includes('VIEW_SERVICE') || user?.permissions?.includes('MANAGE_PRICING')) &&
-              <QA to="/master/services" icon={<Tag size={16} />} color="#10b981" label="Services & Pricing" />}
-            {canViewDashFollowups &&
-              <QA to="/leads" icon={<ListChecks size={16} />} color="#ec4899" label="View Follow-ups" />}
-            {canViewDashCustomers &&
-              <QA to="/customers" icon={<Users size={16} />} color="#7c3aed" label="All Customers" />}
-            {user?.permissions?.includes('BULK_UPLOAD') &&
-              <QA to="/bulk-upload" icon={<UploadCloud size={16} />} color="#6b7280" label="Bulk Upload" />}
-          </div>
-        </div>
+        )}
       </div>
 
               ) : id === 'row3' && row3Cols > 0 ? (

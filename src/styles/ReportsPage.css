@@ -9,16 +9,66 @@
         .rp-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
         /* presets */
-        .rp-presets { display: flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px 4px 10px; }
+        .rp-presets { display: flex; align-items: center; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 4px 8px 4px 6px; }
         .rp-cal-icon { color: var(--text-muted); margin-right: 4px; flex-shrink: 0; }
+        .rp-cal-btn { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; transition: all 0.14s; flex-shrink: 0; margin-right: 2px; }
+        .rp-cal-btn:hover { background: var(--bg-soft); color: var(--primary); }
+        .rp-cal-btn--on { background: #eff6ff; color: var(--primary); }
         .rp-preset-btn { padding: 4px 12px; border-radius: 6px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; background: transparent; color: var(--text-muted); transition: all 0.14s; }
         .rp-preset-btn:hover { background: var(--bg-soft); color: var(--text); }
         .rp-preset-btn--on   { background: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+
+        /* hub filter */
+        .rp-hub-select { padding: 5px 28px 5px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--panel); color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; outline: none; }
+        .rp-hub-select:focus { border-color: var(--primary); }
+
+        /* leads tab */
+        .rp-leads-wrap { display: flex; flex-direction: column; gap: 20px; }
+        .rp-groupby-toggle { display: flex; gap: 2px; background: var(--bg-soft); border-radius: 7px; padding: 2px; }
+        .rp-groupby-btn { padding: 3px 12px; border-radius: 5px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; background: transparent; color: var(--text-muted); transition: all 0.13s; }
+        .rp-groupby-btn--on { background: #fff; color: var(--primary); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+        .rp-leads-stats { display: flex; align-items: center; gap: 0; background: var(--bg-soft); border-radius: 10px; padding: 12px 20px; margin-bottom: 16px; }
+        .rp-leads-stat { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+        .rp-leads-stat-val { font-size: 20px; font-weight: 800; color: var(--text); letter-spacing: -0.02em; }
+        .rp-leads-stat-lbl { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .rp-leads-stat-div { width: 1px; height: 36px; background: var(--border); margin: 0 20px; flex-shrink: 0; }
+
+        /* date picker popover */
+        .rp-datepicker { position: absolute; top: calc(100% + 8px); left: 0; z-index: 200; background: var(--bg); border: 1.5px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); min-width: 260px; }
+        .rp-datepicker-title { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .rp-datepicker-row { display: flex; gap: 10px; }
+        .rp-datepicker-field { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+        .rp-datepicker-field label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+        .rp-datepicker-field input[type="date"] { padding: 7px 9px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; color: var(--text); background: var(--bg); outline: none; width: 100%; cursor: pointer; }
+        .rp-datepicker-field input[type="date"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        .rp-datepicker-apply { margin-top: 12px; width: 100%; padding: 8px; border-radius: 8px; border: none; background: var(--primary); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+        .rp-datepicker-apply:hover:not(:disabled) { background: #1d4ed8; }
+        .rp-datepicker-apply:disabled { opacity: 0.4; cursor: not-allowed; }
         .rp-refresh-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel); color: var(--text-muted); cursor: pointer; display: grid; place-items: center; transition: all 0.14s; }
         .rp-refresh-btn:hover:not(:disabled) { background: var(--bg-soft); color: var(--text); }
         .rp-export-btn { display: flex; align-items: center; gap: 6px; padding: 0 16px; height: 34px; border-radius: 9px; border: 1.5px solid var(--primary); background: var(--primary); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
         .rp-export-btn:hover:not(:disabled) { background: #1d4ed8; border-color: #1d4ed8; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37,99,235,0.35); }
         .rp-export-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* compare btn */
+        .rp-compare-btn { padding: 0 14px; height: 34px; border-radius: 9px; border: 1.5px solid var(--border); background: var(--panel); color: var(--text-muted); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.14s; white-space: nowrap; }
+        .rp-compare-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .rp-compare-btn--on { background: #eff6ff; border-color: var(--primary); color: var(--primary); }
+
+        /* kpi trend */
+        .rp-kpi-bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
+        .rp-trend { font-size: 11px; font-weight: 700; }
+        .rp-trend--up   { color: #16a34a; }
+        .rp-trend--down { color: #dc2626; }
+        .rp-trend--flat { color: var(--text-muted); }
+        .rp-kpi-prev { font-size: 11px; color: var(--text-muted); margin-top: 4px; border-top: 1px dashed var(--border); padding-top: 4px; }
+
+        /* by-user search */
+        .rp-user-search-wrap { position: relative; display: flex; align-items: center; margin-bottom: 12px; max-width: 320px; }
+        .rp-user-search-icon { position: absolute; left: 10px; color: var(--text-muted); pointer-events: none; }
+        .rp-user-search { width: 100%; padding: 8px 32px 8px 32px; border: 1.5px solid var(--border); border-radius: 9px; font-size: 13px; color: var(--text); background: var(--bg); outline: none; }
+        .rp-user-search:focus { border-color: var(--primary); }
+        .rp-user-search-clear { position: absolute; right: 8px; border: none; background: transparent; cursor: pointer; color: var(--text-muted); display: grid; place-items: center; padding: 2px; }
         @keyframes rp-spin { to { transform: rotate(360deg); } }
         .rp-spin { animation: rp-spin 0.8s linear infinite; }
 

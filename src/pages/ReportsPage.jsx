@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -7,7 +7,7 @@ import {
 import {
   LayoutDashboard, Users, TrendingUp, IndianRupee,
   ChevronUp, ChevronDown, Minus, RefreshCw, Calendar, FileDown,
-  X, CheckCircle2, Clock, AlertCircle, Phone, ChevronRight,
+  X, CheckCircle2, Clock, AlertCircle, Phone, ChevronRight, Search,
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { jsPDF } from 'jspdf';
@@ -36,6 +36,37 @@ function getPresetDates(days) {
   };
 }
 
+function getPrevPeriodDates(dateRange) {
+  if (!dateRange.from || !dateRange.to) return null;
+  const from = new Date(dateRange.from);
+  const to   = new Date(dateRange.to);
+  const days = Math.round((to - from) / (1000 * 60 * 60 * 24));
+  const prevTo   = new Date(from); prevTo.setDate(prevTo.getDate() - 1);
+  const prevFrom = new Date(prevTo); prevFrom.setDate(prevFrom.getDate() - days);
+  return {
+    from: prevFrom.toISOString().slice(0, 10),
+    to:   prevTo.toISOString().slice(0, 10),
+  };
+}
+
+function trendPct(curr, prev) {
+  const c = Number(curr) || 0;
+  const p = Number(prev) || 0;
+  if (!p) return null;
+  return ((c - p) / p * 100).toFixed(1);
+}
+
+// Download data as CSV
+function downloadCSV(filename, rows, headers) {
+  const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines  = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
+  const blob   = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url    = URL.createObjectURL(blob);
+  const a      = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function inr(n) {
   return Number(n).toLocaleString('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
@@ -55,7 +86,10 @@ function avatarColor(name = '') {
 }
 
 // ── KPI Card ───────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, icon: Icon, accent = '#3b82f6', sub }) {
+function KpiCard({ label, value, icon: Icon, accent = '#3b82f6', sub, trend, prevValue, compareOn }) {
+  const trendNum = trend !== null && trend !== undefined ? Number(trend) : null;
+  const isUp   = trendNum !== null && trendNum > 0;
+  const isDown = trendNum !== null && trendNum < 0;
   return (
     <div className="rp-kpi">
       <div className="rp-kpi-top">
@@ -65,20 +99,44 @@ function KpiCard({ label, value, icon: Icon, accent = '#3b82f6', sub }) {
         </div>
       </div>
       <div className="rp-kpi-val">{value}</div>
-      {sub && <div className="rp-kpi-sub">{sub}</div>}
+      <div className="rp-kpi-bottom">
+        {sub && <div className="rp-kpi-sub">{sub}</div>}
+        {trendNum !== null && (
+          <span className={`rp-trend${isUp ? ' rp-trend--up' : isDown ? ' rp-trend--down' : ' rp-trend--flat'}`}>
+            {isUp ? '↑' : isDown ? '↓' : '→'} {Math.abs(trendNum)}%
+          </span>
+        )}
+      </div>
+      {compareOn && prevValue !== undefined && (
+        <div className="rp-kpi-prev">vs {prevValue}</div>
+      )}
     </div>
   );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ReportsPage() {
-  const [tab,        setTab]        = useState('overview');   // 'overview' | 'by-user' | 'analytics'
+  const [tab,        setTab]        = useState('overview');   // 'overview' | 'leads' | 'by-user' | 'analytics'
   const [revTrend,   setRevTrend]   = useState([]);
   const [funnel,     setFunnel]     = useState([]);
   const [topPerf,    setTopPerf]    = useState({ top_hubs: [], top_services: [] });
   const [anlLoading, setAnlLoading] = useState(false);
   const [preset,     setPreset]     = useState(30);           // days; 0 = all
   const [dateRange,  setDateRange]  = useState(getPresetDates(30));
+
+  // ── Hub filter ───────────────────────────────────────────────────────────
+  const [hubs,      setHubs]      = useState([]);
+  const [hubId,     setHubId]     = useState('');   // '' = all hubs
+
+  // ── Leads-over-time ──────────────────────────────────────────────────────
+  const [leadsData,    setLeadsData]    = useState([]);
+  const [leadsGroupBy, setLeadsGroupBy] = useState('day');
+  const [leadsLoading, setLeadsLoading] = useState(false);
+  const [sourceData,   setSourceData]   = useState([]);
+
+  // ── Compare / search ─────────────────────────────────────────────────────
+  const [compareOn,  setCompareOn]  = useState(false);
+  const [userSearch, setUserSearch] = useState('');
 
   const [summary,    setSummary]    = useState(null);
   const [statusData, setStatusData] = useState([]);
@@ -88,6 +146,33 @@ export default function ReportsPage() {
 
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
+
+  // ── Custom date picker ───────────────────────────────────────────────────
+  const [pickerOpen,  setPickerOpen]  = useState(false);
+  const [tempFrom,    setTempFrom]    = useState('');
+  const [tempTo,      setTempTo]      = useState('');
+  const pickerRef                      = useRef(null);
+
+  useEffect(() => {
+    function onOut(e) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false);
+    }
+    document.addEventListener('mousedown', onOut);
+    return () => document.removeEventListener('mousedown', onOut);
+  }, []);
+
+  function openPicker() {
+    setTempFrom(dateRange.from || '');
+    setTempTo(dateRange.to || '');
+    setPickerOpen(p => !p);
+  }
+
+  function applyCustomRange() {
+    if (!tempFrom || !tempTo) return;
+    setPreset(null);
+    setDateRange({ from: tempFrom, to: tempTo });
+    setPickerOpen(false);
+  }
 
   // ── User detail drawer ───────────────────────────────────────────────────
   const [drawerUser,    setDrawerUser]    = useState(null); // { user_id, user_name, email }
@@ -130,12 +215,23 @@ export default function ReportsPage() {
     });
   }, [byUser, sortKey, sortDir]);
 
+  // ── Fetch hubs once on mount ──────────────────────────────────────────────
+  useEffect(() => {
+    api('/api/hubs?is_active=true&limit=200')
+      .then(r => setHubs(r.items || []))
+      .catch(() => {});
+  }, []);
+
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
-    const qs = dateRange.from
-      ? `?from=${dateRange.from}&to=${dateRange.to}`
-      : '';
+    const params = new URLSearchParams();
+    if (dateRange.from) { params.set('from', dateRange.from); params.set('to', dateRange.to); }
+    if (hubId) params.set('hub_id', hubId);
+    // Always send prev period so trend indicators can show
+    const prev = getPrevPeriodDates(dateRange);
+    if (prev) { params.set('prev_from', prev.from); params.set('prev_to', prev.to); }
+    const qs = params.toString() ? `?${params.toString()}` : '';
     try {
       const [sum, st, rev, usr] = await Promise.all([
         api(`/api/reports/summary${qs}`),
@@ -153,25 +249,52 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, [dateRange, hubId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // ── Load analytics when tab switches to analytics ────────────────────────
+  // ── Reset search when leaving By User tab ────────────────────────────────
+  useEffect(() => {
+    if (tab !== 'by-user') setUserSearch('');
+  }, [tab]);
+
+  // ── Load leads-over-time + source when Leads tab is active ──────────────
+  useEffect(() => {
+    if (tab !== 'leads') return;
+    setLeadsLoading(true);
+    const params = new URLSearchParams({ group_by: leadsGroupBy });
+    if (dateRange.from) { params.set('from', dateRange.from); params.set('to', dateRange.to); }
+    if (hubId) params.set('hub_id', hubId);
+    const baseParams = new URLSearchParams();
+    if (dateRange.from) { baseParams.set('from', dateRange.from); baseParams.set('to', dateRange.to); }
+    if (hubId) baseParams.set('hub_id', hubId);
+    Promise.all([
+      api(`/api/reports/analytics/leads-over-time?${params.toString()}`),
+      api(`/api/reports/analytics/leads-by-source?${baseParams.toString()}`),
+    ])
+      .then(([lt, src]) => { setLeadsData(lt.items || []); setSourceData(src.items || []); })
+      .catch(() => { setLeadsData([]); setSourceData([]); })
+      .finally(() => setLeadsLoading(false));
+  }, [tab, leadsGroupBy, dateRange, hubId]); // eslint-disable-line
+
+  // ── Load analytics when tab is analytics or date/hub changes ────────────
   useEffect(() => {
     if (tab !== 'analytics') return;
-    if (revTrend.length > 0) return; // already loaded
     setAnlLoading(true);
+    const params = new URLSearchParams();
+    if (dateRange.from) { params.set('from', dateRange.from); params.set('to', dateRange.to); }
+    if (hubId) params.set('hub_id', hubId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
     Promise.all([
-      api('/api/reports/analytics/revenue-trend').catch(() => ({ items: [] })),
-      api('/api/reports/analytics/funnel').catch(() => ({ funnel: [] })),
-      api('/api/reports/analytics/top-performers').catch(() => ({ top_hubs: [], top_services: [] })),
+      api(`/api/reports/analytics/revenue-trend${qs}`).catch(() => ({ items: [] })),
+      api(`/api/reports/analytics/funnel${qs}`).catch(() => ({ funnel: [] })),
+      api(`/api/reports/analytics/top-performers${qs}`).catch(() => ({ top_hubs: [], top_services: [] })),
     ]).then(([rt, fn, tp]) => {
       setRevTrend(rt.items || []);
       setFunnel(fn.funnel || []);
       setTopPerf({ top_hubs: tp.top_hubs || [], top_services: tp.top_services || [] });
     }).finally(() => setAnlLoading(false));
-  }, [tab]);
+  }, [tab, dateRange, hubId]); // eslint-disable-line
 
   // ── Date preset handler ───────────────────────────────────────────────────
   function applyPreset(days) {
@@ -351,8 +474,14 @@ export default function ReportsPage() {
         </div>
         <div className="rp-header-right">
           {/* Date range */}
-          <div className="rp-presets">
-            <Calendar size={13} className="rp-cal-icon" />
+          <div className="rp-presets" ref={pickerRef} style={{ position: 'relative' }}>
+            <button
+              className={`rp-cal-btn${pickerOpen ? ' rp-cal-btn--on' : ''}`}
+              onClick={openPicker}
+              title="Custom date range"
+            >
+              <Calendar size={13} />
+            </button>
             {PRESETS.map(p => (
               <button key={p.label}
                 className={`rp-preset-btn${preset === p.days ? ' rp-preset-btn--on' : ''}`}
@@ -360,13 +489,84 @@ export default function ReportsPage() {
                 {p.label}
               </button>
             ))}
+            {/* Custom date picker popover */}
+            {pickerOpen && (
+              <div className="rp-datepicker">
+                <div className="rp-datepicker-title">Custom Range</div>
+                <div className="rp-datepicker-row">
+                  <div className="rp-datepicker-field">
+                    <label>From</label>
+                    <input type="date" value={tempFrom} max={tempTo || undefined}
+                      onChange={e => setTempFrom(e.target.value)} />
+                  </div>
+                  <div className="rp-datepicker-field">
+                    <label>To</label>
+                    <input type="date" value={tempTo} min={tempFrom || undefined}
+                      onChange={e => setTempTo(e.target.value)} />
+                  </div>
+                </div>
+                <button
+                  className="rp-datepicker-apply"
+                  disabled={!tempFrom || !tempTo}
+                  onClick={applyCustomRange}
+                >
+                  Apply
+                </button>
+              </div>
+            )}
           </div>
+          {/* Hub filter */}
+          {hubs.length > 0 && (
+            <select
+              className="rp-hub-select"
+              value={hubId}
+              onChange={e => setHubId(e.target.value)}
+            >
+              <option value="">All Hubs</option>
+              {hubs.map(h => <option key={h.id} value={h.id}>{h.hub_name}</option>)}
+            </select>
+          )}
+          {/* Compare toggle */}
+          {dateRange.from && (() => {
+            const prev = getPrevPeriodDates(dateRange);
+            return (
+              <button
+                className={`rp-compare-btn${compareOn ? ' rp-compare-btn--on' : ''}`}
+                onClick={() => setCompareOn(o => !o)}
+                title={prev ? `Compare to ${prev.from} → ${prev.to}` : 'Compare to previous period'}
+              >
+                {compareOn && prev
+                  ? `vs ${prev.from.slice(5)} → ${prev.to.slice(5)}`
+                  : 'Compare'}
+              </button>
+            );
+          })()}
           <button className="rp-refresh-btn" onClick={fetchData} disabled={loading}>
             <RefreshCw size={14} className={loading ? 'rp-spin' : ''} />
           </button>
           <button className="rp-export-btn" onClick={exportPDF} disabled={loading || !summary} title="Export PDF">
             <FileDown size={14} />
             Export PDF
+          </button>
+          <button className="rp-export-btn" style={{ background: '#16a34a' }}
+            onClick={() => {
+              const rows = sortedUsers.map(u => [
+                u.user_name || '—', u.email,
+                u.total_leads, u.converted_leads,
+                pct(u.converted_leads, u.total_leads),
+                inr(u.total_revenue), inr(u.realized_revenue),
+              ]);
+              downloadCSV(
+                `spinoto-report-${dateRange.from || 'all'}.csv`,
+                rows,
+                ['Name', 'Email', 'Leads', 'Converted', 'Conv. %', 'Pipeline', 'Realized'],
+              );
+            }}
+            disabled={loading || byUser.length === 0}
+            title="Export CSV"
+          >
+            <FileDown size={14} />
+            CSV
           </button>
         </div>
       </div>
@@ -378,6 +578,10 @@ export default function ReportsPage() {
         <button className={`rp-tab${tab === 'overview' ? ' rp-tab--on' : ''}`}
           onClick={() => setTab('overview')}>
           <LayoutDashboard size={14} /> Overview
+        </button>
+        <button className={`rp-tab${tab === 'leads' ? ' rp-tab--on' : ''}`}
+          onClick={() => setTab('leads')}>
+          <TrendingUp size={14} /> Leads
         </button>
         {/* By User tab — only visible when data spans more than one person */}
         {scope !== 'own' && (
@@ -402,16 +606,31 @@ export default function ReportsPage() {
           {/* KPIs */}
           {summary && (
             <div className="rp-kpi-grid">
-              <KpiCard label="Total Leads"       value={summary.total_leads}
+              <KpiCard label="Total Leads" value={summary.total_leads}
                 icon={TrendingUp} accent="#3b82f6"
-                sub={`${summary.converted_leads} converted`} />
-              <KpiCard label="Conversion Rate"   value={pct(summary.converted_leads, summary.total_leads)}
-                icon={TrendingUp} accent="#10b981" />
-              <KpiCard label="Pipeline Value"    value={inr(summary.total_potential_revenue)}
-                icon={IndianRupee} accent="#8b5cf6" />
-              <KpiCard label="Realized Revenue"  value={inr(summary.realized_revenue)}
+                sub={`${summary.converted_leads} converted`}
+                trend={trendPct(summary.total_leads, summary.prev?.total_leads)}
+                prevValue={summary.prev ? summary.prev.total_leads : undefined}
+                compareOn={compareOn} />
+              <KpiCard label="Conversion Rate" value={pct(summary.converted_leads, summary.total_leads)}
+                icon={TrendingUp} accent="#10b981"
+                trend={trendPct(
+                  Number(summary.converted_leads) / (Number(summary.total_leads) || 1),
+                  Number(summary.prev?.converted_leads) / (Number(summary.prev?.total_leads) || 1)
+                )}
+                prevValue={summary.prev ? pct(summary.prev.converted_leads, summary.prev.total_leads) : undefined}
+                compareOn={compareOn} />
+              <KpiCard label="Pipeline Value" value={inr(summary.total_potential_revenue)}
+                icon={IndianRupee} accent="#8b5cf6"
+                trend={trendPct(summary.total_potential_revenue, summary.prev?.total_potential_revenue)}
+                prevValue={summary.prev ? inr(summary.prev.total_potential_revenue) : undefined}
+                compareOn={compareOn} />
+              <KpiCard label="Realized Revenue" value={inr(summary.realized_revenue)}
                 icon={IndianRupee} accent="#f59e0b"
-                sub="Converted leads only" />
+                sub="Converted leads only"
+                trend={trendPct(summary.realized_revenue, summary.prev?.realized_revenue)}
+                prevValue={summary.prev ? inr(summary.prev.realized_revenue) : undefined}
+                compareOn={compareOn} />
             </div>
           )}
 
@@ -484,10 +703,26 @@ export default function ReportsPage() {
               <div className="rp-ts-div" />
               <div className="rp-ts-item">
                 <span className="rp-ts-label">{scope === 'all' ? 'All' : 'Team'} Members</span>
-                <span className="rp-ts-val">{byUser.filter(u => Number(u.total_leads) > 0).length}</span>
+                <span className="rp-ts-val">{byUser.length}</span>
               </div>
             </div>
           )}
+
+          {/* Search */}
+          <div className="rp-user-search-wrap">
+            <Search size={14} className="rp-user-search-icon" />
+            <input
+              className="rp-user-search"
+              placeholder="Search team members…"
+              value={userSearch}
+              onChange={e => setUserSearch(e.target.value)}
+            />
+            {userSearch && (
+              <button className="rp-user-search-clear" onClick={() => setUserSearch('')}>
+                <X size={13} />
+              </button>
+            )}
+          </div>
 
           {/* Table */}
           <div className="rp-table-wrap">
@@ -513,11 +748,20 @@ export default function ReportsPage() {
               </thead>
               <tbody>
                 {sortedUsers.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="rp-td-empty">No user data available</td>
-                  </tr>
+                  <tr><td colSpan={7} className="rp-td-empty">No user data available</td></tr>
                 )}
-                {sortedUsers.map(u => {
+                {userSearch && sortedUsers.length > 0 &&
+                  sortedUsers.filter(u =>
+                    (u.user_name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
+                    (u.email || '').toLowerCase().includes(userSearch.toLowerCase())
+                  ).length === 0 && (
+                  <tr><td colSpan={7} className="rp-td-empty">No members match "{userSearch}"</td></tr>
+                )}
+                {sortedUsers.filter(u =>
+                  !userSearch ||
+                  (u.user_name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
+                  (u.email || '').toLowerCase().includes(userSearch.toLowerCase())
+                ).map(u => {
                   const convRate = pct(u.converted_leads, u.total_leads);
                   const convNum  = Number(u.total_leads) > 0
                     ? (Number(u.converted_leads) / Number(u.total_leads)) * 100
@@ -721,7 +965,7 @@ export default function ReportsPage() {
                               <div className="rpd-rl-name">{l.name || l.mobile}</div>
                               {l.name && <div className="rpd-rl-mobile">{l.mobile}</div>}
                               <div className="rpd-rl-meta">
-                                {l.vehicle_type_id && <span>{l.vehicle_type_id}</span>}
+                                {l.vehicle_type_name && <span>{l.vehicle_type_name}</span>}
                                 <span>{new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
                               </div>
                             </div>
@@ -742,6 +986,133 @@ export default function ReportsPage() {
         </>
       )}
 
+      {/* ══════════════════════════════════════════════════════════════════════
+          LEADS TAB
+      ══════════════════════════════════════════════════════════════════════ */}
+      {tab === 'leads' && (
+        <div className="rp-leads-wrap">
+          {/* ── Volume chart ── */}
+          <div className="anl-card">
+            <div className="anl-card-hd">
+              <TrendingUp size={15} style={{ color: '#3b82f6' }} />
+              Lead Volume Over Time
+              <span className="anl-badge">
+                {dateRange.from ? `${dateRange.from} → ${dateRange.to}` : 'All time'}
+              </span>
+              <div className="rp-groupby-toggle" style={{ marginLeft: 'auto' }}>
+                {['day','week','month'].map(g => (
+                  <button key={g}
+                    className={`rp-groupby-btn${leadsGroupBy === g ? ' rp-groupby-btn--on' : ''}`}
+                    onClick={() => setLeadsGroupBy(g)}>
+                    {g.charAt(0).toUpperCase() + g.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Summary stats */}
+            {!leadsLoading && leadsData.length > 0 && (() => {
+              const total   = leadsData.reduce((s, d) => s + d.count, 0);
+              const peak    = leadsData.reduce((a, b) => b.count > a.count ? b : a, leadsData[0]);
+              const divisor = leadsGroupBy === 'month' ? leadsData.length : leadsData.length || 1;
+              const avg     = (total / divisor).toFixed(1);
+              const peakLabel = (() => {
+                const d = new Date(peak.period);
+                if (leadsGroupBy === 'month') return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                if (leadsGroupBy === 'week')  return `W/C ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
+                return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+              })();
+              return (
+                <div className="rp-leads-stats">
+                  <div className="rp-leads-stat"><span className="rp-leads-stat-val">{total}</span><span className="rp-leads-stat-lbl">Total Leads</span></div>
+                  <div className="rp-leads-stat-div" />
+                  <div className="rp-leads-stat"><span className="rp-leads-stat-val">{avg}</span><span className="rp-leads-stat-lbl">Avg / {leadsGroupBy}</span></div>
+                  <div className="rp-leads-stat-div" />
+                  <div className="rp-leads-stat"><span className="rp-leads-stat-val">{peakLabel}</span><span className="rp-leads-stat-lbl">Peak {leadsGroupBy}</span></div>
+                </div>
+              );
+            })()}
+
+            {leadsLoading ? (
+              <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)', fontSize: 14 }}>Loading…</div>
+            ) : leadsData.length === 0 ? (
+              <div className="anl-empty">No lead data for this period</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={leadsData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+                    tickFormatter={v => {
+                      const d = new Date(v);
+                      if (leadsGroupBy === 'month') return d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+                      if (leadsGroupBy === 'week')  return `W/C ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
+                      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                    }}
+                    interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} allowDecimals={false} />
+                  <Tooltip formatter={v => [v, 'Leads']}
+                    labelFormatter={v => {
+                      const d = new Date(v);
+                      if (leadsGroupBy === 'month') return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+                      if (leadsGroupBy === 'week')  return `Week of ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+                      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    }} />
+                  <Bar dataKey="count" fill="var(--primary)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          {/* ── Source charts ── */}
+          {!leadsLoading && sourceData.length > 0 && (
+            <div className="anl-row2">
+              {/* Lead Source Breakdown */}
+              <div className="anl-card">
+                <div className="anl-card-hd">
+                  <TrendingUp size={15} style={{ color: '#8b5cf6' }} />
+                  Leads by Source
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={sourceData} layout="vertical" margin={{ left: 10, right: 30 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="source" width={100} tick={{ fontSize: 11, fill: 'var(--text)' }} />
+                    <Tooltip formatter={(v, name) => [v, name === 'total' ? 'Total Leads' : 'Converted']} />
+                    <Legend />
+                    <Bar dataKey="total"     name="Total"     fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="converted" name="Converted" fill="#10b981" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Source vs Conversion Rate */}
+              <div className="anl-card">
+                <div className="anl-card-hd">
+                  <TrendingUp size={15} style={{ color: '#f59e0b' }} />
+                  Conversion Rate by Source
+                </div>
+                <div className="anl-funnel">
+                  {sourceData.filter(s => s.total > 0).map(s => {
+                    const rate = s.total > 0 ? Math.round((s.converted / s.total) * 100) : 0;
+                    const color = rate >= 50 ? '#10b981' : rate >= 20 ? '#f59e0b' : '#94a3b8';
+                    return (
+                      <div key={s.source} className="anl-funnel-row">
+                        <div className="anl-funnel-label" style={{ width: 110 }}>{s.source}</div>
+                        <div className="anl-funnel-track">
+                          <div className="anl-funnel-fill" style={{ width: `${rate}%`, background: color }} />
+                        </div>
+                        <div className="anl-funnel-count" style={{ color }}>{rate}%</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', minWidth: 40, textAlign: 'right' }}>{s.converted}/{s.total}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Analytics Tab ──────────────────────────────────────────────────── */}
       {tab === 'analytics' && (
         <div className="anl-wrap">
@@ -754,7 +1125,9 @@ export default function ReportsPage() {
                 <div className="anl-card-hd">
                   <TrendingUp size={15} style={{ color: '#3b82f6' }} />
                   Monthly Revenue Trend
-                  <span className="anl-badge">Last 12 months</span>
+                  <span className="anl-badge">
+                    {dateRange.from ? `${dateRange.from} → ${dateRange.to}` : 'Last 12 months'}
+                  </span>
                 </div>
                 {revTrend.length === 0 ? (
                   <div className="anl-empty">No invoice data yet</div>
@@ -764,10 +1137,8 @@ export default function ReportsPage() {
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
                       <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={v => `₹${Number(v) >= 1000 ? (Number(v)/1000).toFixed(0)+'k' : v}`} />
-                      <Tooltip formatter={(v, n) => [`₹${Number(v).toLocaleString('en-IN')}`, n === 'revenue' ? 'Invoiced' : 'Collected']} />
-                      <Legend />
-                      <Line type="monotone" dataKey="revenue"   name="Invoiced"   stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4 }} />
-                      <Line type="monotone" dataKey="collected" name="Collected"  stroke="#10b981" strokeWidth={2.5} dot={{ r: 4 }} strokeDasharray="5 3" />
+                      <Tooltip formatter={v => [`₹${Number(v).toLocaleString('en-IN')}`, 'Revenue']} />
+                      <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 )}
@@ -779,7 +1150,9 @@ export default function ReportsPage() {
                   <div className="anl-card-hd">
                     <IndianRupee size={15} style={{ color: '#f59e0b' }} />
                     Conversion Funnel
-                    <span className="anl-badge">All time</span>
+                    <span className="anl-badge">
+                      {dateRange.from ? `${dateRange.from} → ${dateRange.to}` : 'All time'}
+                    </span>
                   </div>
                   {funnel.length === 0 ? (
                     <div className="anl-empty">No data yet</div>
@@ -813,7 +1186,9 @@ export default function ReportsPage() {
                   <div className="anl-card-hd">
                     <IndianRupee size={15} style={{ color: '#0ea5e9' }} />
                     Top Hubs
-                    <span className="anl-badge">Last 90 days</span>
+                    <span className="anl-badge">
+                      {dateRange.from ? `${dateRange.from} → ${dateRange.to}` : 'Last 90 days'}
+                    </span>
                   </div>
                   {topPerf.top_hubs.length === 0 ? (
                     <div className="anl-empty">No hub invoice data yet</div>
@@ -836,18 +1211,20 @@ export default function ReportsPage() {
                 <div className="anl-card-hd">
                   <IndianRupee size={15} style={{ color: '#8b5cf6' }} />
                   Top Services by Revenue
-                  <span className="anl-badge">Last 90 days</span>
+                  <span className="anl-badge">
+                    {dateRange.from ? `${dateRange.from} → ${dateRange.to}` : 'Last 90 days'}
+                  </span>
                 </div>
                 {topPerf.top_services.length === 0 ? (
                   <div className="anl-empty">No service revenue data yet</div>
                 ) : (
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={topPerf.top_services} margin={{ top: 5, right: 20, left: 10, bottom: 60 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis dataKey="service_name" tick={{ fontSize: 10, fill: 'var(--text-muted)', angle: -30, textAnchor: 'end' }} interval={0} />
-                      <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={v => `₹${Number(v) >= 1000 ? (Number(v)/1000).toFixed(0)+'k' : v}`} />
+                  <ResponsiveContainer width="100%" height={Math.max(200, topPerf.top_services.length * 36)}>
+                    <BarChart data={topPerf.top_services} layout="vertical" margin={{ left: 10, right: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={v => `₹${Number(v) >= 1000 ? (Number(v)/1000).toFixed(0)+'k' : v}`} />
+                      <YAxis type="category" dataKey="service_name" width={130} tick={{ fontSize: 11, fill: 'var(--text)' }} />
                       <Tooltip formatter={v => [`₹${Number(v).toLocaleString('en-IN')}`, 'Revenue']} />
-                      <Bar dataKey="revenue" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="revenue" fill="#8b5cf6" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
