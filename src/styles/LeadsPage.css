@@ -469,6 +469,15 @@
   font-weight: 700;
 }
 
+.ss-item--focused {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.ss-item--active.ss-item--focused {
+  background: #ddd6fe;
+}
+
 .ss-empty {
   padding: 18px;
   text-align: center;

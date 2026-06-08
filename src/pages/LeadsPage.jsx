@@ -1758,19 +1758,21 @@ function FollowUpModal({ statusName, leadName, onConfirm, onCancel }) {
 
 // ── Appointment Searchable Select ─────────────────────────────────────────────
 function ApptSelect({ value, onChange, options, placeholder = 'Select…', disabled = false, loading = false, searchPlaceholder = 'Search…', error = false }) {
-  const [open, setOpen]     = useState(false);
-  const [query, setQuery]   = useState('');
-  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
-  const triggerRef           = useRef(null);
-  const dropRef              = useRef(null);
-  const inputRef             = useRef(null);
+  const [open, setOpen]               = useState(false);
+  const [query, setQuery]             = useState('');
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const [dropPos, setDropPos]         = useState({ top: 0, left: 0, width: 0 });
+  const triggerRef                     = useRef(null);
+  const dropRef                        = useRef(null);
+  const inputRef                       = useRef(null);
+  const listRef                        = useRef(null);
 
-  // Close on outside click — must exclude both the trigger AND the portal dropdown div
+  // Close on outside click
   useEffect(() => {
     function handler(e) {
       const inTrigger = triggerRef.current && triggerRef.current.contains(e.target);
       const inDrop    = dropRef.current    && dropRef.current.contains(e.target);
-      if (!inTrigger && !inDrop) setOpen(false);
+      if (!inTrigger && !inDrop) { setOpen(false); setFocusedIndex(-1); }
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -1780,6 +1782,7 @@ function ApptSelect({ value, onChange, options, placeholder = 'Select…', disab
   useEffect(() => {
     if (open) {
       setQuery('');
+      setFocusedIndex(-1);
       if (triggerRef.current) {
         const r = triggerRef.current.getBoundingClientRect();
         setDropPos({ top: r.bottom + 5, left: r.left, width: r.width });
@@ -1788,15 +1791,44 @@ function ApptSelect({ value, onChange, options, placeholder = 'Select…', disab
     }
   }, [open]);
 
+  // Reset focused index when query changes
+  useEffect(() => { setFocusedIndex(-1); }, [query]);
+
+  // Scroll focused item into view
+  useEffect(() => {
+    if (focusedIndex < 0 || !listRef.current) return;
+    const item = listRef.current.children[focusedIndex];
+    item?.scrollIntoView({ block: 'nearest' });
+  }, [focusedIndex]);
+
   const filtered = query
     ? options.filter(o => o.label.toLowerCase().includes(query.toLowerCase()))
     : options;
 
   const selected = options.find(o => String(o.value) === String(value));
 
-  function pick(opt) {
-    onChange(opt.value);
-    setOpen(false);
+  function pick(opt) { onChange(opt.value); setOpen(false); setFocusedIndex(-1); }
+
+  function handleTriggerKeyDown(e) {
+    if (disabled || loading) return;
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      setOpen(true);
+    }
+  }
+
+  function handleInputKeyDown(e) {
+    if (e.key === 'Escape') { e.preventDefault(); setOpen(false); setFocusedIndex(-1); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setFocusedIndex(i => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setFocusedIndex(i => (i <= 0 ? -1 : i - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (focusedIndex >= 0 && filtered[focusedIndex]) pick(filtered[focusedIndex]);
+    }
   }
 
   return (
@@ -1805,7 +1837,10 @@ function ApptSelect({ value, onChange, options, placeholder = 'Select…', disab
         type="button"
         disabled={disabled || loading}
         onClick={() => !disabled && !loading && setOpen(o => !o)}
+        onKeyDown={handleTriggerKeyDown}
         className={`ss-trigger${open ? ' ss-trigger--open' : ''}${error ? ' ss-trigger--err' : ''}${disabled || loading ? ' ss-trigger--disabled' : ''}`}
+        aria-expanded={open}
+        aria-haspopup="listbox"
       >
         <span className={selected ? 'ss-value' : 'ss-placeholder'}>
           {loading ? 'Loading…' : (selected?.label || placeholder)}
@@ -1827,18 +1862,23 @@ function ApptSelect({ value, onChange, options, placeholder = 'Select…', disab
               placeholder={searchPlaceholder}
               value={query}
               onChange={e => setQuery(e.target.value)}
+              onKeyDown={handleInputKeyDown}
+              aria-autocomplete="list"
             />
             {query && <button className="ss-search-clear" onClick={() => setQuery('')}><X size={11}/></button>}
           </div>
-          <div className="ss-list">
+          <div className="ss-list" ref={listRef} role="listbox">
             {filtered.length === 0
               ? <div className="ss-empty">No results found</div>
-              : filtered.map(opt => (
+              : filtered.map((opt, idx) => (
                 <button
                   key={opt.value}
                   type="button"
-                  className={`ss-item${String(opt.value) === String(value) ? ' ss-item--active' : ''}`}
+                  role="option"
+                  aria-selected={String(opt.value) === String(value)}
+                  className={`ss-item${String(opt.value) === String(value) ? ' ss-item--active' : ''}${idx === focusedIndex ? ' ss-item--focused' : ''}`}
                   onClick={() => pick(opt)}
+                  onMouseEnter={() => setFocusedIndex(idx)}
                 >
                   <span>{opt.label}</span>
                   {String(opt.value) === String(value) && <CheckCircle2 size={13} style={{ color: '#6d28d9', flexShrink: 0 }} />}
@@ -3813,7 +3853,6 @@ export default function LeadsPage() {
                 <th><div className="th-cell"><Car size={13} /> Vehicle</div></th>
                 <th><div className="th-cell"><Wrench size={13} /> Service</div></th>
                 <th>Status</th>
-                <th><div className="th-cell"><Tag size={13} /> Source</div></th>
                 <th><div className="th-cell"><UserCheck size={13} /> Assign To</div></th>
                 <th><div className="th-cell"><Calendar size={13} /> Next Follow-up</div></th>
                 <th style={{ width: 44 }} />
@@ -3821,9 +3860,9 @@ export default function LeadsPage() {
             </thead>
             <tbody>
               {loading && leads.length === 0 ? (
-                <tr><td colSpan="10" className="lp-empty">Loading leads…</td></tr>
+                <tr><td colSpan="9" className="lp-empty">Loading leads…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan="10" className="lp-empty">
+                <tr><td colSpan="9" className="lp-empty">
                   {leads.length === 0 ? 'No leads yet. Capture your first lead!' : 'No leads match your filters.'}
                 </td></tr>
               ) : paginated.map(l => (
@@ -3912,10 +3951,6 @@ export default function LeadsPage() {
                     {l.lost_reason && l.status?.toLowerCase().includes('lost') && (
                       <div className="lp-lost-reason-sub">{l.lost_reason}</div>
                     )}
-                  </td>
-                  <td>
-                    <SourceBadge source={l.lead_source} />
-                    {!l.lead_source && <span className="lp-muted">—</span>}
                   </td>
                   {/* Assign To column */}
                   <td>

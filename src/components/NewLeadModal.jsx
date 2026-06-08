@@ -35,8 +35,10 @@ function SearchableSelect({
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
+  const listRef = useRef(null);
 
   const selected = options.find(o => String(o.id) === String(value));
   const filtered = query
@@ -46,20 +48,58 @@ function SearchableSelect({
   useEffect(() => {
     function onOut(e) {
       if (wrapRef.current && !wrapRef.current.contains(e.target)) {
-        setOpen(false); setQuery('');
+        setOpen(false); setQuery(''); setFocusedIndex(-1);
       }
     }
     document.addEventListener('mousedown', onOut);
     return () => document.removeEventListener('mousedown', onOut);
   }, []);
 
+  // Reset focused index when filtered list changes
+  useEffect(() => { setFocusedIndex(-1); }, [query]);
+
+  // Scroll focused item into view
+  useEffect(() => {
+    if (focusedIndex < 0 || !listRef.current) return;
+    const item = listRef.current.children[focusedIndex];
+    item?.scrollIntoView({ block: 'nearest' });
+  }, [focusedIndex]);
+
   function handleOpen() {
     if (disabled || loading) return;
     setOpen(true);
+    setFocusedIndex(-1);
     setTimeout(() => inputRef.current?.focus(), 30);
   }
 
-  function pick(id) { onChange(id); setOpen(false); setQuery(''); }
+  function close() { setOpen(false); setQuery(''); setFocusedIndex(-1); }
+
+  function pick(id) { onChange(id); close(); }
+
+  function handleTriggerKeyDown(e) {
+    if (disabled || loading) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpen(); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); handleOpen(); }
+  }
+
+  function handleInputKeyDown(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setFocusedIndex(i => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setFocusedIndex(i => {
+        if (i <= 0) return -1; // back to search input
+        return i - 1;
+      });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (focusedIndex >= 0 && filtered[focusedIndex]) {
+        pick(String(filtered[focusedIndex].id));
+      }
+    }
+  }
 
   return (
     <div ref={wrapRef} className="ss-wrap">
@@ -67,7 +107,10 @@ function SearchableSelect({
         className={`ss-trigger${open ? ' ss-open' : ''}${disabled || loading ? ' ss-disabled' : ''}`}
         onClick={handleOpen}
         tabIndex={disabled ? -1 : 0}
-        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && handleOpen()}
+        onKeyDown={handleTriggerKeyDown}
+        role="combobox"
+        aria-expanded={open}
+        aria-haspopup="listbox"
       >
         <span className={selected ? 'ss-val' : 'ss-ph'} style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, minWidth: 0 }}>
           {loading ? 'Loading…' : selected
@@ -101,7 +144,9 @@ function SearchableSelect({
                 className="ss-search-input"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder={`Search…`}
+                onKeyDown={handleInputKeyDown}
+                placeholder="Search…"
+                aria-autocomplete="list"
               />
               {query && (
                 <button className="ss-clear" onMouseDown={() => setQuery('')}>
@@ -109,14 +154,17 @@ function SearchableSelect({
                 </button>
               )}
             </div>
-            <div className="ss-list">
+            <div className="ss-list" ref={listRef} role="listbox">
               {filtered.length === 0 ? (
                 <div className="ss-empty">{query ? `No match for "${query}"` : emptyMsg}</div>
-              ) : filtered.map(o => (
+              ) : filtered.map((o, idx) => (
                 <div
                   key={o.id}
-                  className={`ss-opt${String(o.id) === String(value) ? ' ss-opt-sel' : ''}`}
+                  role="option"
+                  aria-selected={String(o.id) === String(value)}
+                  className={`ss-opt${String(o.id) === String(value) ? ' ss-opt-sel' : ''}${idx === focusedIndex ? ' ss-opt-focused' : ''}`}
                   onMouseDown={() => pick(String(o.id))}
+                  onMouseEnter={() => setFocusedIndex(idx)}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, minWidth: 0 }}>
                     {o.badge && (
@@ -704,12 +752,9 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                                     const ltr = s.name.charAt(0).toUpperCase();
                                     const bsc = segBadgeStyle(ltr);
                                     return (
-                                      <button key={s.id} type="button"
+                                      <span key={s.id}
                                         className={`nlm-chip${on ? ' nlm-chip--on' : ''}`}
-                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}
-                                        onClick={() => setForm(f => ({
-                                          ...f, segment_ids: on ? [] : [s.id],
-                                        }))}>
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                                         <span style={{
                                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                           width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
@@ -719,7 +764,7 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                                           border: `1.5px solid ${on ? 'rgba(255,255,255,0.4)' : bsc.border}`,
                                         }}>{ltr}</span>
                                         {s.name}
-                                      </button>
+                                      </span>
                                     );
                                   })}
                                 </div>
