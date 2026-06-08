@@ -987,7 +987,13 @@ export default function ProfilePage() {
   // ── Push admin tab state ─────────────────────────────────────────────────
   const [pushStats,      setPushStats]      = useState(null);
   const [pushLoading,    setPushLoading]    = useState(false);
+  const [alertCfg,       setAlertCfg]       = useState(null);
+  const [alertCfgBusy,   setAlertCfgBusy]   = useState(false);
+  const [alertCfgResult, setAlertCfgResult] = useState('');
   const [pushTestUser,   setPushTestUser]   = useState('');
+  const [pushTestTitle,  setPushTestTitle]  = useState('');
+  const [pushTestMsg,    setPushTestMsg]    = useState('');
+  const [pushTestUrl,    setPushTestUrl]    = useState('/');
   const [pushTestResult, setPushTestResult] = useState('');
   const [pushTestBusy,   setPushTestBusy]   = useState(false);
 
@@ -1037,12 +1043,35 @@ export default function ProfilePage() {
       setPushLoading(true);
       api('/api/push/admin/stats').then(r => setPushStats(r)).catch(() => {}).finally(() => setPushLoading(false));
     }
-  }, [activeTab, pushStats]);
+    if (activeTab === 'push' && !alertCfg) {
+      api('/api/settings/alert').then(r => setAlertCfg(r)).catch(() => {});
+    }
+  }, [activeTab, pushStats, alertCfg]);
+
+  async function saveAlertCfg() {
+    setAlertCfgBusy(true); setAlertCfgResult('');
+    try {
+      const r = await api('/api/settings/alert', { method: 'PUT', body: alertCfg });
+      setAlertCfg(r.alert_settings);
+      setAlertCfgResult('✅ Saved');
+    } catch (e) {
+      setAlertCfgResult(`❌ ${e.message}`);
+    } finally {
+      setAlertCfgBusy(false);
+      setTimeout(() => setAlertCfgResult(''), 3000);
+    }
+  }
 
   async function sendTestPush() {
+    if (!pushTestTitle.trim()) { setPushTestResult('❌ Title is required'); return; }
     setPushTestBusy(true); setPushTestResult('');
     try {
-      const body = pushTestUser ? { user_id: parseInt(pushTestUser, 10) } : {};
+      const body = {
+        ...(pushTestUser ? { user_id: parseInt(pushTestUser, 10) } : {}),
+        title:   pushTestTitle.trim(),
+        message: pushTestMsg.trim() || ' ',
+        url:     pushTestUrl || '/',
+      };
       const r = await api('/api/push/admin/test', { method: 'POST', body });
       setPushTestResult(`✅ Sent to ${r.sent} device(s)${r.failed ? `, ${r.failed} failed` : ''}`);
     } catch (e) {
@@ -1426,27 +1455,104 @@ export default function ProfilePage() {
               )}
             </div>
 
+            {/* ── Alert Thresholds ── */}
             <div className="prfl-card">
-              <SectionHeader icon={<Zap size={15}/>} title="Send Test Notification" />
-              <p className="prfl-card-desc">Send a test push to verify delivery is working. Leave user blank to test your own device.</p>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
-                <select
-                  value={pushTestUser}
-                  onChange={e => setPushTestUser(e.target.value)}
-                  style={{ flex: 1, minWidth: 180, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13 }}
-                >
-                  <option value="">My device (self)</option>
-                  {(pushStats?.users || []).filter(u => u.device_count > 0).map(u => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.device_count} device{u.device_count > 1 ? 's' : ''})</option>
+              <SectionHeader icon={<Settings size={15}/>} title="Alert Thresholds" />
+              <p className="prfl-card-desc">Configure when each automatic alert fires. Changes take effect on the next scheduler run (every 10 min).</p>
+              {alertCfg && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
+                  {[
+                    { key: 'no_activity_hours',       label: 'No Activity Alert',         unit: 'hours',   desc: 'Alert if no CRM activity for X hours' },
+                    { key: 'inactive_lead_days',       label: 'Inactive Lead Alert',        unit: 'days',    desc: 'Alert if lead has no activity for X days' },
+                    { key: 'daily_target_hour',        label: 'Daily Target Check Time',    unit: 'hour (24h)', desc: 'Check target after this hour (18 = 6 PM)' },
+                    { key: 'escalation_overdue_days',  label: 'Escalation — Overdue Days',  unit: 'days',    desc: 'Escalate if lead overdue by X days' },
+                    { key: 'escalation_missed_count',  label: 'Escalation — Missed Follow-ups', unit: 'count', desc: 'Escalate if X or more follow-ups missed' },
+                    { key: 'work_start_hour',          label: 'Working Hours Start',        unit: 'hour (24h)', desc: 'No Activity alert starts at this hour' },
+                    { key: 'work_end_hour',            label: 'Working Hours End',          unit: 'hour (24h)', desc: 'No Activity alert stops at this hour' },
+                  ].map(({ key, label, unit, desc }) => (
+                    <div key={key} className="prfl-field" style={{ margin: 0 }}>
+                      <label style={{ fontSize: 12 }}>{label} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({unit})</span></label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={alertCfg[key] ?? ''}
+                        onChange={e => setAlertCfg(prev => ({ ...prev, [key]: parseInt(e.target.value, 10) || 1 }))}
+                        title={desc}
+                      />
+                    </div>
                   ))}
-                </select>
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+                <button className="prfl-btn-primary" onClick={saveAlertCfg} disabled={alertCfgBusy || !alertCfg}>
+                  {alertCfgBusy ? 'Saving…' : 'Save Thresholds'}
+                </button>
+                {alertCfgResult && <span style={{ fontSize: 13, color: alertCfgResult.startsWith('✅') ? '#16a34a' : '#dc2626' }}>{alertCfgResult}</span>}
+              </div>
+            </div>
+
+            <div className="prfl-card">
+              <SectionHeader icon={<Zap size={15}/>} title="Send Custom Notification" />
+              <p className="prfl-card-desc">Write your own notification and push it to any subscribed user.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                {/* Send to */}
+                <div className="prfl-field">
+                  <label>Send To</label>
+                  <select
+                    value={pushTestUser}
+                    onChange={e => setPushTestUser(e.target.value)}
+                    style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13 }}
+                  >
+                    <option value="">My device (self)</option>
+                    {(pushStats?.users || []).filter(u => u.device_count > 0).map(u => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.device_count} device{u.device_count > 1 ? 's' : ''})</option>
+                    ))}
+                  </select>
+                </div>
+                {/* Title */}
+                <div className="prfl-field">
+                  <label>Title <span style={{ color: '#dc2626' }}>*</span></label>
+                  <input
+                    value={pushTestTitle}
+                    onChange={e => setPushTestTitle(e.target.value)}
+                    placeholder="e.g. Meeting at 3 PM"
+                    maxLength={80}
+                  />
+                </div>
+                {/* Message */}
+                <div className="prfl-field">
+                  <label>Message</label>
+                  <input
+                    value={pushTestMsg}
+                    onChange={e => setPushTestMsg(e.target.value)}
+                    placeholder="e.g. Please join the Zoom call"
+                    maxLength={200}
+                  />
+                </div>
+                {/* Redirect URL */}
+                <div className="prfl-field">
+                  <label>Opens When Clicked</label>
+                  <select
+                    value={pushTestUrl}
+                    onChange={e => setPushTestUrl(e.target.value)}
+                    style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13 }}
+                  >
+                    <option value="/">Dashboard</option>
+                    <option value="/leads">Leads</option>
+                    <option value="/appointments">Appointments</option>
+                    <option value="/estimates">Estimates</option>
+                    <option value="/invoices">Invoices</option>
+                    <option value="/customers">Customers</option>
+                    <option value="/reports">Reports</option>
+                  </select>
+                </div>
                 <button
                   className="prfl-btn-primary"
                   onClick={sendTestPush}
-                  disabled={pushTestBusy}
-                  style={{ whiteSpace: 'nowrap' }}
+                  disabled={pushTestBusy || !pushTestTitle.trim()}
+                  style={{ alignSelf: 'flex-start' }}
                 >
-                  {pushTestBusy ? 'Sending…' : '🔔 Send Test'}
+                  {pushTestBusy ? 'Sending…' : '🔔 Send Notification'}
                 </button>
               </div>
               {pushTestResult && (
