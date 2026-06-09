@@ -1002,7 +1002,7 @@ export default function ProfilePage() {
     overdue_lead: true, missed_followup: true, high_priority_lead: true,
     daily_target: true, inactive_lead: true,   lead_escalation: true,
     duplicate_lead: true, lead_assigned: true, lead_converted: true, no_activity: true,
-    follow_up_scheduled: true, appointment_reminder: true,
+    follow_up_scheduled: true, appointment_reminder: true, note_added: true,
   });
 
   // ── Data fetching ────────────────────────────────────────────────────────
@@ -1621,6 +1621,7 @@ export default function ProfilePage() {
                   { key: 'no_activity',           label: 'No Activity Warning',       desc: 'When no CRM activity for 2+ hours during work hours', color: '#d97706' },
                   { key: 'follow_up_scheduled',   label: 'Follow-up Scheduled',       desc: 'When a follow-up is scheduled on your lead',          color: '#0891b2' },
                   { key: 'appointment_reminder',  label: 'Appointment Reminder',      desc: '30 min / 2 hr / 24 hr before an appointment',         color: '#7c3aed' },
+                  { key: 'note_added',            label: 'Note Added',                desc: 'When a note is added on your lead',                   color: '#d97706' },
                 ].map(item => (
                   <div key={item.key} className="prfl-notif-row">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: 1 }}>

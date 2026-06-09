@@ -70,6 +70,8 @@ const NOTIF_META = {
   lead_converted:     { Icon: Trophy,        bg: '#dcfce7', color: '#16a34a', label: 'Converted'    },
   no_activity:        { Icon: Activity,      bg: '#ffedd5', color: '#ea580c', label: 'No Lead Activity'  },
   follow_up_scheduled:{ Icon: Clock,         bg: '#dbeafe', color: '#2563eb', label: 'Follow-up'    },
+  note_added:         { Icon: Activity,      bg: '#fef9c3', color: '#d97706', label: 'Note Added'   },
+  appointment_reminder:{ Icon: Bell,         bg: '#f3e8ff', color: '#7c3aed', label: 'Reminder'     },
 };
 
 function getNotifMeta(type) {
