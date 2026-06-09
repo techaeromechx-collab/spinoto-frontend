@@ -1002,6 +1002,7 @@ export default function ProfilePage() {
     overdue_lead: true, missed_followup: true, high_priority_lead: true,
     daily_target: true, inactive_lead: true,   lead_escalation: true,
     duplicate_lead: true, lead_assigned: true, lead_converted: true, no_activity: true,
+    follow_up_scheduled: true, appointment_reminder: true,
   });
 
   // ── Data fetching ────────────────────────────────────────────────────────
@@ -1616,8 +1617,10 @@ export default function ProfilePage() {
                   { key: 'lead_escalation',    label: 'Escalation Alerts',         desc: 'When a lead is escalated to manager',            color: '#9333ea' },
                   { key: 'duplicate_lead',     label: 'Duplicate Lead Alerts',     desc: 'When a duplicate lead is detected',              color: '#16a34a' },
                   { key: 'lead_assigned',      label: 'New Lead Assignment',       desc: 'When a lead is assigned to you',                 color: '#2563eb' },
-                  { key: 'lead_converted',     label: 'Lead Conversion',           desc: 'When a lead is won/converted',                   color: '#16a34a' },
-                  { key: 'no_activity',        label: 'No Activity Warning',       desc: 'When no CRM activity for 2+ hours during work hours', color: '#d97706' },
+                  { key: 'lead_converted',        label: 'Lead Conversion',           desc: 'When a lead is won/converted',                        color: '#16a34a' },
+                  { key: 'no_activity',           label: 'No Activity Warning',       desc: 'When no CRM activity for 2+ hours during work hours', color: '#d97706' },
+                  { key: 'follow_up_scheduled',   label: 'Follow-up Scheduled',       desc: 'When a follow-up is scheduled on your lead',          color: '#0891b2' },
+                  { key: 'appointment_reminder',  label: 'Appointment Reminder',      desc: '30 min / 2 hr / 24 hr before an appointment',         color: '#7c3aed' },
                 ].map(item => (
                   <div key={item.key} className="prfl-notif-row">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: 1 }}>

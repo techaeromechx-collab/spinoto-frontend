@@ -139,6 +139,8 @@
         .hbv-docs-list { display:flex; flex-direction:column; gap:8px; }
         .hbv-doc-item { display:flex; align-items:center; gap:10px; padding:10px 14px; border:1.5px solid var(--border); border-radius:10px; text-decoration:none; color:var(--text); background:var(--bg); transition:border-color .15s,background .15s; }
         .hbv-doc-item:hover { border-color:#2563eb; background:#eff6ff; }
+        .doc-img-preview-popup { position:absolute; bottom:calc(100% + 8px); left:0; z-index:9999; background:var(--surface,#fff); border:1.5px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.18); padding:6px; pointer-events:none; }
+        .doc-img-preview-popup img { display:block; max-width:200px; max-height:160px; border-radius:6px; object-fit:contain; }
         .hbv-doc-type { font-size:12px; font-weight:700; color:var(--text); }
         .hbv-doc-name { font-size:11px; color:var(--text-muted); margin-top:1px; }
         .hbv-days-chips { display:flex; flex-wrap:wrap; gap:5px; }

@@ -39,6 +39,14 @@ const EMPTY_DOCS = () => ({
 // ── API base URL (for building file links) ────────────────────────────────────
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+// If file_url is already a full URL (ImageKit CDN), use as-is.
+// Otherwise prepend API_BASE (local /uploads/... path).
+function fileHref(fileUrl) {
+  if (!fileUrl) return '#';
+  if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) return fileUrl;
+  return `${API_BASE}${fileUrl}`;
+}
+
 // ── File upload helper (uses FormData, bypasses JSON api()) ──────────────────
 async function apiUpload(path, formData) {
   const token = getToken();
@@ -52,6 +60,74 @@ async function apiUpload(path, formData) {
   try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
   if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
   return data;
+}
+
+// ── Client-side image compression ────────────────────────────────────────────
+// Compresses JPG/PNG to targetMB using Canvas. PDFs pass through unchanged.
+// Rejects with a user-friendly error if the image is too large to process
+// (> 15 MB) or if the browser canvas times out after 20 seconds.
+async function compressImage(file, targetMB = 1.4) {
+  if (file.type === 'application/pdf') return file;
+
+  const MAX_INPUT_MB = 15;
+  if (file.size > MAX_INPUT_MB * 1024 * 1024) {
+    throw new Error(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed is ${MAX_INPUT_MB} MB.`);
+  }
+
+  const targetBytes = targetMB * 1024 * 1024;
+  if (file.size <= targetBytes) return file; // already small enough
+
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+
+    // Safety: if canvas hangs for any reason, reject after 20s
+    const timer = setTimeout(() => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Image took too long to compress. Try a smaller file.'));
+    }, 20000);
+
+    img.onload = () => {
+      clearTimeout(timer);
+      URL.revokeObjectURL(url);
+
+      // Cap max dimension to 1920px
+      const MAX_DIM = 1920;
+      let { width, height } = img;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const ratio = Math.min(MAX_DIM / width, MAX_DIM / height);
+        width  = Math.round(width  * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+      // Try descending quality levels until under targetBytes
+      const qualities = [0.85, 0.75, 0.65, 0.5, 0.4];
+      function tryNext(i) {
+        canvas.toBlob(blob => {
+          if (!blob) { reject(new Error('Compression failed — try a different image.')); return; }
+          if (blob.size <= targetBytes || i >= qualities.length - 1) {
+            resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+          } else {
+            tryNext(i + 1);
+          }
+        }, 'image/jpeg', qualities[i]);
+      }
+      tryNext(0);
+    };
+
+    img.onerror = () => {
+      clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      reject(new Error('Could not read image file. Please try a different file.'));
+    };
+
+    img.src = url;
+  });
 }
 
 // ── Time helpers ──────────────────────────────────────────────────────────────
@@ -136,9 +212,37 @@ function Field({ label, req, error, children }) {
   );
 }
 
+// ── Image preview helpers ─────────────────────────────────────────────────────
+function isImgFile(name) {
+  return /\.(jpg|jpeg|png|gif|webp)$/i.test(name || '');
+}
+
+// Wrapper that shows a thumbnail popup when hovering over an image doc link
+function ImgPreviewWrap({ href, fileName, blockStyle, children }) {
+  const [hov, setHov] = useState(false);
+  const isImg = isImgFile(fileName);
+  return (
+    <div
+      style={{ position: 'relative', ...blockStyle }}
+      onMouseEnter={() => isImg && setHov(true)}
+      onMouseLeave={() => setHov(false)}
+    >
+      {children}
+      {isImg && hov && (
+        <div className="doc-img-preview-popup">
+          <img src={href} alt={fileName} loading="lazy" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Document upload slot ──────────────────────────────────────────────────────
 function DocSlot({ label, existing, selected, onSelect, onClearSelected, onRemoveExisting, removing }) {
   const inputRef = useRef(null);
+  const [imgHov, setImgHov] = useState(false);
+  const [sizeErr, setSizeErr] = useState('');
+  const existingIsImg = isImgFile(existing?.file_name);
   return (
     <div className="hb-doc-slot">
       <div className="hb-doc-slot-label">{label}</div>
@@ -151,10 +255,12 @@ function DocSlot({ label, existing, selected, onSelect, onClearSelected, onRemov
           </button>
         </div>
       ) : existing ? (
-        <div className="hb-doc-chosen hb-doc-chosen--saved">
+        <div className="hb-doc-chosen hb-doc-chosen--saved" style={{ position: 'relative' }}
+          onMouseEnter={() => existingIsImg && setImgHov(true)}
+          onMouseLeave={() => setImgHov(false)}>
           <FileText size={12} />
           <a className="hb-doc-fname"
-            href={`${API_BASE}${existing.file_url}`}
+            href={fileHref(existing.file_url)}
             target="_blank" rel="noreferrer"
             title={existing.file_name}>
             {existing.file_name}
@@ -167,6 +273,11 @@ function DocSlot({ label, existing, selected, onSelect, onClearSelected, onRemov
             title="Remove document" disabled={removing}>
             <Trash2 size={11} />
           </button>
+          {existingIsImg && imgHov && (
+            <div className="doc-img-preview-popup">
+              <img src={fileHref(existing.file_url)} alt={existing.file_name} loading="lazy" />
+            </div>
+          )}
         </div>
       ) : (
         <button type="button" className="hb-doc-upload-btn"
@@ -174,11 +285,19 @@ function DocSlot({ label, existing, selected, onSelect, onClearSelected, onRemov
           <Upload size={12} /> Choose file
         </button>
       )}
+      {sizeErr && <span className="hb-field-err"><AlertCircle size={11} /> {sizeErr}</span>}
       <input ref={inputRef} type="file" style={{ display: 'none' }}
         accept=".pdf,.jpg,.jpeg,.png"
         onChange={e => {
           const f = e.target.files?.[0];
-          if (f) onSelect(f);
+          if (!f) return;
+          setSizeErr('');
+          if (f.size > 15 * 1024 * 1024) {
+            setSizeErr(`File too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`);
+            e.target.value = '';
+            return;
+          }
+          onSelect(f);
           e.target.value = '';
         }} />
     </div>
@@ -422,29 +541,39 @@ function HubModal({ hub, onClose, onSaved }) {
 
       const hubId = r.item.id;
 
-      // Upload hub images (multiple, up to 5)
+      // Upload hub images (multiple, up to 5) — compress before sending
+      const uploadErrors = [];
       for (const file of (docFiles['hub_image'] || [])) {
         try {
+          const compressed = await compressImage(file);
           const fd = new FormData();
           fd.append('doc_type', 'hub_image');
-          fd.append('document', file);
+          fd.append('document', compressed);
           await apiUpload(`/api/hubs/${hubId}/documents`, fd);
         } catch (err) {
-          console.warn('Hub image upload failed:', err.message);
+          uploadErrors.push(`Hub image "${file.name}": ${err.message}`);
         }
       }
-      // Upload other documents
+      // Upload other documents — compress images, pass PDFs through
       for (const dt of DOC_TYPES.filter(d => d.key !== 'hub_image')) {
         const file = docFiles[dt.key];
         if (!file) continue;
         try {
+          const compressed = await compressImage(file);
           const fd = new FormData();
           fd.append('doc_type', dt.key);
-          fd.append('document', file);
+          fd.append('document', compressed);
           await apiUpload(`/api/hubs/${hubId}/documents`, fd);
         } catch (err) {
-          console.warn(`Doc upload failed (${dt.key}):`, err.message);
+          uploadErrors.push(`${dt.label} "${file.name}": ${err.message}`);
         }
+      }
+
+      if (uploadErrors.length) {
+        // Hub was saved but some files failed — surface the errors
+        setApiErr(`Hub saved, but some files failed to upload:\n${uploadErrors.join('\n')}`);
+        setSaving(false);
+        return;
       }
 
       onSaved(r.item);
@@ -463,7 +592,6 @@ function HubModal({ hub, onClose, onSaved }) {
         </div>
 
         <form className="hb-modal-body" onSubmit={handleSubmit} noValidate>
-          {apiErr && <div className="hb-err"><AlertCircle size={13} /> {apiErr}</div>}
           {loadingLoc && <div className="hb-loading-hint">Loading form data…</div>}
 
           {/* ── Basic Info ── */}
@@ -598,13 +726,15 @@ function HubModal({ hub, onClose, onSaved }) {
                 <div className="hb-section-sep"><Image size={12} /> Hub Image <span className="hb-section-opt">(Max 5 images)</span></div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
                   {existingImgs.map(img => (
-                    <div key={img.id} className="hb-doc-chosen hb-doc-chosen--saved">
-                      <FileText size={12} />
-                      <a className="hb-doc-fname" href={`${API_BASE}${img.file_url}`} target="_blank" rel="noreferrer" title={img.file_name}>{img.file_name}</a>
-                      <button type="button" className="hb-doc-rm-btn" onClick={() => handleRemoveHubImage(img.id)} disabled={removingDoc === img.id} title="Remove">
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
+                    <ImgPreviewWrap key={img.id} href={fileHref(img.file_url)} fileName={img.file_name}>
+                      <div className="hb-doc-chosen hb-doc-chosen--saved">
+                        <FileText size={12} />
+                        <a className="hb-doc-fname" href={fileHref(img.file_url)} target="_blank" rel="noreferrer" title={img.file_name}>{img.file_name}</a>
+                        <button type="button" className="hb-doc-rm-btn" onClick={() => handleRemoveHubImage(img.id)} disabled={removingDoc === img.id} title="Remove">
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    </ImgPreviewWrap>
                   ))}
                   {newImgs.map((file, idx) => (
                     <div key={idx} className="hb-doc-chosen hb-doc-chosen--new">
@@ -626,6 +756,12 @@ function HubModal({ hub, onClose, onSaved }) {
                     onChange={e => {
                       const file = e.target.files?.[0];
                       if (!file) return;
+                      if (file.size > 15 * 1024 * 1024) {
+                        setApiErr(`Image too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`);
+                        e.target.value = '';
+                        return;
+                      }
+                      setApiErr('');
                       setDocFiles(d => {
                         const current = d.hub_image || [];
                         const existCount = (existingDocs['hub_image'] || []).length;
@@ -815,7 +951,7 @@ function HubModal({ hub, onClose, onSaved }) {
           {/* ── KYC Documents ── */}
           <div className="hb-section-sep">
             <Upload size={12} /> KYC Documents
-            <span className="hb-section-opt">(All optional · PDF, JPG, PNG · max 5 MB)</span>
+            <span className="hb-section-opt">(All optional · PDF, JPG, PNG · max 2 MB · images auto-compressed)</span>
           </div>
           <div className="hb-doc-grid">
             {DOC_TYPES
@@ -835,6 +971,11 @@ function HubModal({ hub, onClose, onSaved }) {
           </div>
         </form>
 
+        {apiErr && (
+          <div className="hb-err" style={{ margin: '0 20px 8px', borderRadius: 8 }}>
+            <AlertCircle size={13} /> {apiErr}
+          </div>
+        )}
         <div className="hb-modal-ftr">
           <button className="button secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="button primary" onClick={handleSubmit} disabled={saving || loadingLoc}>
@@ -1170,15 +1311,17 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
               <div className="hbv-section-title"><Image size={11} /> Hub Image</div>
               <div className="hbv-docs-list">
                 {docs.filter(d => d.doc_type === 'hub_image').map(doc => (
-                  <a key={doc.id} className="hbv-doc-item"
-                    href={`${API_BASE}${doc.file_url}`}
-                    target="_blank" rel="noreferrer">
-                    <FileText size={13} />
-                    <div>
-                      <div className="hbv-doc-type">Hub Image</div>
-                      <div className="hbv-doc-name">{doc.file_name}</div>
-                    </div>
-                  </a>
+                  <ImgPreviewWrap key={doc.id} href={fileHref(doc.file_url)} fileName={doc.file_name}>
+                    <a className="hbv-doc-item"
+                      href={fileHref(doc.file_url)}
+                      target="_blank" rel="noreferrer">
+                      <Image size={13} />
+                      <div>
+                        <div className="hbv-doc-type">Hub Image</div>
+                        <div className="hbv-doc-name">{doc.file_name}</div>
+                      </div>
+                    </a>
+                  </ImgPreviewWrap>
                 ))}
               </div>
             </div>
@@ -1192,15 +1335,17 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
                 {docs.filter(d => d.doc_type !== 'hub_image').map(doc => {
                   const dtConf = DOC_TYPES.find(dt => dt.key === doc.doc_type);
                   return (
-                    <a key={doc.id} className="hbv-doc-item"
-                      href={`${API_BASE}${doc.file_url}`}
-                      target="_blank" rel="noreferrer">
-                      <FileText size={13} />
-                      <div>
-                        <div className="hbv-doc-type">{dtConf?.label || doc.doc_type}</div>
-                        <div className="hbv-doc-name">{doc.file_name}</div>
-                      </div>
-                    </a>
+                    <ImgPreviewWrap key={doc.id} href={fileHref(doc.file_url)} fileName={doc.file_name}>
+                      <a className="hbv-doc-item"
+                        href={fileHref(doc.file_url)}
+                        target="_blank" rel="noreferrer">
+                        <FileText size={13} />
+                        <div>
+                          <div className="hbv-doc-type">{dtConf?.label || doc.doc_type}</div>
+                          <div className="hbv-doc-name">{doc.file_name}</div>
+                        </div>
+                      </a>
+                    </ImgPreviewWrap>
                   );
                 })}
               </div>
