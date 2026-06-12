@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import {
@@ -8,7 +8,12 @@ import {
   CheckCircle, Clock, Star, BarChart2, FileText, LogIn,
   Edit2, Save, X, Award, Zap, UserCheck, Target,
   AlertOctagon, Loader, MapPin, Hash, Globe,
+  UserPlus, BarChart, CalendarPlus, PhoneCall,
 } from 'lucide-react';
+import {
+  AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Legend,
+} from 'recharts';
 import '../styles/ProfilePage.css';
 
 // ── Role detection (same logic as UsersPage) ─────────────────────────────────
@@ -50,28 +55,70 @@ function activityLabel(type, oldVal, newVal) {
   }
 }
 
-// ── Mini bar chart (no external lib) ─────────────────────────────────────────
-function MiniBarChart({ data }) {
-  if (!data?.length) return <div className="prfl-chart-empty">No trend data yet</div>;
-  const max = Math.max(...data.map(d => parseInt(d.total) || 0), 1);
+// ── Lead trend area chart (Recharts) ─────────────────────────────────────────
+function LeadTrendChart({ data, loading }) {
+  if (loading) return <div className="prfl-chart-empty"><Loader size={18} style={{ animation: 'prfl-spin 0.8s linear infinite' }} /></div>;
+  if (!data?.length) return <div className="prfl-chart-empty">No data for this period</div>;
+  const chartData = data.map(d => ({
+    label: d.label,
+    'Total Leads':     parseInt(d.total)     || 0,
+    'Converted Leads': parseInt(d.converted) || 0,
+  }));
   return (
-    <div className="prfl-chart">
-      {data.map((d, i) => {
-        const h  = Math.max(4, ((parseInt(d.total)     || 0) / max) * 80);
-        const ch = Math.max(0, ((parseInt(d.converted) || 0) / max) * 80);
-        return (
-          <div key={i} className="prfl-chart-col" title={`${d.month}: ${d.total} leads, ${d.converted} converted`}>
-            <div className="prfl-chart-bar-wrap">
-              <div className="prfl-chart-bar prfl-chart-bar--total" style={{ height: h }}  />
-              <div className="prfl-chart-bar prfl-chart-bar--conv"  style={{ height: ch }} />
-            </div>
-            <div className="prfl-chart-label">{d.month}</div>
-          </div>
-        );
-      })}
-      <div className="prfl-chart-legend">
-        <span><span className="prfl-chart-dot prfl-chart-dot--total" />Total</span>
-        <span><span className="prfl-chart-dot prfl-chart-dot--conv"  />Converted</span>
+    <ResponsiveContainer width="100%" height={220}>
+      <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+        <defs>
+          <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"  stopColor="#93c5fd" stopOpacity={0.4} />
+            <stop offset="95%" stopColor="#93c5fd" stopOpacity={0.05} />
+          </linearGradient>
+          <linearGradient id="gradConv" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%"  stopColor="#2563eb" stopOpacity={0.2} />
+            <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+        <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+        <Tooltip
+          contentStyle={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ fontWeight: 600, color: 'var(--text)' }}
+        />
+        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 12 }} />
+        <Area type="monotone" dataKey="Total Leads"     stroke="#93c5fd" strokeWidth={2} fill="url(#gradTotal)" dot={{ fill: '#93c5fd', r: 4 }} activeDot={{ r: 5 }} />
+        <Area type="monotone" dataKey="Converted Leads" stroke="#2563eb" strokeWidth={2} fill="url(#gradConv)"  dot={{ fill: '#2563eb', r: 4 }} activeDot={{ r: 5 }} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Conversion rate donut ─────────────────────────────────────────────────────
+function ConversionDonut({ converted, total }) {
+  const pct   = total > 0 ? (converted / total) * 100 : 0;
+  const r     = 54;
+  const circ  = 2 * Math.PI * r;
+  const dash  = (pct / 100) * circ;
+  return (
+    <div className="prfl-conv-donut-wrap">
+      <div className="prfl-conv-donut-pct" style={{ color: '#16a34a' }}>{pct.toFixed(1)}%</div>
+      <div className="prfl-conv-donut-sub">{converted} of {total} leads converted</div>
+      <div style={{ position: 'relative', width: 140, height: 140, margin: '16px auto 0' }}>
+        <svg width="140" height="140" viewBox="0 0 140 140">
+          <circle cx="70" cy="70" r={r} fill="none" stroke="var(--border)" strokeWidth="12" />
+          {pct > 0 && (
+            <circle
+              cx="70" cy="70" r={r} fill="none"
+              stroke="#16a34a" strokeWidth="12"
+              strokeDasharray={`${dash} ${circ - dash}`}
+              strokeLinecap="round"
+              transform="rotate(-90 70 70)"
+            />
+          )}
+          <text x="70" y="75" textAnchor="middle" fontSize="18" fontWeight="700" fill="var(--text)">{pct.toFixed(0)}%</text>
+        </svg>
+      </div>
+      <div className="prfl-conv-donut-hint">
+        {pct === 0 ? 'Keep engaging your leads to improve conversion rate.' : `Great work! ${pct.toFixed(1)}% conversion achieved.`}
       </div>
     </div>
   );
@@ -105,13 +152,23 @@ const COMING_GRADIENTS = [
   'linear-gradient(135deg,#fdf4ff,#f5d0fe)',
 ];
 
-function KpiCard({ icon, color, label, val, sub, gradient }) {
+function KpiCard({ icon, color, label, val, sub, gradient, trend }) {
+  // trend: { pct: number, dir: 'up'|'down'|'neutral' } | null
+  const trendEl = trend ? (
+    <div className={`prfl-kpi-trend prfl-kpi-trend--${trend.dir}`}>
+      {trend.dir === 'up' ? '↑' : trend.dir === 'down' ? '↓' : '—'}
+      {trend.dir !== 'neutral'
+        ? ` ${Math.abs(trend.pct).toFixed(0)}% vs last month`
+        : ' No change'}
+    </div>
+  ) : null;
   return (
     <div className="prfl-kpi-card">
       <div className="prfl-kpi-icon" style={{ background: gradient || (color + '18'), color }}>{icon}</div>
       <div className="prfl-kpi-val" style={{ color }}>{val}</div>
-      {sub && <div className="prfl-kpi-sub">{sub}</div>}
       <div className="prfl-kpi-lbl">{label}</div>
+      {trendEl}
+      {sub && <div className="prfl-kpi-sub">{sub}</div>}
     </div>
   );
 }
@@ -461,7 +518,11 @@ function RoleCreatorPanel() {
   }
 
   async function handleDelete(role) {
-    if (!window.confirm(`Delete role "${role.name}"? This cannot be undone.`)) return;
+    const userCount = role.user_count || 0;
+    const warning = userCount > 0
+      ? `⚠️ "${role.name}" is currently assigned to ${userCount} user${userCount > 1 ? 's' : ''}. Their role label will be removed.\n\n`
+      : '';
+    if (!window.confirm(`${warning}Delete role "${role.name}"? This cannot be undone.`)) return;
     setDeleting(role.id);
     try {
       await api(`/api/roles/${role.id}`, { method: 'DELETE' });
@@ -528,6 +589,9 @@ function RoleCreatorPanel() {
                     {role.description && <div className="rc-row-desc">{role.description}</div>}
                     <div className="rc-row-meta">
                       <span className="rc-row-perms">{permCount} permission{permCount !== 1 ? 's' : ''}</span>
+                      {(role.user_count > 0) && (
+                        <span className="rc-row-perms" style={{ color: '#0891b2' }}>{role.user_count} user{role.user_count !== 1 ? 's' : ''}</span>
+                      )}
                       {permCount > 0 && (
                         <span className="rc-row-codes">
                           {(role.permissions || []).slice(0, 3).map(c => (
@@ -924,6 +988,7 @@ function LogsPanel() {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ProfilePage() {
   const { user, setUser } = useAuth();
+  const navigate = useNavigate();
   const role = detectRole(user);
 
   const perm         = new Set(user?.permissions || []);
@@ -941,7 +1006,6 @@ export default function ProfilePage() {
     ...(isAdmin        ? [{ key: 'admin',     label: 'Admin',      Icon: Shield  }] : []),
     ...(isSuperAdmin   ? [{ key: 'superadmin',label: 'Super Admin',Icon: Zap     }] : []),
     ...(isSuperAdmin   ? [{ key: 'push',      label: 'Push Alerts', Icon: Bell   }] : []),
-    { key: 'security',   label: 'Security',    Icon: Lock       },
     { key: 'settings',   label: 'Settings',    Icon: Settings   },
   ];
 
@@ -950,6 +1014,12 @@ export default function ProfilePage() {
     const t = searchParams.get('tab');
     return t ? t : 'overview';
   });
+
+  // Sub-tab for Activity tab: 'leads' | 'system'
+  const [actSubTab, setActSubTab] = useState('leads');
+
+  // Sub-tab for Settings tab: 'notifications' | 'password'
+  const [settingsSubTab, setSettingsSubTab] = useState('notifications');
 
   // If URL tab param changes (e.g. navigated from dropdown)
   const prevTabParam = useRef(searchParams.get('tab'));
@@ -969,6 +1039,18 @@ export default function ProfilePage() {
   const [loadingStats,    setLoadingStats]    = useState(false);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [loadingTeam,     setLoadingTeam]     = useState(false);
+
+  // ── Trend chart ──────────────────────────────────────────────────────────
+  const TREND_RANGES = [
+    { key: '7d',  label: 'Last 7 Days'   },
+    { key: '30d', label: 'Last 30 Days'  },
+    { key: '3m',  label: 'Last 3 Months' },
+    { key: '6m',  label: 'Last 6 Months' },
+  ];
+  const [trendRange,      setTrendRange]      = useState('7d');
+  const [trendData,       setTrendData]       = useState(null);
+  const [loadingTrend,    setLoadingTrend]    = useState(false);
+  const [trendDropOpen,   setTrendDropOpen]   = useState(false);
 
   // ── Edit profile ─────────────────────────────────────────────────────────
   const [editing,  setEditing]  = useState(false);
@@ -1012,6 +1094,25 @@ export default function ProfilePage() {
       api('/api/me/stats').then(r => setStats(r)).catch(() => {}).finally(() => setLoadingStats(false));
     }
   }, [activeTab, stats]);
+
+  // Fetch trend chart data whenever range changes or tab becomes active
+  useEffect(() => {
+    if (activeTab !== 'performance') return;
+    setLoadingTrend(true);
+    setTrendData(null);
+    api(`/api/me/trend?range=${trendRange}`)
+      .then(r => setTrendData(r.rows || []))
+      .catch(() => setTrendData([]))
+      .finally(() => setLoadingTrend(false));
+  }, [activeTab, trendRange]);
+
+  // Close trend dropdown on outside click
+  useEffect(() => {
+    if (!trendDropOpen) return;
+    const handler = () => setTrendDropOpen(false);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [trendDropOpen]);
 
   useEffect(() => {
     if (activeTab === 'activity' && !activity.length) {
@@ -1129,64 +1230,88 @@ export default function ProfilePage() {
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="prfl-shell">
+    <div className="prfl-page">
 
-      {/* ── LEFT SIDEBAR ── */}
-      <aside className="prfl-sidebar">
-        {/* Cover banner */}
-        <div className="prfl-cover" />
+      {/* ── HERO HEADER ── */}
+      <div className="prfl-hero">
+        {/* Decorative wave lines */}
+        <svg className="prfl-hero-wave" viewBox="0 0 900 170" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+          <path d="M0,55 C120,25 240,75 360,45 C480,15 600,65 720,38 C800,18 860,48 900,38" stroke="rgba(124,58,237,0.15)" strokeWidth="1.5"/>
+          <path d="M0,90 C120,62 240,108 360,80 C480,52 600,96 720,72 C800,54 860,80 900,72" stroke="rgba(124,58,237,0.10)" strokeWidth="1.5"/>
+          <path d="M0,125 C120,102 240,138 360,115 C480,92 600,125 720,108 C800,95 860,112 900,106" stroke="rgba(79,70,229,0.08)" strokeWidth="1"/>
+        </svg>
 
-        {/* Avatar */}
-        <div className="prfl-avatar-wrap">
-          <div className="prfl-avatar">{initials}</div>
-          <div className="prfl-online-dot" />
-        </div>
-
-        <div className="prfl-sb-body">
-          <div className="prfl-sb-name">{user.name}</div>
-          <div className="prfl-sb-email">{user.email}</div>
-          <span className="prfl-role-badge" style={{ color: role.color, background: role.bg, borderColor: role.color + '30' }}>
-            {role.icon}&nbsp;{role.label}
-          </span>
-
-          <div className="prfl-sb-divider" />
-
-          <div className="prfl-sb-meta">
-            {user.department  && <div className="prfl-sb-meta-row"><Building2 size={12} />{user.department}</div>}
-            {user.mobile      && <div className="prfl-sb-meta-row"><Phone size={12} />{user.mobile}</div>}
-            {user.joining_date && <div className="prfl-sb-meta-row"><Calendar size={12} />Joined {fmtDate(user.joining_date)}</div>}
-            {user.last_login   && <div className="prfl-sb-meta-row"><LogIn size={12} />Last login {timeAgo(user.last_login)}</div>}
-            {user.manager_name && <div className="prfl-sb-meta-row"><UserCheck size={12} />Reports to {user.manager_name}</div>}
-          </div>
-
-          {stats && (
-            <>
-              <div className="prfl-sb-divider" />
-              <div className="prfl-sb-stats">
-                <div className="prfl-sb-stat">
-                  <div className="prfl-sb-stat-val">{stats.total_leads}</div>
-                  <div className="prfl-sb-stat-lbl">Leads</div>
-                </div>
-                <div className="prfl-sb-stat">
-                  <div className="prfl-sb-stat-val" style={{ color:'#16a34a' }}>{stats.converted_leads}</div>
-                  <div className="prfl-sb-stat-lbl">Won</div>
-                </div>
-                <div className="prfl-sb-stat">
-                  <div className="prfl-sb-stat-val" style={{ color:'#dc2626' }}>{stats.overdue_followups}</div>
-                  <div className="prfl-sb-stat-lbl">Overdue</div>
-                </div>
+        {/* Top row: avatar + info + edit button */}
+        <div className="prfl-hero-top">
+          <div className="prfl-hero-left">
+            <div className="prfl-avatar-wrap">
+              <div className="prfl-avatar">{initials}</div>
+              <div className="prfl-online-dot" />
+            </div>
+            <div className="prfl-hero-info">
+              <div className="prfl-hero-name">
+                {user.name}
+                {user.is_super_admin && <span className="prfl-hero-verified">✓</span>}
               </div>
-            </>
-          )}
-
-          <button className="prfl-edit-btn" onClick={startEdit}>
+              <div className="prfl-hero-email">{user.email}</div>
+              <span className="prfl-role-badge" style={{ color: role.color, background: role.bg, borderColor: role.color + '30' }}>
+                {role.icon}&nbsp;{role.label}
+              </span>
+            </div>
+          </div>
+          <button className="prfl-edit-hero-btn" onClick={startEdit}>
             <Edit2 size={13} /> Edit Profile
           </button>
         </div>
-      </aside>
 
-      {/* ── MAIN CONTENT ── */}
-      <div className="prfl-main">
+        {/* Bottom stats strip */}
+        <div className="prfl-hero-stats">
+          <div className="prfl-hero-stats-item">
+            <User size={13} className="prfl-hero-meta-icon" />
+            <div>
+              <div className="prfl-hero-meta-label">User ID</div>
+              <div className="prfl-hero-meta-val">{user.id}</div>
+            </div>
+          </div>
+          <div className="prfl-hero-meta-sep" />
+          <div className="prfl-hero-stats-item">
+            <Calendar size={13} className="prfl-hero-meta-icon" />
+            <div>
+              <div className="prfl-hero-meta-label">Joined</div>
+              <div className="prfl-hero-meta-val">{fmtDate(user.joining_date)}</div>
+            </div>
+          </div>
+          <div className="prfl-hero-meta-sep" />
+          <div className="prfl-hero-stats-item">
+            <LogIn size={13} className="prfl-hero-meta-icon" />
+            <div>
+              <div className="prfl-hero-meta-label">Last Login</div>
+              <div className="prfl-hero-meta-val">{timeAgo(user.last_login)}</div>
+            </div>
+          </div>
+          <div className="prfl-hero-meta-sep" />
+          <div className="prfl-hero-stats-item">
+            <Globe size={13} className="prfl-hero-meta-icon" />
+            <div>
+              <div className="prfl-hero-meta-label">Timezone</div>
+              <div className="prfl-hero-meta-val">Asia/Kolkata (UTC+5:30)</div>
+            </div>
+          </div>
+          {user.mobile && <>
+            <div className="prfl-hero-meta-sep" />
+            <div className="prfl-hero-stats-item">
+              <Phone size={13} className="prfl-hero-meta-icon" />
+              <div>
+                <div className="prfl-hero-meta-label">Mobile</div>
+                <div className="prfl-hero-meta-val">{user.mobile}</div>
+              </div>
+            </div>
+          </>}
+        </div>
+      </div>
+
+      {/* ── CONTENT (tabs + body) ── */}
+      <div className="prfl-content">
 
         {/* Tab bar */}
         <div className="prfl-tabs">
@@ -1214,33 +1339,35 @@ export default function ProfilePage() {
                 <KpiCard icon={<Activity size={18}/>}      color="#0891b2" gradient="linear-gradient(135deg,#cffafe,#a5f3fc)" label="Activities (Month)" val={stats?.monthly_activities ?? '—'} />
               </div>
 
-              <div className="prfl-card">
-                <SectionHeader icon={<User size={15}/>} title="Account Information" />
-                <div className="prfl-info-grid">
-                  <InfoRow icon={<User size={13}/>}      label="Full Name"    val={user.name} />
-                  <InfoRow icon={<Mail size={13}/>}      label="Email"        val={user.email} />
-                  <InfoRow icon={<Phone size={13}/>}     label="Mobile"       val={user.mobile || '—'} />
-                  <InfoRow icon={<Building2 size={13}/>} label="Department"   val={user.department || '—'} />
-                  <InfoRow icon={<Calendar size={13}/>}  label="Joining Date" val={fmtDate(user.joining_date)} />
-                  <InfoRow icon={<Shield size={13}/>}    label="Role"         val={<span style={{ color: role.color, fontWeight: 600 }}>{role.icon} {role.label}</span>} />
-                  <InfoRow icon={<LogIn size={13}/>}     label="Last Login"   val={timeAgo(user.last_login)} />
-                  <InfoRow icon={<UserCheck size={13}/>} label="Reports To"   val={user.manager_name || '—'} />
-                </div>
-              </div>
-
-              {user.permissions?.length > 0 && (
+              <div className="prfl-overview-grid">
                 <div className="prfl-card">
-                  <SectionHeader icon={<Shield size={15}/>} title="Permissions" count={user.permissions.length} />
-                  <div className="prfl-perms-grid">
-                    {user.permissions.map((code, idx) => (
-                      <span key={code} className="prfl-perm-chip" style={{ '--chip-color': ['#2563eb','#16a34a','#7c3aed','#0891b2','#d97706','#dc2626'][idx % 6] }}>
-                        <CheckCircle size={9} />
-                        {code.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
-                      </span>
-                    ))}
+                  <SectionHeader icon={<User size={15}/>} title="Account Information" />
+                  <div className="prfl-info-grid">
+                    <InfoRow icon={<User size={13}/>}      label="Full Name"    val={user.name} />
+                    <InfoRow icon={<Mail size={13}/>}      label="Email"        val={user.email} />
+                    <InfoRow icon={<Phone size={13}/>}     label="Mobile"       val={user.mobile || '—'} />
+                    <InfoRow icon={<Building2 size={13}/>} label="Department"   val={user.department || '—'} />
+                    <InfoRow icon={<Calendar size={13}/>}  label="Joining Date" val={fmtDate(user.joining_date)} />
+                    <InfoRow icon={<Shield size={13}/>}    label="Role"         val={<span style={{ color: role.color, fontWeight: 600 }}>{role.icon} {role.label}</span>} />
+                    <InfoRow icon={<LogIn size={13}/>}     label="Last Login"   val={timeAgo(user.last_login)} />
+                    <InfoRow icon={<UserCheck size={13}/>} label="Reports To"   val={user.manager_name || '—'} />
                   </div>
                 </div>
-              )}
+
+                {user.permissions?.length > 0 && (
+                  <div className="prfl-card">
+                    <SectionHeader icon={<Shield size={15}/>} title="Permissions" count={user.permissions.length} />
+                    <div className="prfl-perms-grid">
+                      {user.permissions.map((code, idx) => (
+                        <span key={code} className="prfl-perm-chip" style={{ '--chip-color': ['#2563eb','#16a34a','#7c3aed','#0891b2','#d97706','#dc2626'][idx % 6] }}>
+                          <CheckCircle size={9} />
+                          {code.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>}
           </div>
         )}
@@ -1248,61 +1375,141 @@ export default function ProfilePage() {
         {/* ───── PERFORMANCE ───── */}
         {activeTab === 'performance' && (
           <div className="prfl-tab-body">
-            {loadingStats ? <Spinner /> : <>
-              <div className="prfl-kpi-grid">
-                <KpiCard icon={<Users size={18}/>}       color="#2563eb" gradient="linear-gradient(135deg,#dbeafe,#bfdbfe)" label="Total Leads"        val={stats?.total_leads        ?? '—'} />
-                <KpiCard icon={<CheckCircle size={18}/>} color="#16a34a" gradient="linear-gradient(135deg,#dcfce7,#bbf7d0)" label="Converted Leads"    val={stats?.converted_leads    ?? '—'} />
-                <KpiCard icon={<Clock size={18}/>}       color="#d97706" gradient="linear-gradient(135deg,#fef3c7,#fde68a)" label="Pending Leads"      val={stats?.pending_leads      ?? '—'} />
-                <KpiCard icon={<FileText size={18}/>}    color="#0891b2" gradient="linear-gradient(135deg,#cffafe,#a5f3fc)" label="Notes Added"        val={stats?.notes_count        ?? '—'} />
-                <KpiCard icon={<Activity size={18}/>}    color="#7c3aed" gradient="linear-gradient(135deg,#ede9fe,#ddd6fe)" label="Monthly Activities" val={stats?.monthly_activities ?? '—'} />
-                <KpiCard icon={<Target size={18}/>}      color="#d97706" gradient="linear-gradient(135deg,#fff7ed,#fed7aa)" label="Follow-ups Today"   val={stats?.today_followups    ?? '—'} />
-              </div>
+            {loadingStats ? <Spinner /> : (() => {
+              function calcTrend(cur, prev) {
+                if (prev == null) return null;
+                if (prev === 0)   return cur > 0 ? { dir: 'up', pct: 100 } : { dir: 'neutral', pct: 0 };
+                const pct = ((cur - prev) / prev) * 100;
+                return { dir: pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral', pct };
+              }
 
-              <div className="prfl-card">
-                <SectionHeader icon={<TrendingUp size={15}/>} title="Monthly Lead Trend (Last 6 Months)" />
-                <MiniBarChart data={stats?.trend} />
-              </div>
+              const t = {
+                total:      calcTrend(stats?.total_leads,        stats?.prev_total_leads),
+                converted:  calcTrend(stats?.converted_leads,    stats?.prev_converted_leads),
+                pending:    calcTrend(stats?.pending_leads,      stats?.prev_pending_leads),
+                notes:      calcTrend(stats?.notes_count,        stats?.prev_notes_count),
+                activities: calcTrend(stats?.monthly_activities, stats?.prev_monthly_activities),
+                followups:  calcTrend(stats?.today_followups,    stats?.prev_today_followups),
+              };
 
-              {stats?.total_leads > 0 && (
-                <div className="prfl-card">
-                  <SectionHeader icon={<Award size={15}/>} title="Conversion Rate" />
-                  <div className="prfl-conv-rate">
-                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
-                      <div className="prfl-conv-pct">{((stats.converted_leads / stats.total_leads) * 100).toFixed(1)}%</div>
-                      <div className="prfl-conv-label" style={{ paddingBottom: 6 }}>{stats.converted_leads} of {stats.total_leads} leads converted</div>
+              return <>
+                {/* KPI cards */}
+                <div className="prfl-kpi-grid">
+                  <KpiCard icon={<Users size={20}/>}       color="#2563eb" gradient="linear-gradient(135deg,#dbeafe,#bfdbfe)" label="Total Leads"        val={stats?.total_leads        ?? '—'} trend={t.total} />
+                  <KpiCard icon={<CheckCircle size={20}/>} color="#16a34a" gradient="linear-gradient(135deg,#dcfce7,#bbf7d0)" label="Converted Leads"    val={stats?.converted_leads    ?? '—'} trend={t.converted} />
+                  <KpiCard icon={<Clock size={20}/>}       color="#d97706" gradient="linear-gradient(135deg,#fef3c7,#fde68a)" label="Pending Leads"      val={stats?.pending_leads      ?? '—'} trend={t.pending} />
+                  <KpiCard icon={<FileText size={20}/>}    color="#0891b2" gradient="linear-gradient(135deg,#cffafe,#a5f3fc)" label="Notes Added"        val={stats?.notes_count        ?? '—'} trend={t.notes} />
+                  <KpiCard icon={<Activity size={20}/>}    color="#7c3aed" gradient="linear-gradient(135deg,#ede9fe,#ddd6fe)" label="Monthly Activities" val={stats?.monthly_activities ?? '—'} trend={t.activities} />
+                  <KpiCard icon={<Target size={20}/>}      color="#d97706" gradient="linear-gradient(135deg,#fff7ed,#fed7aa)" label="Follow-ups Today"   val={stats?.today_followups    ?? '—'} trend={t.followups} />
+                </div>
+
+                {/* Chart row */}
+                <div className="prfl-perf-chart-row">
+                  <div className="prfl-card prfl-perf-chart-main">
+                    <div className="prfl-perf-chart-hd">
+                      <SectionHeader icon={<TrendingUp size={15}/>} title={`Lead Trend — ${TREND_RANGES.find(r=>r.key===trendRange)?.label}`} />
+                      {/* Range dropdown */}
+                      <div className="prfl-trend-drop-wrap" onClick={e => e.stopPropagation()}>
+                        <button
+                          className="prfl-perf-range-badge"
+                          onClick={() => setTrendDropOpen(o => !o)}
+                        >
+                          {TREND_RANGES.find(r=>r.key===trendRange)?.label} ▾
+                        </button>
+                        {trendDropOpen && (
+                          <div className="prfl-trend-drop">
+                            {TREND_RANGES.map(r => (
+                              <button
+                                key={r.key}
+                                className={`prfl-trend-drop-item${trendRange===r.key?' prfl-trend-drop-item--active':''}`}
+                                onClick={() => { setTrendRange(r.key); setTrendDropOpen(false); }}
+                              >
+                                {r.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="prfl-conv-bar-wrap">
-                      <div className="prfl-conv-bar-fill" style={{ width: `${Math.min(100,(stats.converted_leads/stats.total_leads)*100)}%` }} />
-                    </div>
+                    <LeadTrendChart data={trendData} loading={loadingTrend} />
+                  </div>
+                  <div className="prfl-card prfl-perf-conv-card">
+                    <SectionHeader icon={<Award size={15}/>} title="Conversion Rate" />
+                    <ConversionDonut converted={stats?.converted_leads ?? 0} total={stats?.total_leads ?? 0} />
                   </div>
                 </div>
-              )}
-            </>}
+
+                {/* Quick Actions */}
+                <div className="prfl-perf-qa">
+                  <div className="prfl-perf-qa-title">QUICK ACTIONS</div>
+                  <div className="prfl-perf-qa-grid">
+                    {[
+                      { icon: <UserPlus  size={18} color="#16a34a"/>, label: 'Add New Lead',       bg: '#f0fdf4', path: '/leads?action=new'         },
+                      { icon: <Building2 size={18} color="#2563eb"/>, label: 'Create HUB',         bg: '#eff6ff', path: '/hubs?action=new'           },
+                      { icon: <CalendarPlus size={18} color="#7c3aed"/>, label: 'Schedule Activity', bg: '#f5f3ff', path: '/leads'                    },
+                      { icon: <PhoneCall size={18} color="#d97706"/>, label: 'Add Follow-up',      bg: '#fff7ed', path: '/leads'                     },
+                      { icon: <BarChart  size={18} color="#16a34a"/>, label: 'View Reports',       bg: '#f0fdf4', path: '/reports'                   },
+                    ].map(a => (
+                      <button key={a.label} className="prfl-qa-btn" onClick={() => navigate(a.path)}>
+                        <span className="prfl-qa-icon" style={{ background: a.bg }}>{a.icon}</span>
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>;
+            })()}
           </div>
         )}
 
         {/* ───── ACTIVITY ───── */}
         {activeTab === 'activity' && (
           <div className="prfl-tab-body">
-            <div className="prfl-card">
-              <SectionHeader icon={<Activity size={15}/>} title="Recent Lead Activities" />
-              {loadingActivity ? <Spinner /> : activity.length === 0
-                ? <div className="prfl-empty">No activity yet</div>
-                : (
-                  <div className="prfl-timeline">
-                    {activity.map(a => (
-                      <div key={a.id} className="prfl-timeline-item">
-                        <div className="prfl-tl-dot" />
-                        <div className="prfl-tl-content">
-                          <div className="prfl-tl-label">{activityLabel(a.type, a.old_value, a.new_value)}</div>
-                          <div className="prfl-tl-lead">{a.lead_name || a.lead_mobile || `Lead #${a.lead_id}`}</div>
-                          <div className="prfl-tl-time">{timeAgo(a.created_at)}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {/* Sub-tabs */}
+            <div className="act-subtabs">
+              <button
+                className={`act-subtab${actSubTab === 'leads' ? ' act-subtab--active' : ''}`}
+                onClick={() => setActSubTab('leads')}
+              >
+                📋 Lead Activity
+              </button>
+              {isSuperAdmin && (
+                <button
+                  className={`act-subtab${actSubTab === 'system' ? ' act-subtab--active' : ''}`}
+                  onClick={() => setActSubTab('system')}
+                >
+                  🔐 System Logs
+                </button>
+              )}
             </div>
+
+            {/* Lead Activity */}
+            {actSubTab === 'leads' && (
+              <div className="prfl-card">
+                <SectionHeader icon={<Activity size={15}/>} title="Recent Lead Activities" />
+                {loadingActivity ? <Spinner /> : activity.length === 0
+                  ? <div className="prfl-empty">No activity yet</div>
+                  : (
+                    <div className="prfl-timeline">
+                      {activity.map(a => (
+                        <div key={a.id} className="prfl-timeline-item">
+                          <div className="prfl-tl-dot" />
+                          <div className="prfl-tl-content">
+                            <div className="prfl-tl-label">{activityLabel(a.type, a.old_value, a.new_value)}</div>
+                            <div className="prfl-tl-lead">{a.lead_name || a.lead_mobile || `Lead #${a.lead_id}`}</div>
+                            <div className="prfl-tl-time">{timeAgo(a.created_at)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+              </div>
+            )}
+
+            {/* System Logs — super admin only */}
+            {actSubTab === 'system' && isSuperAdmin && (
+              <LogsPanel />
+            )}
           </div>
         )}
 
@@ -1385,24 +1592,6 @@ export default function ProfilePage() {
           <div className="prfl-tab-body">
             <CompanyDetailsCard />
             <RoleCreatorPanel />
-            <LogsPanel />
-            <div className="prfl-coming-grid">
-              {[
-                { label: 'Multiple Company Access',    icon: '🏢', g: COMING_GRADIENTS[0]  },
-                { label: 'Franchise / Branch Mgmt',   icon: '🌿', g: COMING_GRADIENTS[1]  },
-                { label: 'Subscription Plans',         icon: '💳', g: COMING_GRADIENTS[2]  },
-                { label: 'Billing Management',         icon: '🧾', g: COMING_GRADIENTS[3]  },
-                { label: 'API Key Management',         icon: '🔑', g: COMING_GRADIENTS[4]  },
-                { label: 'SMTP / Email Settings',      icon: '📧', g: COMING_GRADIENTS[5]  },
-                { label: 'WhatsApp / SMS Integration', icon: '💬', g: COMING_GRADIENTS[6]  },
-                { label: 'Backup & Restore',           icon: '🗄️', g: COMING_GRADIENTS[7]  },
-                { label: 'Permission Matrix',          icon: '🔒', g: COMING_GRADIENTS[8]  },
-                { label: 'Server Status',              icon: '🖥️', g: COMING_GRADIENTS[9]  },
-                { label: 'Error Logs',                 icon: '🚨', g: COMING_GRADIENTS[10] },
-              ].map(({ label, icon, g }) => (
-                <ComingSoon key={label} label={label} icon={icon} gradient={g} />
-              ))}
-            </div>
           </div>
         )}
 
@@ -1565,83 +1754,86 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* ───── SECURITY ───── */}
-        {activeTab === 'security' && (
-          <div className="prfl-tab-body">
-            <div className="prfl-card">
-              <SectionHeader icon={<Lock size={15}/>} title="Change Password" />
-              <p className="prfl-card-desc">Choose a strong password with at least 6 characters.</p>
-              {pwErr && <div className="prfl-alert prfl-alert--error">{pwErr}</div>}
-              {pwOk  && <div className="prfl-alert prfl-alert--success">Password updated successfully!</div>}
-              <form onSubmit={handleChangePw} className="prfl-pw-form">
-                <div className="prfl-field">
-                  <label>Current Password</label>
-                  <input type="password" required value={curPw} onChange={e => setCurPw(e.target.value)} placeholder="Enter current password" />
-                </div>
-                <div className="prfl-field">
-                  <label>New Password</label>
-                  <input type="password" required minLength={6} value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Min. 6 characters" />
-                </div>
-                <div className="prfl-field">
-                  <label>Confirm New Password</label>
-                  <input type="password" required minLength={6} value={confPw} onChange={e => setConfPw(e.target.value)} placeholder="Repeat new password" />
-                </div>
-                <button type="submit" className="prfl-btn-primary" disabled={pwBusy}>
-                  {pwBusy ? 'Updating…' : 'Update Password'}
-                </button>
-              </form>
-            </div>
-
-            <div className="prfl-card">
-              <SectionHeader icon={<LogIn size={15}/>} title="Login History" />
-              <div className="prfl-info-grid">
-                <InfoRow icon={<LogIn size={13}/>} label="Last Login"    val={user.last_login ? `${fmtDate(user.last_login)} · ${timeAgo(user.last_login)}` : 'No data yet'} />
-                <InfoRow icon={<Mail size={13}/>}  label="Account Email" val={user.email} />
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* ───── SETTINGS ───── */}
         {activeTab === 'settings' && (
           <div className="prfl-tab-body">
-            <div className="prfl-card">
-              <SectionHeader icon={<Bell size={15}/>} title="Notification Preferences" />
-              <div className="prfl-notif-list">
-                {[
-                  { key: 'overdue_lead',       label: 'Overdue Lead Alerts',       desc: 'When a lead follow-up is overdue',               color: '#dc2626' },
-                  { key: 'missed_followup',    label: 'Missed Follow-up Alerts',   desc: 'When a scheduled follow-up is missed',           color: '#d97706' },
-                  { key: 'high_priority_lead', label: 'High Priority Lead Alerts', desc: 'When a high priority lead is assigned',          color: '#7c3aed' },
-                  { key: 'daily_target',       label: 'Daily Target Alerts',       desc: 'When daily call target is not met by 6 PM',      color: '#2563eb' },
-                  { key: 'inactive_lead',      label: 'Inactive Lead Alerts',      desc: 'When a lead has no activity for 7+ days',        color: '#0891b2' },
-                  { key: 'lead_escalation',    label: 'Escalation Alerts',         desc: 'When a lead is escalated to manager',            color: '#9333ea' },
-                  { key: 'duplicate_lead',     label: 'Duplicate Lead Alerts',     desc: 'When a duplicate lead is detected',              color: '#16a34a' },
-                  { key: 'lead_assigned',      label: 'New Lead Assignment',       desc: 'When a lead is assigned to you',                 color: '#2563eb' },
-                  { key: 'lead_converted',        label: 'Lead Conversion',           desc: 'When a lead is won/converted',                        color: '#16a34a' },
-                  { key: 'no_activity',           label: 'No Activity Warning',       desc: 'When no CRM activity for 2+ hours during work hours', color: '#d97706' },
-                  { key: 'follow_up_scheduled',   label: 'Follow-up Scheduled',       desc: 'When a follow-up is scheduled on your lead',          color: '#0891b2' },
-                  { key: 'appointment_reminder',  label: 'Appointment Reminder',      desc: '30 min / 2 hr / 24 hr before an appointment',         color: '#7c3aed' },
-                  { key: 'note_added',            label: 'Note Added',                desc: 'When a note is added on your lead',                   color: '#d97706' },
-                ].map(item => (
-                  <div key={item.key} className="prfl-notif-row">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: 1 }}>
-                      <div className="prfl-notif-dot" style={{ background: notifSettings[item.key] ? item.color : 'var(--border)' }} />
-                      <div>
-                        <div className="prfl-notif-label">{item.label}</div>
-                        <div className="prfl-notif-desc">{item.desc}</div>
-                      </div>
-                    </div>
-                    <button
-                      className={`prfl-toggle${notifSettings[item.key] ? ' prfl-toggle--on' : ''}`}
-                      style={notifSettings[item.key] ? { background: item.color } : {}}
-                      onClick={() => saveNotifSettings({ [item.key]: !notifSettings[item.key] })}
-                    >
-                      <span className="prfl-toggle-knob" />
-                    </button>
-                  </div>
-                ))}
-              </div>
+            {/* Settings sub-tabs */}
+            <div className="act-subtabs">
+              <button className={`act-subtab${settingsSubTab === 'notifications' ? ' act-subtab--active' : ''}`} onClick={() => setSettingsSubTab('notifications')}>
+                🔔 Notifications
+              </button>
+              <button className={`act-subtab${settingsSubTab === 'password' ? ' act-subtab--active' : ''}`} onClick={() => setSettingsSubTab('password')}>
+                🔒 Password
+              </button>
             </div>
+
+            {/* Notifications sub-tab */}
+            {settingsSubTab === 'notifications' && (
+              <div className="prfl-card">
+                <SectionHeader icon={<Bell size={15}/>} title="Notification Preferences" />
+                <div className="prfl-notif-list">
+                  {[
+                    { key: 'overdue_lead',       label: 'Overdue Lead Alerts',       desc: 'When a lead follow-up is overdue',               color: '#dc2626' },
+                    { key: 'missed_followup',    label: 'Missed Follow-up Alerts',   desc: 'When a scheduled follow-up is missed',           color: '#d97706' },
+                    { key: 'high_priority_lead', label: 'High Priority Lead Alerts', desc: 'When a high priority lead is assigned',          color: '#7c3aed' },
+                    { key: 'daily_target',       label: 'Daily Target Alerts',       desc: 'When daily call target is not met by 6 PM',      color: '#2563eb' },
+                    { key: 'inactive_lead',      label: 'Inactive Lead Alerts',      desc: 'When a lead has no activity for 7+ days',        color: '#0891b2' },
+                    { key: 'lead_escalation',    label: 'Escalation Alerts',         desc: 'When a lead is escalated to manager',            color: '#9333ea' },
+                    { key: 'duplicate_lead',     label: 'Duplicate Lead Alerts',     desc: 'When a duplicate lead is detected',              color: '#16a34a' },
+                    { key: 'lead_assigned',      label: 'New Lead Assignment',       desc: 'When a lead is assigned to you',                 color: '#2563eb' },
+                    { key: 'lead_converted',     label: 'Lead Conversion',           desc: 'When a lead is won/converted',                   color: '#16a34a' },
+                    { key: 'no_activity',        label: 'No Activity Warning',       desc: 'When no CRM activity for 2+ hours during work hours', color: '#d97706' },
+                    { key: 'follow_up_scheduled',label: 'Follow-up Scheduled',       desc: 'When a follow-up is scheduled on your lead',     color: '#0891b2' },
+                    { key: 'appointment_reminder',label: 'Appointment Reminder',     desc: '30 min / 2 hr / 24 hr before an appointment',   color: '#7c3aed' },
+                    { key: 'note_added',         label: 'Note Added',                desc: 'When a note is added on your lead',              color: '#d97706' },
+                  ].map(item => (
+                    <div key={item.key} className="prfl-notif-row">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: 1 }}>
+                        <div className="prfl-notif-dot" style={{ background: notifSettings[item.key] ? item.color : 'var(--border)' }} />
+                        <div>
+                          <div className="prfl-notif-label">{item.label}</div>
+                          <div className="prfl-notif-desc">{item.desc}</div>
+                        </div>
+                      </div>
+                      <button
+                        className={`prfl-toggle${notifSettings[item.key] ? ' prfl-toggle--on' : ''}`}
+                        style={notifSettings[item.key] ? { background: item.color } : {}}
+                        onClick={() => saveNotifSettings({ [item.key]: !notifSettings[item.key] })}
+                      >
+                        <span className="prfl-toggle-knob" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Password sub-tab */}
+            {settingsSubTab === 'password' && (
+              <div className="prfl-card">
+                <SectionHeader icon={<Lock size={15}/>} title="Change Password" />
+                <p className="prfl-card-desc">Choose a strong password with at least 6 characters.</p>
+                {pwErr && <div className="prfl-alert prfl-alert--error">{pwErr}</div>}
+                {pwOk  && <div className="prfl-alert prfl-alert--success">Password updated successfully!</div>}
+                <form onSubmit={handleChangePw} className="prfl-pw-form">
+                  <div className="prfl-field">
+                    <label>Current Password</label>
+                    <input type="password" required value={curPw} onChange={e => setCurPw(e.target.value)} placeholder="Enter current password" />
+                  </div>
+                  <div className="prfl-field">
+                    <label>New Password</label>
+                    <input type="password" required minLength={6} value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Min. 6 characters" />
+                  </div>
+                  <div className="prfl-field">
+                    <label>Confirm New Password</label>
+                    <input type="password" required minLength={6} value={confPw} onChange={e => setConfPw(e.target.value)} placeholder="Repeat new password" />
+                  </div>
+                  <button type="submit" className="prfl-btn-primary" disabled={pwBusy}>
+                    {pwBusy ? 'Updating…' : 'Update Password'}
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         )}
 

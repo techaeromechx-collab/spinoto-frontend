@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import PaginationBar from '../components/PaginationBar.jsx';
 import {
   FileText, Plus, Search, RefreshCw, X, ChevronRight,
-  CheckCircle2, XCircle, Clock, AlertCircle, Eye, Minus, ReceiptText, Printer, Check,
+  CheckCircle2, XCircle, Clock, AlertCircle, Eye, Minus, ReceiptText, Printer, Check, MoreVertical,
 } from 'lucide-react';
 import '../styles/EstimatesPage.css';
 
@@ -298,6 +298,95 @@ function SearchableSelect({ value, onChange, options, placeholder = 'Select…',
   );
 }
 
+// ── Discount Mode Modal ───────────────────────────────────────────────────────
+function DiscountModeModal({ current, onSave, onClose }) {
+  const [mode, setMode] = react.useState(current || 'line_item');
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
+        <div className="modal-header">
+          <h3 style={{ fontSize: 15 }}>Discount Settings</h3>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>Do you give discounts?</p>
+          {[
+            { value: 'none',        label: 'No',                    desc: 'No discounts on this estimate' },
+            { value: 'line_item',   label: 'Line item level',       desc: 'Discount per individual item' },
+            { value: 'transaction', label: 'Transaction level',     desc: 'Single discount on the total amount' },
+          ].map(opt => (
+            <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, border: `1.5px solid ${mode === opt.value ? 'var(--primary)' : 'var(--border)'}`, background: mode === opt.value ? 'var(--primary-light, #eff6ff)' : 'transparent' }}>
+              <input type="radio" name="discount_mode" value={opt.value} checked={mode === opt.value} onChange={() => setMode(opt.value)} style={{ marginTop: 2 }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{opt.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{opt.desc}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={() => { onSave(mode); onClose(); }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Line Item Discount Popup ──────────────────────────────────────────────────
+function LineItemDiscountPopup({ item, onSave, onClose }) {
+  const [dType, setDType]   = react.useState(item.discount_type || 'percent');
+  const [dValue, setDValue] = react.useState(item.discount_value || 0);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 320 }}>
+        <div className="modal-header">
+          <h3 style={{ fontSize: 14 }}>Item Discount</h3>
+          <button className="modal-close" onClick={onClose}><X size={15} /></button>
+        </div>
+        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description}</p>
+          <div className="form-field">
+            <label style={{ fontSize: 12 }}>Discount Type</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[{ v: 'percent', l: '% Percentage' }, { v: 'flat', l: '₹ Fixed Amount' }].map(opt => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setDType(opt.v)}
+                  style={{
+                    flex: 1, padding: '8px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: `1.5px solid ${dType === opt.v ? 'var(--primary)' : 'var(--border)'}`,
+                    background: dType === opt.v ? 'var(--primary-light, #eff6ff)' : 'transparent',
+                    color: dType === opt.v ? 'var(--primary)' : 'var(--text)',
+                  }}
+                >{opt.l}</button>
+              ))}
+            </div>
+          </div>
+          <div className="form-field">
+            <label style={{ fontSize: 12 }}>Discount Value {dType === 'percent' ? '(%)' : '(₹)'}</label>
+            <input
+              className="form-input"
+              type="number" min="0" step="any"
+              value={dValue}
+              onChange={e => setDValue(e.target.value)}
+              style={{ fontSize: 13 }}
+              autoFocus
+            />
+          </div>
+        </div>
+        <div style={{ padding: '10px 20px 16px', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }}
+            onClick={() => { onSave(null, 0); onClose(); }}>Remove</button>
+          <button type="button" className="btn btn-primary" style={{ fontSize: 12 }}
+            onClick={() => { onSave(dType, parseFloat(dValue) || 0); onClose(); }}>Apply</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Customer Approval Modal
 // ═════════════════════════════════════════════════════════════════════════════
@@ -483,6 +572,9 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   const [selectedCatId, setSelectedCatId] = react.useState(null);
   const [svcPickerSearch, setSvcPickerSearch] = react.useState('');
   const [hubSvcLoading, setHubSvcLoading] = react.useState(false);
+  const [showPartPicker, setShowPartPicker] = react.useState(false);
+  const [partPickerSearch, setPartPickerSearch] = react.useState('');
+  const [partPickerCat, setPartPickerCat] = react.useState('All');
 
   // Form state — hub users get their hub pre-filled
   const [form, setForm] = react.useState({
@@ -516,6 +608,19 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
   const [saving, setSaving] = react.useState(false);
   const [error, setError] = react.useState(null);
+
+  // Discount mode state
+  const [discountMode, setDiscountMode] = react.useState(
+    editEstimate?.discount_mode || 'none'
+  );
+  const [txDiscountType, setTxDiscountType]   = react.useState(
+    editEstimate?.transaction_discount_type || 'percent'
+  );
+  const [txDiscountValue, setTxDiscountValue] = react.useState(
+    parseFloat(editEstimate?.transaction_discount_value) || 0
+  );
+  const [showDiscountSettings, setShowDiscountSettings] = react.useState(false);
+  const [discountPopupKey, setDiscountPopupKey]         = react.useState(null); // _key of item being edited
 
   // Service / part search dropdowns
   const [serviceSearch, setServiceSearch] = react.useState('');
@@ -827,12 +932,27 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     setItems(prev => prev.filter(it => it._key !== key));
   }
 
-  // Grand total + total discount
-  const { grandTotal, totalDiscount } = items.reduce((acc, it) => {
-    const c = computeItem(it);
-    return { grandTotal: acc.grandTotal + c.total, totalDiscount: acc.totalDiscount + c.discountAmount };
-  }, { grandTotal: 0, totalDiscount: 0 });
-  const hasDiscount = items.some(it => it.discount_type && it.discount_value > 0);
+  // Grand total + total discount (mode-aware)
+  const { itemsTotal, totalDiscount: lineDiscount } = items.reduce((acc, it) => {
+    const itemForCalc = discountMode !== 'line_item'
+      ? { ...it, discount_type: null, discount_value: 0 }
+      : it;
+    const c = computeItem(itemForCalc);
+    return { itemsTotal: acc.itemsTotal + c.total, totalDiscount: acc.totalDiscount + c.discountAmount };
+  }, { itemsTotal: 0, totalDiscount: 0 });
+
+  // Transaction-level discount calculation
+  let txDiscountAmount = 0;
+  if (discountMode === 'transaction' && txDiscountValue > 0) {
+    if (txDiscountType === 'percent') {
+      txDiscountAmount = r2(itemsTotal * txDiscountValue / 100);
+    } else {
+      txDiscountAmount = Math.min(txDiscountValue, itemsTotal);
+    }
+  }
+  const grandTotal   = discountMode === 'transaction' ? r2(itemsTotal - txDiscountAmount) : itemsTotal;
+  const totalDiscount = discountMode === 'line_item' ? lineDiscount : txDiscountAmount;
+  const hasDiscount  = discountMode === 'line_item';
 
   async function submit(e) {
     e.preventDefault();
@@ -840,12 +960,17 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     if (!form.hub_id) { setError('Please select a hub.'); return; }
     setSaving(true); setError(null);
     try {
+      const forceZero = discountMode !== 'line_item';
       const payload = {
         appointment_id: Number(form.appointment_id),
         hub_id: Number(form.hub_id),
         notes: form.notes.trim() || null,
+        discount_mode: discountMode,
+        transaction_discount_type:  discountMode === 'transaction' ? txDiscountType  : null,
+        transaction_discount_value: discountMode === 'transaction' ? txDiscountValue : 0,
         items: items.map(it => {
-          const { discountAmount } = computeItem(it);
+          const itemForCalc = forceZero ? { ...it, discount_type: null, discount_value: 0 } : it;
+          const { discountAmount } = computeItem(itemForCalc);
           return {
             item_type: it.type,
             item_id: it.item_id || null,
@@ -853,10 +978,10 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
             quantity: Number(it.quantity) || 1,
             customer_rate: parseFloat(parseFloat(it.unit_rate).toFixed(4)) || 0,
             gst_percent: parseFloat(it.gst_percent) || 0,
-            discount_type: it.discount_type || null,
-            discount_value: it.discount_value || 0,
-            discount_amount: discountAmount,
-            discount_source: it.discount_source || null,
+            discount_type:   forceZero ? null : (it.discount_type || null),
+            discount_value:  forceZero ? 0    : (it.discount_value || 0),
+            discount_amount: forceZero ? 0    : discountAmount,
+            discount_source: forceZero ? null : (it.discount_source || null),
           };
         }),
       };
@@ -873,6 +998,15 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   const filteredParts = parts.filter(p =>
     !partSearch || p.name.toLowerCase().includes(partSearch.toLowerCase())
   ).slice(0, 12);
+
+  // ── Part picker derived values ────────────────────────────────────────────
+  const partCategories = ['All', ...Array.from(new Set(parts.map(p => p.category).filter(Boolean))).sort()];
+  const addedPartIds = new Set(items.filter(it => it.type === 'part' && it.item_id).map(it => Number(it.item_id)));
+  const pickerParts = parts.filter(p => {
+    const matchCat = partPickerCat === 'All' || p.category === partPickerCat;
+    const matchSearch = !partPickerSearch || p.name.toLowerCase().includes(partPickerSearch.toLowerCase());
+    return matchCat && matchSearch;
+  });
 
   // ── Vehicle info for display ──────────────────────────────────────────────
   const selectedAppt = appointments.find(a => String(a.id) === String(form.appointment_id));
@@ -915,8 +1049,57 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 780, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header" style={{ flexShrink: 0 }}>
           <h3>{isEdit ? 'Edit Estimate' : 'New Estimate'}</h3>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              title="Discount settings"
+              onClick={() => setShowDiscountSettings(true)}
+              style={{
+                background: discountMode !== 'none' ? 'var(--primary-light, #eff6ff)' : 'var(--bg-soft)',
+                border: `1px solid ${discountMode !== 'none' ? 'var(--primary)' : 'var(--border)'}`,
+                borderRadius: 7, padding: '4px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                color: discountMode !== 'none' ? 'var(--primary)' : 'var(--text-muted)',
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+              {discountMode === 'none' ? 'No Discount' : discountMode === 'line_item' ? 'Line Item Discount' : 'Transaction Discount'}
+            </button>
+            <button className="modal-close" onClick={onClose}><X size={18} /></button>
+          </div>
         </div>
+        {showDiscountSettings && (
+          <DiscountModeModal
+            current={discountMode}
+            onSave={mode => {
+              setDiscountMode(mode);
+              if (mode !== 'line_item') {
+                // clear per-item discounts when switching away from line_item
+                setItems(prev => prev.map(it => ({ ...it, discount_type: null, discount_value: 0, discount_source: null })));
+              }
+              if (mode !== 'transaction') {
+                setTxDiscountValue(0);
+              }
+            }}
+            onClose={() => setShowDiscountSettings(false)}
+          />
+        )}
+        {discountPopupKey !== null && (() => {
+          const popupItem = items.find(it => it._key === discountPopupKey);
+          if (!popupItem) return null;
+          return (
+            <LineItemDiscountPopup
+              item={popupItem}
+              onSave={(dType, dValue) => {
+                setItems(prev => prev.map(it => it._key === discountPopupKey
+                  ? { ...it, discount_type: dType, discount_value: dValue, discount_source: dType ? 'manual' : null }
+                  : it
+                ));
+              }}
+              onClose={() => setDiscountPopupKey(null)}
+            />
+          );
+        })()}
 
         {masterLoading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
@@ -1058,33 +1241,32 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                             </td>
                             {hasDiscount && (
                               <td style={{ textAlign: 'center' }}>
-                                {discountAmount > 0 ? (
-                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                                    <span style={{
-                                      fontSize: 11, fontWeight: 700, color: '#b45309',
-                                      background: '#fef3c7', border: '1px solid #fcd34d',
-                                      borderRadius: 5, padding: '2px 6px',
-                                    }}>
-                                      −{fmt(discountAmount)}
-                                    </span>
-                                    <span style={{ fontSize: 9, color: '#92400e', fontWeight: 600 }}>
-                                      {it.discount_type === 'percent' ? `${it.discount_value}%` : 'Flat'}
-                                      {it.discount_source === 'master' && ' · Auto'}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      title="Remove discount"
-                                      onClick={() => setItems(prev => prev.map(x => x._key === it._key
-                                        ? { ...x, discount_type: null, discount_value: 0, discount_source: null }
-                                        : x))}
-                                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', padding: 0, fontSize: 10, lineHeight: 1 }}
-                                    >
-                                      ✕ remove
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>
-                                )}
+                                <button
+                                  type="button"
+                                  title="Set item discount"
+                                  onClick={() => setDiscountPopupKey(it._key)}
+                                  style={{
+                                    background: discountAmount > 0 ? '#fef3c7' : 'transparent',
+                                    border: `1px solid ${discountAmount > 0 ? '#fcd34d' : 'var(--border)'}`,
+                                    borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
+                                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                                    minWidth: 60,
+                                  }}
+                                >
+                                  {discountAmount > 0 ? (
+                                    <>
+                                      <span style={{ fontSize: 11, fontWeight: 700, color: '#b45309' }}>
+                                        −{fmt(discountAmount)}
+                                      </span>
+                                      <span style={{ fontSize: 9, color: '#92400e', fontWeight: 600 }}>
+                                        {it.discount_type === 'percent' ? `${it.discount_value}%` : 'Flat'}
+                                        {it.discount_source === 'master' && ' · Auto'}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>0%</span>
+                                  )}
+                                </button>
                               </td>
                             )}
                             <td>
@@ -1250,40 +1432,184 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                 )}
               </div>
 
-              {/* ── Parts Search (unchanged) ── */}
-              <div style={{ position: 'relative', marginBottom: 8 }}>
-                <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input
-                  className="form-input"
-                  style={{ paddingLeft: 28, fontSize: 13 }}
-                  placeholder="Search & add part…"
-                  value={partSearch}
-                  onChange={e => setPartSearch(e.target.value)}
-                />
-                {partSearch && filteredParts.length > 0 && (
-                  <div className="est-search-drop">
-                    {filteredParts.map(p => (
-                      <button key={p.id} type="button" className="est-search-item" onClick={() => addPartItem(p)}>
-                        <span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {partSearch && filteredParts.length === 0 && (
-                  <div className="est-search-drop">
-                    <div style={{ padding: '10px 14px', fontSize: 13, color: 'var(--text-muted)' }}>No parts found</div>
-                  </div>
-                )}
+              {/* ── Parts Picker Button ── */}
+              <div style={{ marginBottom: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowPartPicker(true); setPartPickerSearch(''); setPartPickerCat('All'); }}
+                  style={{
+                    width: '100%', padding: '9px 14px', border: '1.5px dashed var(--border)',
+                    borderRadius: 8, background: 'transparent', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    fontSize: 13, color: 'var(--text-muted)', transition: 'all .15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--primary)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)'; }}
+                >
+                  <Plus size={14} /> Add Parts
+                  {addedPartIds.size > 0 && (
+                    <span style={{ marginLeft: 4, background: 'var(--primary)', color: '#fff', borderRadius: 99, fontSize: 11, fontWeight: 700, padding: '1px 7px' }}>
+                      {addedPartIds.size}
+                    </span>
+                  )}
+                </button>
               </div>
 
+              {/* ── Parts Picker Modal ── */}
+              {showPartPicker && (
+                <div
+                  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  onMouseDown={e => { if (e.target === e.currentTarget) setShowPartPicker(false); }}
+                >
+                  <div style={{ background: 'var(--bg)', borderRadius: 14, width: 600, maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.18)' }}
+                    onMouseDown={e => e.stopPropagation()}>
+
+                    {/* Modal header */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Select Parts</span>
+                      <button type="button" onClick={() => setShowPartPicker(false)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    {/* Search bar */}
+                    <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ position: 'relative' }}>
+                        <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                        <input
+                          className="form-input"
+                          style={{ paddingLeft: 26, fontSize: 12, padding: '6px 8px 6px 26px' }}
+                          placeholder="Search parts…"
+                          value={partPickerSearch}
+                          onChange={e => { setPartPickerSearch(e.target.value); setPartPickerCat('All'); }}
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    {/* Body: categories left, parts right */}
+                    <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                      {/* Left: categories */}
+                      {!partPickerSearch && (
+                        <div style={{ width: 160, borderRight: '1px solid var(--border)', overflowY: 'auto', flexShrink: 0 }}>
+                          {partCategories.map(cat => (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setPartPickerCat(cat)}
+                              style={{
+                                width: '100%', textAlign: 'left', padding: '9px 14px',
+                                background: partPickerCat === cat ? 'var(--primary-light, #eff6ff)' : 'transparent',
+                                border: 'none',
+                                borderLeft: partPickerCat === cat ? '3px solid var(--primary)' : '3px solid transparent',
+                                cursor: 'pointer', fontSize: 13,
+                                fontWeight: partPickerCat === cat ? 700 : 400,
+                                color: partPickerCat === cat ? 'var(--primary)' : 'var(--text)',
+                              }}
+                            >
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Right: parts list */}
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+                        {parts.length === 0 ? (
+                          <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No parts available</div>
+                        ) : pickerParts.length === 0 ? (
+                          <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
+                            {partPickerSearch ? 'No parts found' : 'No parts in this category'}
+                          </div>
+                        ) : (
+                          pickerParts.map(p => {
+                            const alreadyAdded = addedPartIds.has(Number(p.id));
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => { if (!alreadyAdded) addPartItem(p); }}
+                                disabled={alreadyAdded}
+                                style={{
+                                  width: '100%', textAlign: 'left', padding: '9px 16px',
+                                  background: alreadyAdded ? '#f0fdf4' : 'transparent',
+                                  border: 'none', borderBottom: '1px solid var(--border)',
+                                  cursor: alreadyAdded ? 'default' : 'pointer',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                                }}
+                                onMouseEnter={e => { if (!alreadyAdded) e.currentTarget.style.background = 'var(--bg-soft)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = alreadyAdded ? '#f0fdf4' : 'transparent'; }}
+                              >
+                                <div>
+                                  <div style={{ fontSize: 13, fontWeight: alreadyAdded ? 600 : 400, color: alreadyAdded ? '#15803d' : 'var(--text)' }}>{p.name}</div>
+                                  {p.category && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{p.category}</div>}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                  {p.customer_rate && (
+                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>₹{Number(p.customer_rate).toLocaleString('en-IN')}</span>
+                                  )}
+                                  {alreadyAdded
+                                    ? <Check size={14} style={{ color: '#16a34a' }} />
+                                    : <Plus size={13} style={{ color: 'var(--primary)' }} />
+                                  }
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {addedPartIds.size > 0 ? `${addedPartIds.size} part${addedPartIds.size > 1 ? 's' : ''} added` : 'No parts added yet'}
+                      </span>
+                      <button type="button" className="btn btn-primary" style={{ fontSize: 13, padding: '6px 18px' }} onClick={() => setShowPartPicker(false)}>
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Grand total */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', flexDirection: 'column', alignItems: 'flex-end', gap: 4, paddingTop: 4 }}>
-                {totalDiscount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', flexDirection: 'column', alignItems: 'flex-end', gap: 6, paddingTop: 4 }}>
+                {/* Line-item discount summary */}
+                {discountMode === 'line_item' && totalDiscount > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#b45309' }}>Total Discount:</span>
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#b45309' }}>−{fmt(totalDiscount)}</span>
                   </div>
                 )}
+
+                {/* Transaction-level discount input row */}
+                {discountMode === 'transaction' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '8px 12px' }}>
+                    <span style={{ fontSize: 12, color: '#92400e', fontWeight: 600 }}>Sub Total:</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{fmt(itemsTotal)}</span>
+                    <span style={{ fontSize: 12, color: '#92400e', fontWeight: 600, marginLeft: 12 }}>Discount:</span>
+                    <input
+                      type="number" min="0" step="any"
+                      value={txDiscountValue}
+                      onChange={e => setTxDiscountValue(parseFloat(e.target.value) || 0)}
+                      style={{ width: 70, padding: '4px 8px', borderRadius: 6, border: '1px solid #fcd34d', fontSize: 13, textAlign: 'right' }}
+                    />
+                    <select
+                      value={txDiscountType}
+                      onChange={e => setTxDiscountType(e.target.value)}
+                      style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fcd34d', fontSize: 13, background: '#fff', cursor: 'pointer' }}
+                    >
+                      <option value="percent">%</option>
+                      <option value="flat">₹</option>
+                    </select>
+                    {txDiscountAmount > 0 && (
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>−{fmt(txDiscountAmount)}</span>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Grand Total (inc GST):</span>
                   <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--primary)' }}>{fmt(grandTotal)}</span>
@@ -1307,10 +1633,142 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Invoice Sync Warning Modal
+// ─────────────────────────────────────────────────────────────────────────────
+function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, onCancel, onConfirm }) {
+  const blockedByPi = hasPi && piPaid;
+  const blockedByCi = hasCi && ciPaid;
+  const allBlocked  = (!hasPi || blockedByPi) && (!hasCi || blockedByCi);
+
+  return (
+    <div className="modal-backdrop" onClick={!syncBusy ? onCancel : undefined}>
+      <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        <div className="modal-header">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertCircle size={18} style={{ color: '#f59e0b' }} />
+            Invoices Exist
+          </h3>
+        </div>
+        <div style={{ padding: '16px 20px', fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
+          <p style={{ margin: '0 0 12px' }}>
+            This estimate has existing invoices. Updating them will recalculate all line items and totals.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {hasPi && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: blockedByPi ? '#fef2f2' : '#f0fdf4', border: `1px solid ${blockedByPi ? '#fca5a5' : '#86efac'}` }}>
+                {blockedByPi
+                  ? <><XCircle size={15} style={{ color: '#dc2626', flexShrink: 0 }} /><span style={{ color: '#991b1b', fontWeight: 600 }}>Purchase Invoice — already paid, cannot update</span></>
+                  : <><CheckCircle2 size={15} style={{ color: '#16a34a', flexShrink: 0 }} /><span>Purchase Invoice — will be recalculated</span></>
+                }
+              </div>
+            )}
+            {hasCi && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: blockedByCi ? '#fef2f2' : '#f0fdf4', border: `1px solid ${blockedByCi ? '#fca5a5' : '#86efac'}` }}>
+                {blockedByCi
+                  ? <><XCircle size={15} style={{ color: '#dc2626', flexShrink: 0 }} /><span style={{ color: '#991b1b', fontWeight: 600 }}>Customer Invoice — already paid, cannot update</span></>
+                  : <><CheckCircle2 size={15} style={{ color: '#16a34a', flexShrink: 0 }} /><span>Customer Invoice — will be recalculated</span></>
+                }
+              </div>
+            )}
+          </div>
+          {allBlocked && (
+            <p style={{ margin: 0, color: '#b45309', fontWeight: 600, background: '#fffbeb', padding: '8px 12px', borderRadius: 8 }}>
+              All invoices are paid — no updates possible.
+            </p>
+          )}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
+          <button className="btn btn-ghost" onClick={onCancel} disabled={syncBusy}>
+            {allBlocked ? 'Close' : 'Skip'}
+          </button>
+          {!allBlocked && (
+            <button className="btn btn-primary" onClick={onConfirm} disabled={syncBusy}>
+              {syncBusy ? 'Syncing…' : 'Update Invoices'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Delete Confirm Modal
+// ─────────────────────────────────────────────────────────────────────────────
+function DeleteConfirmModal({ estimate, deleting, onCancel, onConfirm }) {
+  const hasPi    = !!estimate.purchase_invoice_id;
+  const piPaid   = estimate.purchase_invoice_status === 'paid';
+  const hasCi    = !!estimate.customer_invoice_id;
+  const ciPaid   = estimate.customer_invoice_status === 'paid';
+  const blocked  = (hasPi && piPaid) || (hasCi && ciPaid);
+
+  return (
+    <div className="modal-backdrop" onClick={!deleting ? onCancel : undefined}>
+      <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        <div className="modal-header">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <XCircle size={18} style={{ color: '#dc2626' }} />
+            Delete Estimate
+          </h3>
+        </div>
+        <div style={{ padding: '16px 20px', fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
+          {blocked ? (
+            <p style={{ margin: '0 0 12px', color: '#991b1b', fontWeight: 600 }}>
+              Cannot delete — one or more linked invoices have already been paid.
+            </p>
+          ) : (
+            <p style={{ margin: '0 0 12px' }}>
+              This will permanently delete the following. <strong>This cannot be undone.</strong>
+            </p>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {/* Always: the estimate itself */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fca5a5' }}>
+              <XCircle size={15} style={{ color: '#dc2626', flexShrink: 0 }} />
+              <span style={{ color: '#991b1b', fontWeight: 600 }}>Estimate #{estimate.id}</span>
+            </div>
+            {hasPi && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: piPaid ? '#f9fafb' : '#fef2f2', border: `1px solid ${piPaid ? '#d1d5db' : '#fca5a5'}` }}>
+                {piPaid
+                  ? <><AlertCircle size={15} style={{ color: '#f59e0b', flexShrink: 0 }} /><span style={{ color: '#92400e', fontWeight: 600 }}>Purchase Invoice — already paid, <em>cannot delete</em></span></>
+                  : <><XCircle size={15} style={{ color: '#dc2626', flexShrink: 0 }} /><span style={{ color: '#991b1b', fontWeight: 600 }}>Purchase Invoice — will be deleted</span></>
+                }
+              </div>
+            )}
+            {hasCi && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: ciPaid ? '#f9fafb' : '#fef2f2', border: `1px solid ${ciPaid ? '#d1d5db' : '#fca5a5'}` }}>
+                {ciPaid
+                  ? <><AlertCircle size={15} style={{ color: '#f59e0b', flexShrink: 0 }} /><span style={{ color: '#92400e', fontWeight: 600 }}>Customer Invoice — already paid, <em>cannot delete</em></span></>
+                  : <><XCircle size={15} style={{ color: '#dc2626', flexShrink: 0 }} /><span style={{ color: '#991b1b', fontWeight: 600 }}>Customer Invoice — will be deleted</span></>
+                }
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
+          <button className="btn btn-ghost" onClick={onCancel} disabled={deleting}>Cancel</button>
+          {!blocked && (
+            <button
+              className="btn"
+              style={{ background: '#dc2626', color: '#fff', borderColor: '#dc2626' }}
+              onClick={onConfirm}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Detail Drawer
 // ═════════════════════════════════════════════════════════════════════════════
 function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = false }) {
   const navigate = useNavigate();
+  const { user: authUser } = useAuth();
+  const isSuperAdmin = !!authUser?.is_super_admin;
   const [estimate, setEstimate] = react.useState(null);
   const [loading, setLoading] = react.useState(true);
   const [actionBusy, setActionBusy] = react.useState(false);
@@ -1324,6 +1782,11 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   const [showApproval, setShowApproval] = react.useState(false);
   const [showRevision, setShowRevision] = react.useState(false);
   const [showEdit, setShowEdit] = react.useState(false);
+  const [showSyncWarning, setShowSyncWarning] = react.useState(false);
+  const [syncBusy, setSyncBusy] = react.useState(false);
+  const [showKebab, setShowKebab] = react.useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = react.useState(false);
+  const [deleting, setDeleting] = react.useState(false);
 
   const load = react.useCallback(async () => {
     setLoading(true);
@@ -1354,6 +1817,20 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
       showToast(err.message || 'Action failed.', 'error');
     } finally {
       setActionBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await api(`/api/estimates/${estimateId}`, { method: 'DELETE' });
+      showToast('Estimate deleted successfully.');
+      setShowDeleteConfirm(false);
+      onClose();
+      if (onUpdated) onUpdated();
+    } catch (err) {
+      showToast(err.message || 'Failed to delete estimate.', 'error');
+      setDeleting(false);
     }
   }
 
@@ -1422,6 +1899,11 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   const status = estimate.status;
   const items = estimate.items || [];
 
+  // Transaction discount fields from saved estimate
+  const detailDiscountMode    = estimate.discount_mode || 'none';
+  const detailTxDiscountType  = estimate.transaction_discount_type || 'percent';
+  const detailTxDiscountValue = parseFloat(estimate.transaction_discount_value) || 0;
+
   // Totals + dynamic GST slab grouping
   let subtotalEx = 0, totalGst = 0, grandTotal = 0, totalDiscount = 0;
   const gstSlabMap = {}; // { '18': { cgst: n, sgst: n }, '5': { ... } }
@@ -1455,8 +1937,20 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   totalGst = r2(totalGst);
   grandTotal = r2(grandTotal);
   totalDiscount = r2(totalDiscount);
+
+  // Apply transaction-level discount on top of items total
+  let txDiscountAmount = 0;
+  if (detailDiscountMode === 'transaction' && detailTxDiscountValue > 0) {
+    if (detailTxDiscountType === 'percent') {
+      txDiscountAmount = r2(grandTotal * detailTxDiscountValue / 100);
+    } else {
+      txDiscountAmount = Math.min(detailTxDiscountValue, grandTotal);
+    }
+    grandTotal = r2(grandTotal - txDiscountAmount);
+  }
+
   // Rounding adjustment: difference between grand total and sum of components (should be 0.00 or ±0.01)
-  const roundingAdj = r2(grandTotal - subtotalEx - totalGst);
+  const roundingAdj = r2(grandTotal - subtotalEx - totalGst + txDiscountAmount);
   // Sort slabs descending by rate (18% first, then 12%, 5%, etc.)
   const gstSlabs = Object.values(gstSlabMap).sort((a, b) => b.pct - a.pct);
   const hasDiscountInDetail = totalDiscount > 0;
@@ -1519,14 +2013,73 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             <span style={{ fontWeight: 700, fontSize: 16 }}>Estimate #{estimate.id}</span>
             <StatusBadge status={status} />
           </div>
-          <button
-            className="btn btn-ghost"
-            onClick={() => window.print()}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-            title="Print estimate"
-          >
-            <Printer size={15} /> Print
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              className="btn btn-ghost"
+              onClick={() => window.print()}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
+              title="Print estimate"
+            >
+              <Printer size={15} /> Print
+            </button>
+
+            {/* Kebab menu */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowKebab(v => !v)}
+                style={{ padding: '6px 8px', display: 'flex', alignItems: 'center' }}
+                title="More options"
+              >
+                <MoreVertical size={16} />
+              </button>
+              {showKebab && (
+                <>
+                  {/* Backdrop to close on outside click */}
+                  <div
+                    style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                    onClick={() => setShowKebab(false)}
+                  />
+                  <div style={{
+                    position: 'absolute', right: 0, top: '100%', marginTop: 4,
+                    background: 'var(--bg)', border: '1px solid var(--border)',
+                    borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                    zIndex: 100, minWidth: 160, overflow: 'hidden',
+                  }}>
+                    <button
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        width: '100%', padding: '10px 14px', background: 'none',
+                        border: 'none', cursor: 'pointer', fontSize: 13,
+                        color: 'var(--text)', textAlign: 'left',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft, #f3f4f6)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                      onClick={() => { setShowKebab(false); setShowEdit(true); }}
+                    >
+                      <FileText size={14} /> Edit Estimate
+                    </button>
+                    {isSuperAdmin && (
+                      <button
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          width: '100%', padding: '10px 14px', background: 'none',
+                          border: 'none', borderTop: '1px solid var(--border)',
+                          cursor: 'pointer', fontSize: 13,
+                          color: '#dc2626', textAlign: 'left',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#fef2f2'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                        onClick={() => { setShowKebab(false); setShowDeleteConfirm(true); }}
+                      >
+                        <XCircle size={14} /> Delete Estimate
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -1736,11 +2289,21 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 <span style={{ fontWeight: 600, color: '#374151', minWidth: 100, textAlign: 'right' }}>{fmt(subtotalEx)}</span>
               </div>
 
-              {/* Discount row — only shown when at least one item has a discount */}
+              {/* Line-item discount row */}
               {hasDiscountInDetail && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: '1px solid #f3f4f6', background: '#fffbeb', margin: '0 -2px', padding: '5px 2px' }}>
                   <span style={{ color: '#b45309', fontWeight: 600 }}>Total Discount</span>
                   <span style={{ fontWeight: 700, color: '#b45309', minWidth: 100, textAlign: 'right' }}>−{fmt(totalDiscount)}</span>
+                </div>
+              )}
+
+              {/* Transaction-level discount row */}
+              {txDiscountAmount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: '1px solid #f3f4f6', background: '#fffbeb', margin: '0 -2px', padding: '5px 2px' }}>
+                  <span style={{ color: '#b45309', fontWeight: 600 }}>
+                    Discount{detailTxDiscountType === 'percent' ? ` (${detailTxDiscountValue}%)` : ' (Flat)'}
+                  </span>
+                  <span style={{ fontWeight: 700, color: '#b45309', minWidth: 100, textAlign: 'right' }}>−{fmt(txDiscountAmount)}</span>
                 </div>
               )}
 
@@ -1819,6 +2382,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             const completedItems = approvedItems.filter(i => i.work_status === 'completed');
             const pct = approvedItems.length > 0 ? Math.round((completedItems.length / approvedItems.length) * 100) : 0;
             const allDone = pct === 100 && approvedItems.length > 0;
+            if (allDone) return null;
             return (
               <div className="est-no-print" style={{ background: 'var(--bg-soft)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
@@ -1839,15 +2403,10 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           {/* ── Action Buttons — screen only ── */}
           <div className="est-no-print" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingTop: 4 }}>
             {(status === 'draft' || status === 'revision_requested') && (
-              <>
-                <button className="btn btn-ghost" disabled={actionBusy} onClick={() => setShowEdit(true)}>
-                  Edit Estimate
-                </button>
-                <button className="btn btn-primary" disabled={actionBusy}
-                  onClick={() => doAction(`/api/estimates/${estimate.id}/submit`)}>
-                  {actionBusy ? 'Submitting…' : 'Submit to Company'}
-                </button>
-              </>
+              <button className="btn btn-primary" disabled={actionBusy}
+                onClick={() => doAction(`/api/estimates/${estimate.id}/submit`)}>
+                {actionBusy ? 'Submitting…' : 'Submit to Company'}
+              </button>
             )}
 
             {status === 'pending_company_review' && !isHubUser && (
@@ -1976,7 +2535,65 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           <EstimateModal
             editEstimate={estimate}
             onClose={() => setShowEdit(false)}
-            onSaved={() => { setShowEdit(false); load(); showToast('Estimate updated.'); }}
+            onSaved={async () => {
+              setShowEdit(false);
+              await load();
+              // If PI or CI exist, show sync warning
+              if (estimate.purchase_invoice_id || estimate.customer_invoice_id) {
+                setShowSyncWarning(true);
+              } else {
+                showToast('Estimate updated.');
+              }
+            }}
+          />
+        )}
+
+        {showDeleteConfirm && estimate && (
+          <DeleteConfirmModal
+            estimate={estimate}
+            deleting={deleting}
+            onCancel={() => setShowDeleteConfirm(false)}
+            onConfirm={handleDelete}
+          />
+        )}
+
+        {showSyncWarning && (
+          <InvoiceSyncWarningModal
+            hasPi={!!estimate.purchase_invoice_id}
+            piPaid={estimate.purchase_invoice_status === 'paid'}
+            hasCi={!!estimate.customer_invoice_id}
+            ciPaid={estimate.customer_invoice_status === 'paid'}
+            syncBusy={syncBusy}
+            onCancel={() => { setShowSyncWarning(false); showToast('Estimate updated. Invoices not synced.'); }}
+            onConfirm={async () => {
+              setSyncBusy(true);
+              const errors = [];
+              try {
+                if (estimate.purchase_invoice_id) {
+                  try {
+                    await api(`/api/purchase-invoices/${estimate.purchase_invoice_id}/sync-from-estimate`, { method: 'POST' });
+                  } catch (e) {
+                    errors.push(`PI: ${e.message}`);
+                  }
+                }
+                if (estimate.customer_invoice_id) {
+                  try {
+                    await api(`/api/customer-invoices/${estimate.customer_invoice_id}/sync-from-estimate`, { method: 'POST' });
+                  } catch (e) {
+                    errors.push(`CI: ${e.message}`);
+                  }
+                }
+              } finally {
+                setSyncBusy(false);
+                setShowSyncWarning(false);
+                await load();
+                if (errors.length > 0) {
+                  showToast(`Estimate updated. Some invoices could not sync: ${errors.join('; ')}`, 'error');
+                } else {
+                  showToast('Estimate updated. Invoices synced successfully.');
+                }
+              }
+            }}
           />
         )}
       </div>

@@ -1,85 +1,73 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
 
-    <!-- ── Viewport ─────────────────────────────────────────────
+<head>
+  <meta charset="UTF-8" />
+
+  <!-- ── Viewport ─────────────────────────────────────────────
          viewport-fit=cover lets the app extend under iPhone notch/home bar.
          We then use CSS env(safe-area-inset-*) to pad content away from edges.
     ──────────────────────────────────────────────────────────── -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
 
-    <title>Spinoto — Lead Management &amp; POS</title>
-    <meta name="description" content="Spinoto — Lead Management &amp; POS Portal for automotive service hubs" />
+  <title>Spinoto CRM</title>
+  <meta name="description" content="Spinoto — Lead Management &amp; POS Portal for automotive service hubs" />
 
-    <!-- ── PWA / Theme colors ──────────────────────────────────── -->
-    <meta name="theme-color" content="#000000" />
-    <!-- Dark mode theme color (Chrome M93+) -->
-    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+  <!-- ── PWA / Theme colors ──────────────────────────────────── -->
+  <meta name="theme-color" content="#000000" />
+  <!-- Dark mode theme color (Chrome M93+) -->
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 
-    <!-- ── Android / Chrome PWA ───────────────────────────────── -->
-    <meta name="mobile-web-app-capable" content="yes" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+  <!-- ── Android / Chrome PWA ───────────────────────────────── -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="/manifest.webmanifest" />
 
-    <!-- ── Apple iOS / iPadOS ─────────────────────────────────── -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Spinoto" />
+  <!-- ── Apple iOS / iPadOS ─────────────────────────────────── -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Spinoto" />
 
-    <!-- Apple touch icons -->
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
-    <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.png" />
+  <!-- Apple touch icons -->
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192x192.png" />
 
-    <!-- ── Apple Splash Screens ───────────────────────────────── -->
-    <!-- iPhone SE / 5 (320×568) -->
-    <link
-      rel="apple-touch-startup-image"
-      href="/icons/icon-512x512.png"
-      media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)"
-    />
-    <!-- iPhone 8 / SE 2 (375×667) -->
-    <link
-      rel="apple-touch-startup-image"
-      href="/icons/icon-512x512.png"
-      media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)"
-    />
-    <!-- iPhone X / 11 Pro / 12 Mini (375×812) -->
-    <link
-      rel="apple-touch-startup-image"
-      href="/icons/icon-512x512.png"
-      media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)"
-    />
-    <!-- iPhone 14 Pro Max (430×932) -->
-    <link
-      rel="apple-touch-startup-image"
-      href="/icons/icon-512x512.png"
-      media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)"
-    />
-    <!-- iPad (768×1024) -->
-    <link
-      rel="apple-touch-startup-image"
-      href="/icons/icon-512x512.png"
-      media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)"
-    />
+  <!-- ── Apple Splash Screens ───────────────────────────────── -->
+  <!-- iPhone SE / 5 (320×568) -->
+  <link rel="apple-touch-startup-image" href="/icons/icon-512x512.png"
+    media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)" />
+  <!-- iPhone 8 / SE 2 (375×667) -->
+  <link rel="apple-touch-startup-image" href="/icons/icon-512x512.png"
+    media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)" />
+  <!-- iPhone X / 11 Pro / 12 Mini (375×812) -->
+  <link rel="apple-touch-startup-image" href="/icons/icon-512x512.png"
+    media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)" />
+  <!-- iPhone 14 Pro Max (430×932) -->
+  <link rel="apple-touch-startup-image" href="/icons/icon-512x512.png"
+    media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" />
+  <!-- iPad (768×1024) -->
+  <link rel="apple-touch-startup-image" href="/icons/icon-512x512.png"
+    media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)" />
 
-    <!-- ── Favicons ────────────────────────────────────────────── -->
-    <link rel="icon" type="image/ico" href="/favicon.ico" sizes="16x16 32x32" />
-    <link rel="icon" type="image/png" sizes="32x32"  href="/icons/icon-96x96.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
+  <!-- ── Favicons ────────────────────────────────────────────── -->
+  <link rel="icon" type="image/ico" href="/favicon.ico" sizes="16x16 32x32" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-96x96.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
 
-    <!-- ── Microsoft Tiles ────────────────────────────────────── -->
-    <meta name="msapplication-TileColor" content="#16b994" />
-    <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
+  <!-- ── Microsoft Tiles ────────────────────────────────────── -->
+  <meta name="msapplication-TileColor" content="#16b994" />
+  <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
 
-    <!-- ── Open Graph ─────────────────────────────────────────── -->
-    <meta property="og:type"        content="website" />
-    <meta property="og:title"       content="Spinoto — Lead Management &amp; POS" />
-    <meta property="og:description" content="Lead Management &amp; POS Portal for automotive service hubs" />
-    <meta property="og:image"       content="/icons/og-image.png" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+  <!-- ── Open Graph ─────────────────────────────────────────── -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Spinoto — Lead Management &amp; POS" />
+  <meta property="og:description" content="Lead Management &amp; POS Portal for automotive service hubs" />
+  <meta property="og:image" content="/icons/og-image.png" />
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
 </html>

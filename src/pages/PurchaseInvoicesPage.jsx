@@ -5,7 +5,7 @@ import { api } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
 import {
   ReceiptText, Search, RefreshCw, X, Eye,
-  AlertCircle, CheckCircle2, Clock, Trash2, ChevronLeft, Printer,
+  AlertCircle, CheckCircle2, Clock, Trash2, ChevronLeft, Printer, FileText, MoreVertical,
 } from 'lucide-react';
 import '../styles/PurchaseInvoicesPage.css';
 
@@ -212,6 +212,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
   const [payoutSchedule, setPayoutSchedule]     = useState('lump_sum');
   const [recalculating, setRecalculating]       = useState(false);
   const [approvalItemRates, setApprovalItemRates] = useState({}); // { [item_id]: rateStr }
+  const [showEditModal, setShowEditModal]         = useState(false);
+  const [editItemRates, setEditItemRates]         = useState({});
+  const [editBusy, setEditBusy]                   = useState(false);
+  const [showKebab, setShowKebab]                 = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -256,6 +260,34 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
     setApprovalItemRates(rates);
     setPayoutSchedule('lump_sum');
     setShowApproveModal(true);
+  }
+
+  function openEditModal() {
+    const rates = {};
+    (inv?.items || []).forEach(it => {
+      rates[it.id] = String(parseFloat(it.commission_percent ?? 0));
+    });
+    setEditItemRates(rates);
+    setShowEditModal(true);
+  }
+
+  async function handleEditSave() {
+    setEditBusy(true);
+    try {
+      const item_rates = Object.entries(editItemRates).map(([id, rate]) => ({
+        item_id:   Number(id),
+        take_rate: parseFloat(rate) || 0,
+      }));
+      const res = await api(`/api/purchase-invoices/${invoiceId}`, { method: 'PATCH', body: { item_rates } });
+      setInv(res.item);
+      setShowEditModal(false);
+      showToast('Purchase invoice updated.');
+      onRefreshList();
+    } catch (err) {
+      showToast(err.message || 'Update failed.', 'error');
+    } finally {
+      setEditBusy(false);
+    }
   }
 
   async function handleApprove() {
@@ -365,14 +397,49 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
           </span>
           {inv && <StatusBadge status={inv.status} />}
         </div>
-        <button
-          className="btn btn-ghost"
-          onClick={() => window.print()}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-          title="Print / Save as PDF"
-        >
-          <Printer size={15} /> Print / PDF
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            className="btn btn-ghost"
+            onClick={() => window.print()}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
+            title="Print / Save as PDF"
+          >
+            <Printer size={15} /> Print / PDF
+          </button>
+          {/* Kebab menu */}
+          {inv && inv.status === 'approved' && parseFloat(inv.amount_paid ?? 0) === 0 && (
+            <div style={{ position: 'relative' }}>
+              {showKebab && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowKebab(false)} />
+              )}
+              <button
+                className="btn btn-ghost"
+                onClick={() => setShowKebab(p => !p)}
+                style={{ padding: '6px 8px', display: 'flex', alignItems: 'center' }}
+                title="More actions"
+              >
+                <MoreVertical size={16} />
+              </button>
+              {showKebab && (
+                <div style={{
+                  position: 'absolute', top: '100%', right: 0, marginTop: 4,
+                  background: 'var(--bg)', border: '1px solid var(--border)',
+                  borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.13)',
+                  minWidth: 170, zIndex: 1000, overflow: 'hidden',
+                }}>
+                  <button
+                    style={{ width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                    onClick={() => { setShowKebab(false); openEditModal(); }}
+                  >
+                    <FileText size={14} /> Edit Rates
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
         {loading ? (
@@ -709,17 +776,6 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 
             {/* Actions — screen only */}
             <div className="pi-no-print" style={{ paddingBottom: 8, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              {inv.rate_mode === 'tech_rate' && (
-                <button
-                  className="btn btn-ghost"
-                  onClick={handleRecalculate}
-                  disabled={recalculating}
-                  title="Recalculate hub rates using new formula: Hub Rate = Customer Rate − Take Rate deduction"
-                >
-                  <RefreshCw size={14} />
-                  {recalculating ? 'Recalculating…' : 'Recalculate'}
-                </button>
-              )}
               {inv.status === 'pending_approval' && (
                 <button
                   className="btn btn-amber"
@@ -730,10 +786,12 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 </button>
               )}
               {inv.status === 'approved' && (
-                <div style={{ color: '#166534', fontWeight: 500, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <CheckCircle2 size={15} />
-                  Approved{inv.approved_at ? ` on ${fmtDate(inv.approved_at)}` : ''}{inv.approved_by_name ? ` by ${inv.approved_by_name}` : ''}
-                </div>
+                <>
+                  <div style={{ color: '#166534', fontWeight: 500, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CheckCircle2 size={15} />
+                    Approved{inv.approved_at ? ` on ${fmtDate(inv.approved_at)}` : ''}{inv.approved_by_name ? ` by ${inv.approved_by_name}` : ''}
+                  </div>
+                </>
               )}
               {inv.status === 'cancelled' && (
                 <div style={{ color: '#991b1b', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -828,6 +886,100 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 
           </div>
         )}
+
+      {/* ── Edit Rates modal ── */}
+      {showEditModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+          zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => !editBusy && setShowEditModal(false)}>
+          <div style={{
+            background: 'var(--bg)', borderRadius: 14, padding: 28,
+            width: '100%', maxWidth: 680, boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>Edit Take Rates</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              Adjust take rate per item — hub rate updates live.
+            </div>
+
+            {(inv?.items || []).length > 0 && (() => {
+              let previewGrandTotal = 0;
+              const rows = (inv?.items || []).map(it => {
+                const custRate  = parseFloat(it.customer_rate ?? 0);
+                const qty       = parseFloat(it.quantity ?? 1);
+                const gstPct    = parseFloat(it.gst_percent ?? 0);
+                const takeRate  = parseFloat(editItemRates[it.id] ?? it.commission_percent ?? 0);
+                const discount  = parseFloat((custRate * (takeRate / 100)).toFixed(4));
+                const hubRate   = parseFloat((custRate - discount).toFixed(4));
+                const hubAmount = parseFloat((hubRate * qty).toFixed(2));
+                const gstAmt    = parseFloat((hubAmount * gstPct / 100).toFixed(2));
+                const total     = parseFloat((hubAmount + gstAmt).toFixed(2));
+                previewGrandTotal += total;
+                return { it, custRate, qty, takeRate, discount, hubRate, total };
+              });
+
+              return (
+                <div style={{ marginBottom: 20 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-soft,#f3f4f6)' }}>
+                        <th style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Item</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Cust. Rate</th>
+                        <th style={{ textAlign: 'center', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Take Rate %</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Discount</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Hub Rate</th>
+                        <th style={{ textAlign: 'right', padding: '8px 10px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase' }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(({ it, custRate, takeRate, discount, hubRate, total }) => (
+                        <tr key={it.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '10px 10px' }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text)' }}>{it.description || it.name}</div>
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                              background: it.item_type === 'service' ? '#eff6ff' : '#fef3c7',
+                              color: it.item_type === 'service' ? '#1e40af' : '#92400e' }}>
+                              {it.item_type === 'service' ? 'Service' : 'Part'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '10px 10px', color: 'var(--text-muted)' }}>₹{custRate.toFixed(2)}</td>
+                          <td style={{ textAlign: 'center', padding: '10px 10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                              <input
+                                type="number" min="0" max="100" step="0.1"
+                                value={editItemRates[it.id] ?? ''}
+                                onChange={e => setEditItemRates(prev => ({ ...prev, [it.id]: e.target.value }))}
+                                style={{ width: 60, padding: '4px 6px', borderRadius: 6, border: '1.5px solid var(--primary)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)', textAlign: 'right', fontWeight: 600 }}
+                              />
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>%</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '10px 10px', color: '#dc2626', fontWeight: 600 }}>-₹{discount.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', padding: '10px 10px', fontWeight: 600, color: '#166534' }}>₹{hubRate.toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', padding: '10px 10px', fontWeight: 700 }}>₹{total.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: 'var(--bg-soft,#f3f4f6)' }}>
+                        <td colSpan={5} style={{ padding: '10px 10px', fontWeight: 700, fontSize: 13, textAlign: 'right' }}>Grand Total</td>
+                        <td style={{ padding: '10px 10px', fontWeight: 800, fontSize: 14, textAlign: 'right', color: 'var(--primary)' }}>₹{previewGrandTotal.toFixed(2)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              );
+            })()}
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setShowEditModal(false)} disabled={editBusy}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleEditSave} disabled={editBusy}>
+                {editBusy ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Approve modal with payout schedule picker ── */}
       {showApproveModal && (

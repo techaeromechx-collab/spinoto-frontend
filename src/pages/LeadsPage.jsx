@@ -1982,11 +1982,13 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
     pickup_address_line2: '',
     pickup_city:          '',
     pickup_pincode:       '',
+    pickup_maps_link:     '',
     drop_required:        false,
     drop_address_line1:   '',
     drop_address_line2:   '',
     drop_city:            '',
     drop_pincode:         '',
+    drop_maps_link:       '',
   });
 
   const [errors, setErrors] = useState({});
@@ -2312,11 +2314,13 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
           pickup_address_line2: form.pickup_required ? (form.pickup_address_line2.trim() || null) : null,
           pickup_city:          form.pickup_required ? (form.pickup_city.trim()          || null) : null,
           pickup_pincode:       form.pickup_required ? (form.pickup_pincode.trim()       || null) : null,
+          pickup_maps_link:     form.pickup_required ? (form.pickup_maps_link.trim()     || null) : null,
           drop_required:        form.drop_required,
           drop_address_line1:   form.drop_required   ? (form.drop_address_line1.trim()   || null) : null,
           drop_address_line2:   form.drop_required   ? (form.drop_address_line2.trim()   || null) : null,
           drop_city:            form.drop_required   ? (form.drop_city.trim()            || null) : null,
           drop_pincode:         form.drop_required   ? (form.drop_pincode.trim()         || null) : null,
+          drop_maps_link:       form.drop_required   ? (form.drop_maps_link.trim()       || null) : null,
           services: selectedSvcs.map(s => ({
             service_id:  s.service_id,
             category_id: s.category_id,
@@ -2329,8 +2333,8 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
   }
 
   return createPortal(
-    <div className="ca-backdrop" onClick={onCancel}>
-      <div className="ca-modal" onClick={e => e.stopPropagation()}>
+    <div className="ca-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="ca-modal" onMouseDown={e => e.stopPropagation()}>
 
         {/* ── Header ── */}
         <div className="ca-hdr">
@@ -2513,7 +2517,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
               <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: form.pickup_required ? 12 : 0 }}>
                 <span style={{ fontSize:13, fontWeight:600, color:'var(--text-muted,#64748b)' }}>Visit</span>
                 <button type="button"
-                  onClick={() => setForm(f => ({ ...f, pickup_required: !f.pickup_required, pickup_address_line1:'', pickup_address_line2:'', pickup_city:'', pickup_pincode:'' }))}
+                  onClick={() => setForm(f => ({ ...f, pickup_required: !f.pickup_required, pickup_address_line1:'', pickup_address_line2:'', pickup_city:'', pickup_pincode:'', pickup_maps_link:'' }))}
                   className={`ca-toggle${form.pickup_required ? ' ca-toggle--on' : ''}`}>
                   <span className="ca-toggle-knob"/>
                 </button>
@@ -2525,6 +2529,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                     <label className="ca-lbl">Address Line 1 <span className="ca-req">*</span></label>
                     <input className={`ca-input${errors.pickup_address_line1 ? ' ca-input--err' : ''}`}
                       placeholder="Flat / Building / Street"
+                      autoComplete="address-line1"
                       value={form.pickup_address_line1}
                       onChange={e => setF('pickup_address_line1', e.target.value)}/>
                     {errors.pickup_address_line1 && <span className="ca-field-err"><AlertCircle size={10}/> {errors.pickup_address_line1}</span>}
@@ -2532,6 +2537,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                   <div className="ca-field">
                     <label className="ca-lbl">Address Line 2</label>
                     <input className="ca-input" placeholder="Landmark / Area (optional)"
+                      autoComplete="address-line2"
                       value={form.pickup_address_line2}
                       onChange={e => setF('pickup_address_line2', e.target.value)}/>
                   </div>
@@ -2539,15 +2545,24 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                     <div className="ca-field">
                       <label className="ca-lbl">City</label>
                       <input className="ca-input" placeholder="City"
+                        autoComplete="address-level2"
                         value={form.pickup_city}
                         onChange={e => setF('pickup_city', e.target.value)}/>
                     </div>
                     <div className="ca-field">
                       <label className="ca-lbl">Pincode</label>
                       <input className="ca-input" placeholder="6-digit pincode" maxLength={6}
+                        autoComplete="postal-code"
                         value={form.pickup_pincode}
                         onChange={e => setF('pickup_pincode', e.target.value.replace(/\D/g,''))}/>
                     </div>
+                  </div>
+                  <div className="ca-field">
+                    <label className="ca-lbl">Google Maps Link</label>
+                    <input className="ca-input" placeholder="https://maps.google.com/..."
+                      autoComplete="off"
+                      value={form.pickup_maps_link}
+                      onChange={e => setF('pickup_maps_link', e.target.value)}/>
                   </div>
                 </div>
               )}
@@ -2707,13 +2722,12 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
 
 // ── Inline status select (EDIT_LEAD only) ─────────────────────────────────────
 // Uses a fixed-position portal so the dropdown is never clipped by overflow:hidden parents.
-function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = [] }) {
+function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = [], onOpenConvert }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const [lostModal, setLostModal] = useState(null);         // { statusName }
   const [followUpModal, setFollowUpModal] = useState(null); // { statusName }
-  const [convertModal, setConvertModal] = useState(null);   // { statusName }
   const btnRef = useRef(null);
   const dropRef = useRef(null);
 
@@ -2769,7 +2783,7 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
     // 2. Intercept "converts_to_appointment" flag — open appointment form
     if (statusObj?.converts_to_appointment) {
       setOpen(false);
-      setConvertModal({ statusName: name, leadId });
+      onOpenConvert?.({ statusName: name, leadId, leadName, saveFn: save });
       return;
     }
     // 3. Intercept "needs_follow_up" flag — open follow-up scheduler
@@ -2815,15 +2829,6 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
           leadName={leadName}
           onConfirm={data => { setFollowUpModal(null); save(followUpModal.statusName, null, data); }}
           onCancel={() => setFollowUpModal(null)}
-        />
-      )}
-      {convertModal && (
-        <ConvertToAppointmentModal
-          statusName={convertModal.statusName}
-          leadId={convertModal.leadId}
-          leadName={leadName}
-          onConfirm={data => { setConvertModal(null); save(convertModal.statusName, null, data); }}
-          onCancel={() => setConvertModal(null)}
         />
       )}
       <button
@@ -2874,6 +2879,8 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
 export default function LeadsPage() {
   const location      = useLocation();
   const [searchParams] = useSearchParams();
+  // Lifted here so the modal survives lead-list re-renders (e.g. Chrome autofill changing search)
+  const [pageConvertModal, setPageConvertModal] = useState(null); // { statusName, leadId, leadName, saveFn }
   const canCreate = useCan('CREATE_LEAD');
   const canEdit = useCan('EDIT_LEAD');
   const canDelete = useCan('DELETE_LEAD');
@@ -3199,6 +3206,21 @@ export default function LeadsPage() {
 
   return (
     <div className="leads-page">
+
+      {/* Convert-to-Appointment modal — lifted to page level so it survives lead-list re-renders */}
+      {pageConvertModal && (
+        <ConvertToAppointmentModal
+          statusName={pageConvertModal.statusName}
+          leadId={pageConvertModal.leadId}
+          leadName={pageConvertModal.leadName}
+          onConfirm={data => {
+            const { saveFn, statusName } = pageConvertModal;
+            setPageConvertModal(null);
+            saveFn(statusName, null, data);
+          }}
+          onCancel={() => setPageConvertModal(null)}
+        />
+      )}
 
       {/* Toast */}
       {toast && (
@@ -3557,6 +3579,10 @@ export default function LeadsPage() {
             <div className="lp-search">
               <Search size={14} className="lp-search-icon" />
               <input placeholder="Search by name or mobile…"
+                autoComplete="off"
+                data-form-type="other"
+                readOnly
+                onFocus={e => e.target.removeAttribute('readonly')}
                 value={search} onChange={e => setSearch(e.target.value)} />
               {search && <button className="lp-clear-btn" onClick={() => setSearch('')}><X size={12} /></button>}
             </div>
@@ -3978,7 +4004,8 @@ export default function LeadsPage() {
                   <td onClick={e => e.stopPropagation()}>
                     {canEdit && !l.is_converted
                       ? <StatusInlineSelect leadId={l.id} leadName={l.name || l.mobile} current={l.status} statusList={statusList}
-                        onChange={updated => setLeads(prev => prev.map(x => x.id === l.id ? { ...x, ...updated } : x))} />
+                        onChange={updated => setLeads(prev => prev.map(x => x.id === l.id ? { ...x, ...updated } : x))}
+                        onOpenConvert={setPageConvertModal} />
                       : <StatusBadge status={l.status} statusList={statusList} />
                     }
                     {l.is_converted && (
@@ -4069,8 +4096,9 @@ export default function LeadsPage() {
                 </div>
                 <div className="lp-mc-right" onClick={e => e.stopPropagation()}>
                   {canEdit && !l.is_converted
-                    ? <StatusInlineSelect leadId={l.id} current={l.status} statusList={statusList}
-                      onChange={updated => setLeads(prev => prev.map(x => x.id === l.id ? { ...x, ...updated } : x))} />
+                    ? <StatusInlineSelect leadId={l.id} leadName={l.name || l.mobile} current={l.status} statusList={statusList}
+                      onChange={updated => setLeads(prev => prev.map(x => x.id === l.id ? { ...x, ...updated } : x))}
+                      onOpenConvert={setPageConvertModal} />
                     : <StatusBadge status={l.status} statusList={statusList} />
                   }
                   {l.is_converted && (

@@ -479,8 +479,7 @@ export default function AppShell({ children }) {
               <div className="sidebar-profile-name">{user?.name}</div>
               <div className="sidebar-profile-hint">
                 {user?.is_super_admin ? 'Super Admin Panel'
-                  : can('MANAGE_USERS') ? 'Admin Panel'
-                  : can('VIEW_TEAM_LEADS') ? 'My Team'
+                  : user?.role_name ? user.role_name
                   : 'View my profile'}
               </div>
             </div>
@@ -721,7 +720,7 @@ export default function AppShell({ children }) {
                 </div>
                 <div className="topbar-user-info">
                   <div className="topbar-user-name">{user?.name}</div>
-                  <div className="topbar-user-role">{user?.is_super_admin ? 'Super Admin' : 'User'}</div>
+                  <div className="topbar-user-role">{user?.is_super_admin ? 'Super Admin' : (user?.role_name || 'User')}</div>
                 </div>
                 <ChevronDown size={14} className={`topbar-user-chevron${userDropOpen ? ' topbar-user-chevron--open' : ''}`} />
               </div>

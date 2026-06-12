@@ -423,17 +423,24 @@ async function approveInvoice() {
     else if (dType === 'flat' && dValue > 0) discountAmount = Math.min(dValue, totalBefore);
     return discountAmount;
   }
-  const totalDiscount = r2(items.reduce((s, it) => s + computeDiscount(it), 0));
-  const hasDiscount   = totalDiscount > 0;
+  // Discount mode from the CI (carried over from estimate)
+  const ciDiscountMode     = inv?.discount_mode || 'line_item';
+  const ciTxDiscountType   = inv?.transaction_discount_type  || null;
+  const ciTxDiscountValue  = parseFloat(inv?.transaction_discount_value)  || 0;
+  const ciTxDiscountAmount = parseFloat(inv?.transaction_discount_amount) || 0;
+
+  const lineItemDiscount = r2(items.reduce((s, it) => s + computeDiscount(it), 0));
+  const totalDiscount    = ciDiscountMode === 'transaction' ? ciTxDiscountAmount : lineItemDiscount;
+  const hasDiscount      = totalDiscount > 0;
 
   // Recompute all totals from post-discount per-item values (don't trust stored grand_total)
-  const { subtotal, totalGst, grandTotal } = items.reduce((acc, it) => {
+  const { subtotal, totalGst, grandTotal: itemsGrandTotal } = items.reduce((acc, it) => {
     const exRate      = parseFloat(it.customer_rate ?? it.rate ?? 0);
     const qty         = parseFloat(it.quantity ?? 1);
     const gstPct      = parseFloat(it.gst_percent ?? 0);
     const incRate     = r2(exRate * (1 + gstPct / 100));
     const totalBefore = r2(qty * incRate);
-    const discAmt     = computeDiscount(it);
+    const discAmt     = ciDiscountMode === 'line_item' ? computeDiscount(it) : 0;
     const total       = r2(Math.max(0, totalBefore - discAmt));
     const taxable     = r2(total / (1 + gstPct / 100));
     const gstAmt      = r2(total - taxable);
@@ -443,6 +450,11 @@ async function approveInvoice() {
       grandTotal: r2(acc.grandTotal + total),
     };
   }, { subtotal: 0, totalGst: 0, grandTotal: 0 });
+
+  // Apply transaction discount on top of items total if applicable
+  const grandTotal = ciDiscountMode === 'transaction'
+    ? r2(itemsGrandTotal - ciTxDiscountAmount)
+    : itemsGrandTotal;
 
   // Dynamic GST slab grouping
   const gstSlabMap = {};
@@ -718,7 +730,11 @@ async function approveInvoice() {
                 {/* Total Discount */}
                 {hasDiscount && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: '1px solid #f3f4f6', background: '#fffbeb', margin: '0 -2px', padding: '5px 2px' }}>
-                    <span style={{ color: '#b45309', fontWeight: 600 }}>Total Discount</span>
+                    <span style={{ color: '#b45309', fontWeight: 600 }}>
+                      {ciDiscountMode === 'transaction'
+                        ? `Discount (${ciTxDiscountType === 'percent' ? ciTxDiscountValue + '%' : '₹' + ciTxDiscountValue})`
+                        : 'Total Discount'}
+                    </span>
                     <span style={{ fontWeight: 700, color: '#b45309', minWidth: 100, textAlign: 'right' }}>−{fmt(totalDiscount)}</span>
                   </div>
                 )}

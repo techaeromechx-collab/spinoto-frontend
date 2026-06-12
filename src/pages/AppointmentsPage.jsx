@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
@@ -92,12 +93,17 @@ function CancelReasonModal({ statusName, onConfirm, onCancel }) {
   );
 }
 
-function ApptStatusSelect({ apptId, current, statusList, onChange }) {
-  const canEdit = useCan('EDIT_APPOINTMENT');
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const [pendingStatus, setPendingStatus] = useState(null); // status that needs reason
+function ApptStatusSelect({
+  apptId, current, statusList, onChange, pickupRequired,
+  pickupTimestamp, estimateStatus, invoiceStatus, invoiceId,
+}) {
+  const canEdit  = useCan('EDIT_APPOINTMENT');
+  const navigate = useNavigate();
+  const [open, setOpen]               = useState(false);
+  const [busy, setBusy]               = useState(false);
+  const [pos,  setPos]                = useState({ top: 0, left: 0, width: 0 });
+  const [pendingStatus, setPendingStatus] = useState(null);
+  const [blockMsg, setBlockMsg]       = useState('');   // inline error message
   const btnRef = useRef(null);
   const dropRef = useRef(null);
 
@@ -106,11 +112,13 @@ function ApptStatusSelect({ apptId, current, statusList, onChange }) {
     function close(e) {
       if (dropRef.current && !dropRef.current.contains(e.target) &&
         btnRef.current && !btnRef.current.contains(e.target)) {
-        setOpen(false);
+        setOpen(false); setBlockMsg('');
       }
     }
-    // Fix #26: close on scroll so the fixed dropdown doesn't drift from its button
-    function closeOnScroll() { setOpen(false); }
+    function closeOnScroll(e) {
+      if (dropRef.current && dropRef.current.contains(e.target)) return;
+      setOpen(false); setBlockMsg('');
+    }
     document.addEventListener('mousedown', close);
     document.addEventListener('scroll', closeOnScroll, true);
     return () => {
@@ -121,8 +129,105 @@ function ApptStatusSelect({ apptId, current, statusList, onChange }) {
 
   function openDrop() {
     const r = btnRef.current?.getBoundingClientRect();
-    if (r) setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 180) });
+    if (r) {
+      const itemCount   = statusList.filter(s => !['vehicle-picked','at-workshop'].includes(s.slug) || pickupRequired).length;
+      const dropHeight  = itemCount * 36 + 12; // approx height
+      const spaceBelow  = window.innerHeight - r.bottom;
+      const openUpward  = spaceBelow < dropHeight + 8 && r.top > dropHeight;
+      setPos({
+        left:   r.left,
+        width:  Math.max(r.width, 220),
+        top:    openUpward ? undefined : r.bottom + 4,
+        bottom: openUpward ? window.innerHeight - r.top + 4 : undefined,
+      });
+    }
+    setBlockMsg('');
     setOpen(o => !o);
+  }
+
+  // ── Prerequisite checker ─────────────────────────────────────────────────
+  // Returns: { ok: true } | { ok: false, message } | { ok: false, redirect, state }
+  function checkPrerequisite(slug) {
+    // estimate helper flags
+    const estExists   = !!estimateStatus;
+    const estSubmitted = estExists && ['pending_company_review', 'approved', 'customer_approved', 'revision_requested'].includes(estimateStatus);
+    const estApproved  = estExists && ['approved', 'customer_approved'].includes(estimateStatus);
+    // invoice helper flags
+    const invExists   = !!invoiceId;
+    const invApproved = invExists && ['approved', 'partially_paid', 'paid'].includes(invoiceStatus);
+    const invPaid     = invExists && ['paid'].includes(invoiceStatus);
+
+    switch (slug) {
+      // ── Pickup flow ──
+      case 'at-workshop':
+        if (!pickupTimestamp)
+          return { ok: false, message: 'Mark the vehicle as picked up first before moving to At Workshop.' };
+        break;
+
+      // ── Estimate flow ──
+      case 'estimate-created':
+        if (!estExists)
+          return { ok: false, redirect: '/estimates', state: { createForAppointmentId: apptId } };
+        break;
+
+      case 'estimate-submitted':
+        if (!estExists)
+          return { ok: false, message: 'No estimate exists yet. Create and submit the estimate first.' };
+        if (!estSubmitted)
+          return { ok: false, message: 'Estimate exists but has not been submitted yet. Submit the estimate first.' };
+        break;
+
+      case 'estimate-approved':
+        if (!estExists)
+          return { ok: false, message: 'No estimate exists yet. Create, submit, and get it approved first.' };
+        if (!estSubmitted)
+          return { ok: false, message: 'Estimate has not been submitted yet. Submit it for approval first.' };
+        if (!estApproved)
+          return { ok: false, message: 'Estimate is submitted but not yet approved. Get it approved first.' };
+        break;
+
+      // ── Work flow ──
+      case 'work-in-progress':
+        if (!estApproved && !['work_in_progress', 'work_completed'].includes(estimateStatus))
+          return { ok: false, message: 'Estimate must be approved before work can begin.' };
+        if (!estimateStatus || !['fully_approved', 'partially_approved', 'work_in_progress', 'work_completed'].includes(estimateStatus))
+          return { ok: false, message: 'Estimate must be approved before work can begin.' };
+        if (estimateStatus === 'work_completed')
+          return { ok: false, message: 'All work items are already completed.' };
+        break;
+
+      case 'work-completed':
+        if (!estimateStatus || estimateStatus !== 'work_completed')
+          return { ok: false, message: 'Work is not fully completed yet. Mark all work items as completed in the estimate first.' };
+        break;
+
+      // ── Invoice flow ──
+      case 'invoice-generated':
+        if (!invExists)
+          return { ok: false, message: 'No invoice exists yet. Generate an invoice from the estimate first.' };
+        break;
+
+      case 'invoice-approved':
+        if (!invExists)
+          return { ok: false, message: 'No invoice exists yet. Generate and approve the invoice first.' };
+        if (!invApproved)
+          return { ok: false, message: 'Invoice exists but has not been approved yet. Approve the invoice first.' };
+        break;
+
+      case 'invoice-paid':
+        if (!invPaid)
+          return { ok: false, message: 'Invoice has not been fully paid yet.' };
+        break;
+
+      case 'closed':
+        if (!invPaid)
+          return { ok: false, message: 'Invoice must be fully paid before the appointment can be closed.' };
+        break;
+
+      default:
+        break;
+    }
+    return { ok: true };
   }
 
   async function applyStatus(status, cancellationReason) {
@@ -137,10 +242,28 @@ function ApptStatusSelect({ apptId, current, statusList, onChange }) {
   }
 
   function pick(status) {
-    setOpen(false);
-    if (status.id === current?.id) return;
-    const isCancelling = status.name?.toLowerCase().includes('cancel');
-    if (isCancelling) { setPendingStatus(status); return; }
+    if (status.id === current?.id) { setOpen(false); return; }
+
+    // Cancellation — intercept for reason modal
+    if (status.name?.toLowerCase().includes('cancel')) {
+      setOpen(false); setBlockMsg('');
+      setPendingStatus(status);
+      return;
+    }
+
+    // Prerequisite check
+    const check = checkPrerequisite(status.slug);
+    if (!check.ok) {
+      if (check.redirect) {
+        setOpen(false); setBlockMsg('');
+        navigate(check.redirect, { state: check.state });
+      } else {
+        setBlockMsg(check.message);
+      }
+      return;
+    }
+
+    setOpen(false); setBlockMsg('');
     applyStatus(status, null);
   }
 
@@ -167,18 +290,127 @@ function ApptStatusSelect({ apptId, current, statusList, onChange }) {
       </button>
       {open && (
         <div ref={dropRef} className="appt-status-drop"
-          style={{ top: pos.top, left: pos.left, minWidth: pos.width }}>
-          {statusList.map(s => (
-            <div key={s.id}
-              className={`appt-status-opt${s.id === current?.id ? ' appt-status-opt--active' : ''}`}
-              onClick={() => pick(s)}>
-              <span className="appt-status-dot" style={{ background: s.color }} />
-              {s.name}
+          style={{ top: pos.top, bottom: pos.bottom, left: pos.left, minWidth: pos.width }}>
+          {blockMsg && (
+            <div style={{
+              padding: '8px 12px', fontSize: 12, color: '#dc2626',
+              background: '#fef2f2', borderBottom: '1px solid #fecaca',
+              display: 'flex', alignItems: 'flex-start', gap: 6,
+            }}>
+              <span style={{ flexShrink: 0, marginTop: 1 }}>⚠️</span>
+              <span>{blockMsg}</span>
             </div>
-          ))}
+          )}
+          {statusList
+            .filter(s => !['vehicle-picked', 'at-workshop'].includes(s.slug) || pickupRequired)
+            .map(s => (
+              <div key={s.id}
+                className={`appt-status-opt${s.id === current?.id ? ' appt-status-opt--active' : ''}`}
+                onClick={() => pick(s)}>
+                <span className="appt-status-dot" style={{ background: s.color }} />
+                {s.name}
+              </div>
+            ))}
         </div>
       )}
     </>
+  );
+}
+
+// ── Reschedule Modal ──────────────────────────────────────────────────────────
+const RESCHEDULE_REASONS = [
+  'Customer Requested Reschedule',
+  'Customer Did Not Answer the Phone',
+  'Workshop Unavailable',
+  'Price Negotiation Pending',
+  'Customer Approval Pending',
+  'Resource Unavailable',
+  'Parts Availability Issue',
+  'Scheduling Conflict',
+  'Operational Delay',
+  'Other Reason',
+];
+
+function RescheduleModal({ appt, onConfirm, onCancel }) {
+  const [form, setForm] = useState({
+    scheduled_date: appt.scheduled_date?.slice(0, 10) || '',
+    scheduled_time: appt.scheduled_time?.slice(0, 5) || '',
+    reschedule_reason: '',
+    reschedule_notes: '',
+  });
+  const [err, setErr] = useState('');
+
+  function handleSubmit() {
+    if (!form.scheduled_date) { setErr('Please select a new date.'); return; }
+    if (!form.reschedule_reason) { setErr('Please select a reason.'); return; }
+    setErr('');
+    onConfirm(form);
+  }
+
+  return createPortal(
+    <div className="appt-backdrop" style={{ zIndex: 1200 }} onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="appt-view-modal" style={{ maxWidth: 480 }} onMouseDown={e => e.stopPropagation()}>
+        <div className="apptv-hdr" style={{ borderBottom: '1px solid var(--border)' }}>
+          <span className="apptv-hdr-title" style={{ fontSize: 15 }}>Reschedule Appointment #{appt.id}</span>
+          <button className="apptv-close-btn" onClick={onCancel}>✕</button>
+        </div>
+
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Date + Time row */}
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
+                New Date <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+              <input type="date" className="apptv-input" style={{ width: '100%' }}
+                value={form.scheduled_date}
+                onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
+                New Time
+              </label>
+              <input type="time" className="apptv-input" style={{ width: '100%' }}
+                value={form.scheduled_time}
+                onChange={e => setForm(f => ({ ...f, scheduled_time: e.target.value }))} />
+            </div>
+          </div>
+
+          {/* Reason dropdown */}
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
+              Reason for Rescheduling <span style={{ color: 'var(--danger)' }}>*</span>
+            </label>
+            <select className="apptv-input" style={{ width: '100%' }}
+              value={form.reschedule_reason}
+              onChange={e => setForm(f => ({ ...f, reschedule_reason: e.target.value }))}>
+              <option value="">— Select a reason —</option>
+              {RESCHEDULE_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
+              Notes <span style={{ fontSize: 11, fontWeight: 400 }}>(optional)</span>
+            </label>
+            <textarea className="apptv-input" style={{ width: '100%', minHeight: 80, resize: 'vertical' }}
+              placeholder="Any additional context…"
+              value={form.reschedule_notes}
+              onChange={e => setForm(f => ({ ...f, reschedule_notes: e.target.value }))} />
+          </div>
+
+          {err && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</div>}
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4 }}>
+            <button className="apptv-cancel-btn" onClick={onCancel}>Cancel</button>
+            <button className="apptv-save-btn" onClick={handleSubmit}>Confirm Reschedule</button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -209,11 +441,7 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
   // When parent pushes an update (e.g. status change), merge it in
   useEffect(() => { setAppt(apptProp); }, [apptProp]);
 
-  const [rescheduling, setRescheduling] = useState(false);
-  const [rescForm, setRescForm] = useState({
-    scheduled_date: apptProp.scheduled_date?.slice(0, 10) || '',
-    scheduled_time: apptProp.scheduled_time?.slice(0, 5) || '',
-  });
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [pickupBusy, setPickupBusy] = useState(false);
@@ -235,21 +463,23 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
 
   const status = statusList.find(s => s.id === appt.status_id);
 
-  async function saveReschedule() {
-    if (!rescForm.scheduled_date) { setErr('Date required'); return; }
+  async function saveReschedule(formData) {
     setSaving(true); setErr('');
     try {
       const r = await api(`/api/appointments/${appt.id}`, {
         method: 'PATCH',
         body: {
-          scheduled_date: rescForm.scheduled_date,
-          scheduled_time: rescForm.scheduled_time || null,
+          scheduled_date:    formData.scheduled_date,
+          scheduled_time:    formData.scheduled_time || null,
+          reschedule_reason: formData.reschedule_reason,
+          reschedule_notes:  formData.reschedule_notes || null,
         },
       });
       setAppt(r.item);
       onUpdated(r.item);
-      setRescheduling(false);
-    } catch (e) { setErr(e.message); setSaving(false); }
+      setShowRescheduleModal(false);
+    } catch (e) { setErr(e.message); }
+    finally { setSaving(false); }
   }
 
   const is2W = appt.vehicle_type_name?.toLowerCase().includes('two') || appt.vehicle_type_name?.toLowerCase().includes('2');
@@ -321,40 +551,92 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
             </div>
           </div>
 
-          {/* ── Hub + Schedule (combined row) ── */}
-          <div className="apptv-row apptv-row--border apptv-row--meta">
-            <div className="apptv-meta-item">
-              <span className="apptv-meta-lbl"><Network size={10} /> Hub</span>
-              <span className="apptv-meta-val">{appt.hub_name || '—'}</span>
+          {/* ── Scheduled section ── */}
+          <div className="apptv-sched-section">
+            <div className="apptv-sched-top">
+              <div className="apptv-sched-header">
+                <span className="apptv-meta-lbl"><Clock size={10} /> {appt.reschedule_reason ? 'Appointment' : 'Scheduled'}</span>
+                {canEditAppt && (
+                  <button className="apptv-resch-btn" onClick={() => setShowRescheduleModal(true)}>
+                    <Calendar size={11} /> Reschedule
+                  </button>
+                )}
+              </div>
+
+              {/* Rescheduled: show original vs new in 2 columns */}
+              {appt.reschedule_reason ? (
+                <>
+                  <div className="apptv-resch-dates">
+                    <div className="apptv-resch-date-box apptv-resch-date-box--original">
+                      <div className="apptv-resch-date-lbl"><Calendar size={11} /> Original Appointment</div>
+                      <div className="apptv-resch-date-val">{fmtDate(appt.original_scheduled_date) || '—'}</div>
+                      {appt.original_scheduled_time && (
+                        <div className="apptv-resch-date-time">{fmtTime(appt.original_scheduled_time)}</div>
+                      )}
+                    </div>
+                    <div className="apptv-resch-dates-divider" />
+                    <div className="apptv-resch-date-box">
+                      <div className="apptv-resch-date-lbl"><Calendar size={11} /> New Appointment</div>
+                      <div className="apptv-resch-date-val apptv-resch-date-val--new">{fmtDate(appt.scheduled_date)}</div>
+                      {appt.scheduled_time && (
+                        <div className="apptv-resch-date-time">{fmtTime(appt.scheduled_time)}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="apptv-resch-meta">
+                    <div className="apptv-resch-meta-box">
+                      <div className="apptv-resch-date-lbl"><Calendar size={11} /> Reschedule Reason</div>
+                      <div className="apptv-resch-reason">{appt.reschedule_reason}</div>
+                      {appt.reschedule_notes && (
+                        <div className="apptv-resch-notes">"{appt.reschedule_notes}"</div>
+                      )}
+                    </div>
+                    <div className="apptv-resch-meta-box">
+                      <div className="apptv-resch-date-lbl"><User size={11} /> Rescheduled By</div>
+                      <div className="apptv-resch-by-name">{appt.rescheduled_by_name || '—'}</div>
+                      {appt.rescheduled_at && (
+                        <div className="apptv-resch-by-time">
+                          <Clock size={10} /> {fmtDate(appt.rescheduled_at)} · {fmtTime(appt.rescheduled_at)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* Not rescheduled: simple date + time */
+                <div className="apptv-sched-datetime">
+                  <span className="apptv-sched-date">{fmtDate(appt.scheduled_date)}</span>
+                  {appt.scheduled_time && (
+                    <>
+                      <span className="apptv-sched-divider" />
+                      <span className="apptv-sched-time">{fmtTime(appt.scheduled_time)}</span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="apptv-meta-divider" />
-            <div className="apptv-meta-item">
-              <span className="apptv-meta-lbl"><Clock size={10} /> Scheduled</span>
-              <span className="apptv-meta-val">
-                {fmtDate(appt.scheduled_date)}
-                {appt.scheduled_time && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> · {fmtTime(appt.scheduled_time)}</span>}
-              </span>
+
+            <div className="apptv-sched-sub">
+              <div className="apptv-sched-sub-item">
+                <div className="apptv-sched-sub-lbl"><Network size={10} /> Hub</div>
+                <div className="apptv-sched-sub-val">{appt.hub_name || '—'}</div>
+              </div>
+              <div className="apptv-sched-sub-item">
+                <div className="apptv-sched-sub-lbl"><User size={10} /> Assigned to</div>
+                <div className="apptv-sched-sub-val" style={!appt.assigned_to_name ? { color: 'var(--text-muted)', fontWeight: 400 } : {}}>
+                  {appt.assigned_to_name || '—'}
+                </div>
+              </div>
             </div>
-            {canEditAppt && !rescheduling && (
-              <button className="apptv-resch-btn" onClick={() => setRescheduling(true)}>
-                <Calendar size={11} /> Reschedule
-              </button>
-            )}
           </div>
 
-          {/* ── Reschedule form ── */}
-          {rescheduling && (
-            <div className="apptv-row apptv-row--border">
-              <div className="apptv-resch-form">
-                <input type="date" className="apptv-input" value={rescForm.scheduled_date}
-                  onChange={e => setRescForm(f => ({ ...f, scheduled_date: e.target.value }))} />
-                <input type="time" className="apptv-input" value={rescForm.scheduled_time}
-                  onChange={e => setRescForm(f => ({ ...f, scheduled_time: e.target.value }))} />
-                <button className="apptv-save-btn" onClick={saveReschedule} disabled={saving}>{saving ? '…' : 'Save'}</button>
-                <button className="apptv-cancel-btn" onClick={() => { setRescheduling(false); setErr(''); }} disabled={saving}>Cancel</button>
-              </div>
-              {err && <div className="apptv-resch-err">{err}</div>}
-            </div>
+          {/* ── Reschedule modal ── */}
+          {showRescheduleModal && (
+            <RescheduleModal
+              appt={appt}
+              onConfirm={saveReschedule}
+              onCancel={() => setShowRescheduleModal(false)}
+            />
           )}
 
           {/* ── Services ── */}
@@ -413,6 +695,12 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
                       {[appt.pickup_address_line1, appt.pickup_address_line2, appt.pickup_city, appt.pickup_pincode].filter(Boolean).join(', ')}
                     </p>
                   )}
+                  {appt.pickup_maps_link && (
+                    <a href={appt.pickup_maps_link} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: '#0891b2', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <MapPin size={11} /> View on Google Maps
+                    </a>
+                  )}
                   {appt.pickup_timestamp && (
                     <div style={{ fontSize: 12, color: '#0f766e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
                       <CheckCircle2 size={12} /> Picked up · {new Date(appt.pickup_timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -441,6 +729,12 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
                     <p className="apptv-notes" style={{ margin: 0 }}>
                       {[appt.drop_address_line1, appt.drop_address_line2, appt.drop_city, appt.drop_pincode].filter(Boolean).join(', ')}
                     </p>
+                  )}
+                  {appt.drop_maps_link && (
+                    <a href={appt.drop_maps_link} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: '#7c3aed', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <MapPin size={11} /> View on Google Maps
+                    </a>
                   )}
                 </div>
               )}
@@ -636,11 +930,13 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
     pickup_address_line2: appt.pickup_address_line2 || '',
     pickup_city: appt.pickup_city || '',
     pickup_pincode: appt.pickup_pincode || '',
+    pickup_maps_link: appt.pickup_maps_link || '',
     drop_required: appt.drop_required || false,
     drop_address_line1: appt.drop_address_line1 || '',
     drop_address_line2: appt.drop_address_line2 || '',
     drop_city: appt.drop_city || '',
     drop_pincode: appt.drop_pincode || '',
+    drop_maps_link: appt.drop_maps_link || '',
   });
   const f = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
@@ -931,11 +1227,13 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
           pickup_address_line2: form.pickup_required ? (form.pickup_address_line2.trim() || null) : null,
           pickup_city: form.pickup_required ? (form.pickup_city.trim() || null) : null,
           pickup_pincode: form.pickup_required ? (form.pickup_pincode.trim() || null) : null,
+          pickup_maps_link: form.pickup_required ? (form.pickup_maps_link.trim() || null) : null,
           drop_required: form.drop_required,
           drop_address_line1: form.drop_required ? (form.drop_address_line1.trim() || null) : null,
           drop_address_line2: form.drop_required ? (form.drop_address_line2.trim() || null) : null,
           drop_city: form.drop_required ? (form.drop_city.trim() || null) : null,
           drop_pincode: form.drop_required ? (form.drop_pincode.trim() || null) : null,
+          drop_maps_link: form.drop_required ? (form.drop_maps_link.trim() || null) : null,
           services: finalServices.map(s => ({ service_id: s.id, category_id: s.category_id, price: s.price })),
         },
       });
@@ -1116,7 +1414,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.pickup_required ? 10 : 0 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: !form.pickup_required ? 'var(--text)' : 'var(--text-muted)' }}>Visit</span>
               <button type="button"
-                onClick={() => setForm(p => ({ ...p, pickup_required: !p.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '' }))}
+                onClick={() => setForm(p => ({ ...p, pickup_required: !p.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '' }))}
                 className={`ea-toggle${form.pickup_required ? ' ea-toggle--on' : ''}`}>
                 <span className="ea-toggle-knob" />
               </button>
@@ -1140,6 +1438,10 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
                   <label>Pincode</label>
                   <input className="ea-input" placeholder="6-digit pincode" maxLength={6} value={form.pickup_pincode}
                     onChange={e => setForm(p => ({ ...p, pickup_pincode: e.target.value.replace(/\D/g, '') }))} />
+                </div>
+                <div className="ea-field ea-full">
+                  <label>Google Maps Link</label>
+                  <input className="ea-input" placeholder="https://maps.google.com/..." value={form.pickup_maps_link} onChange={f('pickup_maps_link')} />
                 </div>
               </div>
             )}
@@ -1276,8 +1578,8 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
   const [apptForm, setApptForm] = useState({
     hub_id: '', scheduled_date: '', scheduled_time: '',
     notes: '',
-    pickup_required: false, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '',
-    drop_required: false, drop_address_line1: '', drop_address_line2: '', drop_city: '', drop_pincode: '',
+    pickup_required: false, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '',
+    drop_required: false, drop_address_line1: '', drop_address_line2: '', drop_city: '', drop_pincode: '', drop_maps_link: '',
   });
   const [hubCategories, setHubCategories] = useState([]);
   const [selectedCatId, setSelectedCatId] = useState(null);
@@ -1619,11 +1921,13 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
         pickup_address_line2: apptForm.pickup_required ? (apptForm.pickup_address_line2.trim() || null) : null,
         pickup_city: apptForm.pickup_required ? (apptForm.pickup_city.trim() || null) : null,
         pickup_pincode: apptForm.pickup_required ? (apptForm.pickup_pincode.trim() || null) : null,
+        pickup_maps_link: apptForm.pickup_required ? (apptForm.pickup_maps_link.trim() || null) : null,
         drop_required: apptForm.drop_required,
         drop_address_line1: apptForm.drop_required ? apptForm.drop_address_line1.trim() : null,
         drop_address_line2: apptForm.drop_required ? (apptForm.drop_address_line2.trim() || null) : null,
         drop_city: apptForm.drop_required ? (apptForm.drop_city.trim() || null) : null,
         drop_pincode: apptForm.drop_required ? (apptForm.drop_pincode.trim() || null) : null,
+        drop_maps_link: apptForm.drop_required ? (apptForm.drop_maps_link.trim() || null) : null,
         services: apptServices.map(s => ({ service_id: s.id, category_id: s.category_id, price: s.price })),
       };
       const r = await api('/api/appointments', { method: 'POST', body: payload });
@@ -2018,7 +2322,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: !apptForm.pickup_required ? 'var(--text)' : 'var(--text-muted)' }}>Visit</span>
                   <button type="button"
-                    onClick={() => setApptForm(f => ({ ...f, pickup_required: !f.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '' }))}
+                    onClick={() => setApptForm(f => ({ ...f, pickup_required: !f.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '' }))}
                     className={`ea-toggle${apptForm.pickup_required ? ' ea-toggle--on' : ''}`}>
                     <span className="ea-toggle-knob" />
                   </button>
@@ -2052,6 +2356,12 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                           value={apptForm.pickup_pincode}
                           onChange={e => setApptForm(f => ({ ...f, pickup_pincode: e.target.value.replace(/\D/g, '') }))} />
                       </div>
+                    </div>
+                    <div>
+                      <label className="ca-lbl">Google Maps Link</label>
+                      <input className="ca-input" placeholder="https://maps.google.com/..."
+                        value={apptForm.pickup_maps_link}
+                        onChange={e => setApptForm(f => ({ ...f, pickup_maps_link: e.target.value }))} />
                     </div>
                   </div>
                 )}
@@ -2392,6 +2702,11 @@ export default function AppointmentsPage() {
                         current={statusCfg}
                         statusList={statusList}
                         onChange={handleUpdated}
+                        pickupRequired={a.pickup_required}
+                        pickupTimestamp={a.pickup_timestamp}
+                        estimateStatus={a.estimate_status}
+                        invoiceId={a.invoice_id}
+                        invoiceStatus={a.invoice_status}
                       />
                     </td>
                     <td onClick={e => e.stopPropagation()}>

@@ -4,90 +4,11 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useBodyLock } from '../hooks/useBodyLock.js';
 
-// ── Role presets ─────────────────────────────────────────────────────────────
-const ROLE_PRESETS = [
-  {
-    id: 'caller',
-    label: 'Caller',
-    icon: '📞',
-    description: 'Field agent who captures and manages their own leads.',
-    permissions: [
-      'CREATE_LEAD', 'VIEW_OWN_LEADS', 'EDIT_LEAD',
-      'VIEW_VEHICLE', 'VIEW_SERVICE', 'VIEW_PRICING_RULE',
-      'VIEW_DASHBOARD_OWN',
-    ],
-  },
-  {
-    id: 'manager',
-    label: 'Manager',
-    icon: '👤',
-    description: 'Team lead who monitors and edits leads from their assigned callers.',
-    permissions: [
-      'CREATE_LEAD', 'VIEW_TEAM_LEADS', 'EDIT_LEAD',
-      'VIEW_VEHICLE', 'VIEW_SERVICE', 'VIEW_PRICING_RULE',
-      'VIEW_REPORTS', 'EXPORT_LEADS',
-      // Dashboard
-      'VIEW_DASHBOARD_LEADS', 'VIEW_DASHBOARD_FOLLOWUPS',
-      'VIEW_DASHBOARD_STATS_STRIP', 'VIEW_DASHBOARD_QUICK_ACTIONS',
-      'VIEW_DASHBOARD_ACTIVITIES', 'VIEW_DASHBOARD_FUNNEL',
-      'VIEW_DASHBOARD_TOP_SERVICES', 'VIEW_DASHBOARD_TEAM_PERFORMANCE',
-    ],
-  },
-  {
-    id: 'senior',
-    label: 'Senior Manager',
-    icon: '🏆',
-    description: 'Full lead access, pricing control, and reporting.',
-    permissions: [
-      'CREATE_LEAD', 'VIEW_LEAD', 'EDIT_LEAD', 'DELETE_LEAD',
-      'VIEW_VEHICLE', 'VIEW_SERVICE',
-      'VIEW_PRICING_RULE', 'TOGGLE_PRICING_STATUS',
-      'MANAGE_MASTER_DATA', 'VIEW_REPORTS', 'EXPORT_LEADS',
-      // Dashboard
-      'VIEW_DASHBOARD_LEADS', 'VIEW_DASHBOARD_FOLLOWUPS',
-      'VIEW_DASHBOARD_REVENUE', 'VIEW_DASHBOARD_INVOICES',
-      'VIEW_DASHBOARD_APPOINTMENTS', 'VIEW_DASHBOARD_NOTIFICATIONS',
-      'VIEW_DASHBOARD_STATS_STRIP', 'VIEW_DASHBOARD_QUICK_ACTIONS',
-      'VIEW_DASHBOARD_REVENUE_TREND', 'VIEW_DASHBOARD_ACTIVITIES',
-      'VIEW_DASHBOARD_FUNNEL', 'VIEW_DASHBOARD_TOP_SERVICES',
-      'VIEW_DASHBOARD_TEAM_PERFORMANCE',
-    ],
-  },
-  {
-    id: 'admin',
-    label: 'Admin',
-    icon: '🛡️',
-    description: 'Full system access — manages users, master data, pricing, and all leads.',
-    permissions: [
-      'MANAGE_USERS', 'MANAGE_MASTER_DATA', 'MANAGE_PRICING',
-      'CREATE_LEAD', 'VIEW_LEAD', 'EDIT_LEAD', 'DELETE_LEAD', 'EXPORT_LEADS',
-      'CREATE_VEHICLE', 'VIEW_VEHICLE', 'UPDATE_VEHICLE', 'DELETE_VEHICLE', 'BULK_UPLOAD_VEHICLE',
-      'CREATE_SERVICE', 'VIEW_SERVICE', 'UPDATE_SERVICE', 'DELETE_SERVICE',
-      'CREATE_PRICING_RULE', 'VIEW_PRICING_RULE', 'UPDATE_PRICING_RULE', 'DELETE_PRICING_RULE', 'TOGGLE_PRICING_STATUS', 'BULK_UPLOAD_PRICING',
-      'BULK_UPLOAD', 'VIEW_REPORTS',
-      // Dashboard — all 17
-      'VIEW_DASHBOARD_REVENUE', 'VIEW_DASHBOARD_INVOICES',
-      'VIEW_DASHBOARD_APPOINTMENTS', 'VIEW_DASHBOARD_LEADS',
-      'VIEW_DASHBOARD_FOLLOWUPS', 'VIEW_DASHBOARD_NOTIFICATIONS',
-      'VIEW_DASHBOARD_PARTS', 'VIEW_DASHBOARD_TEAM_PERFORMANCE',
-      'VIEW_DASHBOARD_STATS_STRIP', 'VIEW_DASHBOARD_REVENUE_TREND',
-      'VIEW_DASHBOARD_QUICK_ACTIONS', 'VIEW_DASHBOARD_ESTIMATES',
-      'VIEW_DASHBOARD_ACTIVITIES', 'VIEW_DASHBOARD_APPOINTMENTS_LIST',
-      'VIEW_DASHBOARD_CUSTOMERS', 'VIEW_DASHBOARD_FUNNEL',
-      'VIEW_DASHBOARD_TOP_SERVICES',
-    ],
-  },
-];
-
-// ── Role detection ───────────────────────────────────────────────────────────
-function detectRole(user) {
-  if (user.is_super_admin) return { label: 'Super Admin',    color: '#16a34a', bg: 'rgba(34,197,94,.10)',    icon: '🏅' };
-  const p = new Set(user.permissions || []);
-  if (p.has('MANAGE_USERS'))                                           return { label: 'Admin',          color: '#dc2626', bg: 'rgba(220,38,38,.10)',   icon: '🛡️' };
-  if (p.has('VIEW_TEAM_LEADS'))                                        return { label: 'Manager',        color: '#d97706', bg: 'rgba(245,158,11,.10)',  icon: '👤' };
-  if (p.has('VIEW_LEAD') && p.has('MANAGE_MASTER_DATA'))               return { label: 'Senior Manager', color: '#7c3aed', bg: 'rgba(124,58,237,.10)', icon: '🏆' };
-  if (p.has('CREATE_LEAD') || p.has('VIEW_OWN_LEADS'))                 return { label: 'Caller',         color: '#2563eb', bg: 'rgba(37,99,235,.10)',  icon: '📞' };
-  if (p.size > 0)                                                      return { label: 'Custom',         color: '#6b7280', bg: 'rgba(107,114,128,.10)', icon: '⚙️' };
+// ── Role badge helper ────────────────────────────────────────────────────────
+function roleBadge(user) {
+  if (user.is_super_admin) return { label: 'Super Admin', color: '#16a34a', bg: 'rgba(34,197,94,.10)', icon: '🏅' };
+  if (user.role_name)      return { label: user.role_name, color: '#0891b2', bg: 'rgba(8,145,178,.10)', icon: '🛡️' };
+  if ((user.permissions || []).length > 0) return { label: 'Custom', color: '#6b7280', bg: 'rgba(107,114,128,.10)', icon: '⚙️' };
   return { label: 'No Role', color: '#9ca3af', bg: 'rgba(156,163,175,.10)', icon: '—' };
 }
 
@@ -109,6 +30,7 @@ export default function UsersPage() {
   const [hubLogins, setHubLogins]         = useState([]);
   const [hubLoginsLoaded, setHubLoginsLoaded] = useState(false);
   const [selectedHubLogin, setSelectedHubLogin] = useState(null);
+  const [allRoles, setAllRoles]           = useState([]);
 
   const isManager          = me?.permissions?.includes('VIEW_TEAM_LEADS') && !me?.is_super_admin && !me?.permissions?.includes('MANAGE_USERS');
   const canManageTeamPerms = me?.permissions?.includes('MANAGE_TEAM_PERMISSIONS');
@@ -140,6 +62,11 @@ export default function UsersPage() {
   }, [isManager, canManageTeamPerms]);
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
+
+  // Fetch roles once at page level — passed down to avoid re-fetching per user
+  useEffect(() => {
+    api('/api/roles').then(r => setAllRoles((r.items || []).filter(x => x.is_active))).catch(() => {});
+  }, []);
 
   // Open a specific user when navigated from global search
   useEffect(() => {
@@ -340,7 +267,7 @@ export default function UsersPage() {
                     {activeTab === 'all' && u.manager_id === me.id && <span className="up-pill team">my team</span>}
                   </div>
                   <div className="up-user-row-meta">
-                    {(() => { const r = detectRole(u); return (
+                    {(() => { const r = roleBadge(u); return (
                       <span className="up-role-badge" style={{ color: r.color, background: r.bg }}>
                         {r.icon} {r.label}
                       </span>
@@ -375,6 +302,7 @@ export default function UsersPage() {
               catalog={catalog}
               users={users}
               departments={departments}
+              allRoles={allRoles}
               onCancel={() => setCreating(false)}
               onCreated={async (newUser) => {
                 await load();
@@ -391,6 +319,7 @@ export default function UsersPage() {
               catalog={catalog}
               users={users}
               departments={departments}
+              allRoles={allRoles}
               readOnly={isManager && !canManageTeamPerms}
               canManageTeamPerms={isManager && canManageTeamPerms}
               onChange={async () => { await load(); }}
@@ -422,47 +351,31 @@ export default function UsersPage() {
 // =====================================================================
 // New user form
 // =====================================================================
-const ROLE_CARDS = [
-  { id: 'caller',  icon: '📞', label: 'Caller',  desc: 'Captures & manages their own leads',               color: '#2563eb', preset: 'caller'  },
-  { id: 'manager', icon: '👤', label: 'Manager', desc: 'Monitors leads from assigned callers',              color: '#d97706', preset: 'manager' },
-  { id: 'admin',   icon: '🛡️', label: 'Admin',   desc: 'Full system access — users, data & all leads',     color: '#dc2626', preset: 'admin'   },
-  { id: 'custom',  icon: '⚙️', label: 'Custom',  desc: 'Set permissions manually below',                   color: '#6b7280', preset: null      },
-];
-
-function NewUserForm({ catalog, users, departments, onCancel, onCreated, onError }) {
+function NewUserForm({ catalog, users, departments, allRoles = [], onCancel, onCreated, onError }) {
   const [form, setForm] = useState({
     name: '', email: '', password: '',
     is_super_admin: false, is_active: true,
     manager_id: '',
   });
-  const [selectedRole, setSelectedRole] = useState('caller');
-  const [perms, setPerms]               = useState(new Set(ROLE_PRESETS.find(r => r.id === 'caller')?.permissions || []));
-  const [submitting, setSubmitting]     = useState(false);
+  const [selectedRoleId, setSelectedRoleId] = useState(null);
+  const [perms, setPerms]                   = useState(new Set());
+  const [submitting, setSubmitting]         = useState(false);
 
-  // DB roles loaded from /api/roles
-  const [dbRoles, setDbRoles] = useState([]);
+  const dbRoles = allRoles; // use roles passed from parent — no extra fetch needed
+
+  // Default to first role when allRoles loads
   useEffect(() => {
-    api('/api/roles').then(r => setDbRoles((r.items || []).filter(x => x.is_active))).catch(() => {});
-  }, []);
+    if (allRoles.length > 0 && selectedRoleId === null) {
+      setSelectedRoleId(allRoles[0].id);
+      setPerms(new Set(allRoles[0].permissions || []));
+    }
+  }, [allRoles]);
 
   function set(key, val) { setForm(f => ({ ...f, [key]: val })); }
 
-  function pickRole(roleId) {
-    setSelectedRole(roleId);
-    // DB role selected (prefixed with 'db-')
-    if (roleId.startsWith('db-')) {
-      const dbId = Number(roleId.replace('db-', ''));
-      const dbRole = dbRoles.find(r => r.id === dbId);
-      if (dbRole) setPerms(new Set(dbRole.permissions || []));
-      return;
-    }
-    const card = ROLE_CARDS.find(r => r.id === roleId);
-    if (card?.preset) {
-      const preset = ROLE_PRESETS.find(p => p.id === card.preset);
-      if (preset) setPerms(new Set(preset.permissions));
-    }
-    // Managers / Admins don't report to anyone by default
-    if (roleId === 'manager' || roleId === 'admin') set('manager_id', '');
+  function pickRole(role) {
+    setSelectedRoleId(role.id);
+    setPerms(new Set(role.permissions || []));
   }
 
   function togglePerm(code) {
@@ -485,6 +398,7 @@ function NewUserForm({ catalog, users, departments, onCancel, onCreated, onError
         body: {
           ...form,
           manager_id: form.manager_id ? Number(form.manager_id) : null,
+          role_id: selectedRoleId ?? null,
           permissions: Array.from(perms),
         },
       });
@@ -496,7 +410,10 @@ function NewUserForm({ catalog, users, departments, onCancel, onCreated, onError
     }
   }
 
-  const isManager = selectedRole === 'manager' || selectedRole === 'admin';
+  const selectedDbRole = dbRoles.find(r => r.id === selectedRoleId);
+  const isManager = selectedDbRole
+    ? (selectedDbRole.permissions || []).includes('VIEW_TEAM_LEADS') || (selectedDbRole.permissions || []).includes('MANAGE_USERS')
+    : false;
   const managersOnly = users.filter(u => u.is_active && (u.is_super_admin || (u.permissions || []).includes('VIEW_TEAM_LEADS')));
 
   return (
@@ -516,18 +433,18 @@ function NewUserForm({ catalog, users, departments, onCancel, onCreated, onError
       <div className="up-section">
         <div className="up-section-label">1 · Role</div>
 
-        {/* DB roles (from Custom Role Creator) — shown when available, hides built-in presets */}
-        {dbRoles.length > 0 ? (
+        {dbRoles.length === 0 ? (
+          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No custom roles found. Create roles from the Custom Roles page first.</p>
+        ) : (
           <div className="up-role-grid">
             {dbRoles.map(role => {
-              const rid = `db-${role.id}`;
-              const active = selectedRole === rid;
+              const active = selectedRoleId === role.id;
               return (
                 <button
-                  key={rid} type="button"
+                  key={role.id} type="button"
                   className={`up-role-card ${active ? 'up-role-card--active' : ''}`}
                   style={active ? { borderColor: 'var(--primary)', background: 'rgba(22,185,148,0.08)' } : {}}
-                  onClick={() => pickRole(rid)}
+                  onClick={() => pickRole(role)}
                 >
                   <span className="up-role-card-icon">🛡️</span>
                   <span className="up-role-card-label" style={active ? { color: 'var(--primary)' } : {}}>{role.name}</span>
@@ -536,25 +453,6 @@ function NewUserForm({ catalog, users, departments, onCancel, onCreated, onError
                 </button>
               );
             })}
-          </div>
-        ) : (
-          /* Built-in presets — fallback only when no DB roles exist */
-          <div className="up-role-grid">
-            {ROLE_CARDS.map(card => (
-              <button
-                key={card.id} type="button"
-                className={`up-role-card ${selectedRole === card.id ? 'up-role-card--active' : ''}`}
-                style={selectedRole === card.id ? { borderColor: card.color, background: card.color + '10' } : {}}
-                onClick={() => pickRole(card.id)}
-              >
-                <span className="up-role-card-icon">{card.icon}</span>
-                <span className="up-role-card-label" style={selectedRole === card.id ? { color: card.color } : {}}>{card.label}</span>
-                <span className="up-role-card-desc">{card.desc}</span>
-                {selectedRole === card.id && (
-                  <span className="up-role-card-check" style={{ background: card.color }}>✓</span>
-                )}
-              </button>
-            ))}
           </div>
         )}
       </div>
@@ -655,7 +553,7 @@ function NewUserForm({ catalog, users, departments, onCancel, onCreated, onError
 // =====================================================================
 const ADMIN_PERMISSIONS = ['MANAGE_USERS', 'MANAGE_TEAM_PERMISSIONS', 'MANAGE_PRICING', 'MANAGE_MASTER_DATA'];
 
-function UserDetail({ user, me, catalog, users, departments, readOnly, canManageTeamPerms, onChange, onDeleted, onError }) {
+function UserDetail({ user, me, catalog, users, departments, allRoles = [], readOnly, canManageTeamPerms, onChange, onDeleted, onError }) {
   const isSelf = user.id === me.id;
   const [perms, setPerms]           = useState(new Set(user.permissions));
   const [managerId, setManagerId]   = useState(user.manager_id ? String(user.manager_id) : '');
@@ -666,12 +564,14 @@ function UserDetail({ user, me, catalog, users, departments, readOnly, canManage
   const [editName, setEditName]     = useState(user.name);
   const [editEmail, setEditEmail]   = useState(user.email);
   const [editDept, setEditDept]     = useState(user.department || '');
+  const [editRoleId, setEditRoleId] = useState(user.role_id ?? null);
   useBodyLock(pwModal);
   useBodyLock(editModal);
 
   useEffect(() => {
     setPerms(new Set(user.permissions));
     setManagerId(user.manager_id ? String(user.manager_id) : '');
+    setEditRoleId(user.role_id ?? null);
   }, [user]);
 
   function togglePerm(code) {
@@ -739,7 +639,7 @@ function UserDetail({ user, me, catalog, users, departments, readOnly, canManage
           </div>
           <div className="up-detail-email">{user.email}</div>
           <div className="up-detail-role-row">
-            {(() => { const r = detectRole(user); return (
+            {(() => { const r = roleBadge(user); return (
               <span className="up-role-badge up-role-badge--lg" style={{ color: r.color, background: r.bg, borderColor: r.color + '40' }}>
                 {r.icon} {r.label}
               </span>
@@ -771,7 +671,7 @@ function UserDetail({ user, me, catalog, users, departments, readOnly, canManage
         <div className="up-action-row">
           <button
             className="up-action-btn"
-            onClick={() => { setEditName(user.name); setEditEmail(user.email); setEditDept(user.department || ''); setEditModal(true); }}
+            onClick={() => { setEditName(user.name); setEditEmail(user.email); setEditDept(user.department || ''); setEditRoleId(user.role_id ?? null); setEditModal(true); }}
             disabled={busy}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1034,11 +934,18 @@ function UserDetail({ user, me, catalog, users, departments, readOnly, canManage
             e.preventDefault();
             setBusy(true);
             try {
-              await patchUser({
+              const patch = {
                 name:       editName.trim(),
                 email:      editEmail.trim().toLowerCase(),
                 department: editDept || null,
-              });
+                role_id:    editRoleId ?? null,
+              };
+              // If role changed, also replace permissions with the new role's permissions
+              if (editRoleId !== (user.role_id ?? null)) {
+                const newRole = allRoles.find(r => r.id === editRoleId);
+                patch.permissions = newRole ? (newRole.permissions || []) : [];
+              }
+              await patchUser(patch);
               setEditModal(false);
             } catch (err) { onError(err.message); }
             finally { setBusy(false); }
@@ -1080,6 +987,24 @@ function UserDetail({ user, me, catalog, users, departments, readOnly, canManage
                 ))}
               </select>
             </div>
+            {!user.is_super_admin && allRoles.length > 0 && (
+              <div className="up-field" style={{ marginTop: 10 }}>
+                <label>Role</label>
+                <select
+                  value={editRoleId ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value ? Number(e.target.value) : null;
+                    setEditRoleId(id);
+                  }}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, background: 'var(--bg)', color: 'var(--text)' }}
+                >
+                  <option value="">— No role —</option>
+                  {allRoles.map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
               <button type="button" className="up-btn-ghost" onClick={() => setEditModal(false)}>Cancel</button>
               <button type="submit" className="up-btn-primary" disabled={busy}>Save Changes</button>
