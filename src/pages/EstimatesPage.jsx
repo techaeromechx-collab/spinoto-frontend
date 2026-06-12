@@ -958,6 +958,13 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     e.preventDefault();
     if (!form.appointment_id) { setError('Please select an appointment.'); return; }
     if (!form.hub_id) { setError('Please select a hub.'); return; }
+    if (!isEdit) {
+      const sel = appointments.find(a => String(a.id) === String(form.appointment_id));
+      if (sel?.has_estimate) {
+        setError(`This appointment already has estimate #${sel.estimate_id} (${sel.estimate_status}). Open that estimate and edit it instead.`);
+        return;
+      }
+    }
     setSaving(true); setError(null);
     try {
       const forceZero = discountMode !== 'line_item';
@@ -1115,11 +1122,24 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                   onChange={val => onAppointmentChange(val)}
                   placeholder="Select appointment…"
                   searchPlaceholder="Search appointment…"
-                  options={appointments.map(a => ({
-                    value: a.id,
-                    label: `#${a.id} · ${a.customer_name || 'Unknown'} · ${a.vehicle_number || '—'}`,
-                  }))}
+                  options={appointments
+                    // Hide appointments that already have an estimate — creating
+                    // one would always fail. Keep the currently selected one so
+                    // edit mode / deep links still display correctly.
+                    .filter(a => !a.has_estimate || String(a.id) === String(form.appointment_id))
+                    .map(a => ({
+                      value: a.id,
+                      label: `#${a.id} · ${a.customer_name || 'Unknown'} · ${a.vehicle_number || '—'}`,
+                    }))}
                 />
+                {!isEdit && (() => {
+                  const sel = appointments.find(a => String(a.id) === String(form.appointment_id));
+                  return sel?.has_estimate ? (
+                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#dc2626' }}>
+                      This appointment already has estimate #{sel.estimate_id} ({sel.estimate_status}). Open that estimate instead.
+                    </p>
+                  ) : null;
+                })()}
               </div>
               <div className="form-field">
                 <label>Hub <span style={{ color: '#dc2626' }}>*</span></label>
@@ -2617,8 +2637,15 @@ export default function EstimatesPage() {
   const [page, setPage] = react.useState(1);
   const [pageSize, setPageSize] = react.useState(10);
 
-  const [search, setSearch] = react.useState('');
+  const [searchInput, setSearchInput] = react.useState(''); // what the user types
+  const [search, setSearch] = react.useState('');           // debounced value used for fetching
   const [statusFilter, setStatusFilter] = react.useState('');
+
+  // Debounce: wait 300ms after the last keystroke before hitting the API
+  react.useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
   const [hubFilter, setHubFilter] = react.useState(() => user?.hub_id ? String(user.hub_id) : '');
 
   const [hubs, setHubs] = react.useState([]);
@@ -2741,8 +2768,8 @@ export default function EstimatesPage() {
                 className="form-input"
                 style={{ paddingLeft: 32 }}
                 placeholder="Search by customer, vehicle, mobile…"
-                value={search}
-                onChange={e => { setSearch(e.target.value); setPage(1); }}
+                value={searchInput}
+                onChange={e => { setSearchInput(e.target.value); setPage(1); }}
               />
             </div>
             <select
