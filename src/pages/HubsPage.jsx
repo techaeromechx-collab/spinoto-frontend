@@ -364,10 +364,10 @@ function HubModal({ hub, onClose, onSaved }) {
       try {
         const [sRes, uRes] = await Promise.all([
           api('/api/locations/states'),
-          api('/api/users'),
+          api('/api/users/assignable'),
         ]);
         setStates(sRes.items.filter(s => s.is_active));
-        setRmUsers(uRes.items.filter(u => u.is_active));
+        setRmUsers(uRes.items); // assignable already filters is_active = true
         if (isEdit && hub.id) {
           try {
             const dRes = await api(`/api/hubs/${hub.id}/documents`);
