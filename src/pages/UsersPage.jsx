@@ -695,6 +695,7 @@ function UserDetail({ user, me, catalog, users, departments, allRoles = [], read
             )}
           </button>
 
+          {me?.is_super_admin && (
           <button
             className={`up-action-btn ${user.is_super_admin ? 'warning' : ''}`}
             onClick={() => patchUser({ is_super_admin: !user.is_super_admin })}
@@ -712,6 +713,7 @@ function UserDetail({ user, me, catalog, users, departments, allRoles = [], read
               </>
             )}
           </button>
+          )}
 
           <button
             className="up-action-btn"

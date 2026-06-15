@@ -22,6 +22,7 @@ import PayoutsPage from './pages/PayoutsPage.jsx';
 import BulkUploadPage from './pages/BulkUploadPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
 import UsersPage from './pages/UsersPage.jsx';
+import SuperAdminsPage from './pages/SuperAdminsPage.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import AppShell from './components/AppShell.jsx';
 import HubDashboardPage from './pages/HubDashboardPage.jsx';
@@ -45,6 +46,14 @@ function RequireAuth({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="centered">Loading…</div>;
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function RequireSuperAdmin({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="centered">Loading…</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.is_super_admin) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -134,6 +143,7 @@ export default function App() {
 
                 {/* User & permission management */}
                 <Route path="/users"            element={<RequirePermission codes={['MANAGE_USERS', 'VIEW_TEAM_LEADS']}><UsersPage /></RequirePermission>} />
+                <Route path="/super-admins"    element={<RequireSuperAdmin><SuperAdminsPage /></RequireSuperAdmin>} />
 
                 {/* Profile — available to every logged-in user */}
                 <Route path="/profile" element={<ProfilePage />} />

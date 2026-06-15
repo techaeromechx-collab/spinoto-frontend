@@ -95,6 +95,13 @@
   font-weight: 500;
 }
 
+/* ── Category chips row ──────────────────────────────────────────────────── */
+.parts-cat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ── Category filter chips ───────────────────────────────────────────────── */
 .cat-filter-chip {
   display: inline-flex;
@@ -107,14 +114,36 @@
   font-weight: 600;
   cursor: pointer;
   color: var(--text);
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 .cat-filter-chip:hover {
   border-color: var(--primary);
   color: var(--primary);
   background: #eff6ff;
 }
+.cat-filter-chip--active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.cat-filter-chip--active:hover {
+  background: var(--primary-hover);
+  color: #fff;
+  border-color: var(--primary-hover);
+}
+.cat-filter-chip--clear {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+.cat-filter-chip--clear:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #b91c1c;
+}
 [data-theme="dark"] .cat-filter-chip:hover { background: #1e3a5f; }
+[data-theme="dark"] .cat-filter-chip--active { background: var(--primary); color: #fff; }
+[data-theme="dark"] .cat-filter-chip--active:hover { background: var(--primary-hover); }
 
 /* ── Row action buttons ──────────────────────────────────────────────────── */
 .icon-action {
@@ -270,8 +299,8 @@
     flex-shrink: 0;
   }
 
-  /* Category chips in the summary card — horizontal scroll */
-  .parts-page .card > div > div[style*="flex-wrap"] {
+  /* Category chips — horizontal scroll on mobile */
+  .parts-cat-chips {
     overflow-x: auto;
     flex-wrap: nowrap !important;
     -webkit-overflow-scrolling: touch;
@@ -279,6 +308,10 @@
     padding-bottom: 4px;
   }
   .cat-filter-chip { flex-shrink: 0; }
+
+  /* Filter bar: stack all inputs */
+  .parts-filters > div,
+  .parts-filters > select { flex: none !important; width: 100% !important; }
 
   /* Modal: bottom sheet */
   .modal-backdrop { align-items: flex-end; padding: 0; }

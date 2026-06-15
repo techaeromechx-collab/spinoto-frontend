@@ -232,19 +232,78 @@ function PartModal({ item, onClose, onSave }) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Pagination component
+// ═════════════════════════════════════════════════════════════════════════════
+function Pagination({ page, totalPages, total, pageSize, onPage }) {
+  if (totalPages <= 1) return null;
+
+  const start = (page - 1) * pageSize + 1;
+  const end   = Math.min(page * pageSize, total);
+
+  // Build page number window (max 5 visible)
+  const pages = [];
+  let from = Math.max(1, page - 2);
+  let to   = Math.min(totalPages, from + 4);
+  if (to - from < 4) from = Math.max(1, to - 4);
+  for (let i = from; i <= to; i++) pages.push(i);
+
+  const btnBase = {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    minWidth: 32, height: 32, padding: '0 8px',
+    border: '1px solid var(--border)', borderRadius: 7,
+    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+    background: 'var(--bg-soft)', color: 'var(--text)',
+    transition: 'all 0.15s',
+  };
+  const btnActive = { ...btnBase, background: 'var(--primary)', color: '#fff', borderColor: 'var(--primary)' };
+  const btnDisabled = { ...btnBase, opacity: 0.4, cursor: 'not-allowed' };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, padding: '12px 18px', borderTop: '1px solid var(--border)' }}>
+      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+        Showing {start}–{end} of {total} part{total !== 1 ? 's' : ''}
+      </span>
+      <div style={{ display: 'flex', gap: 4 }}>
+        <button style={page === 1 ? btnDisabled : btnBase} disabled={page === 1} onClick={() => onPage(page - 1)}>‹</button>
+        {from > 1 && (
+          <>
+            <button style={btnBase} onClick={() => onPage(1)}>1</button>
+            {from > 2 && <span style={{ ...btnBase, cursor: 'default', border: 'none', background: 'none' }}>…</span>}
+          </>
+        )}
+        {pages.map(p => (
+          <button key={p} style={p === page ? btnActive : btnBase} onClick={() => onPage(p)}>{p}</button>
+        ))}
+        {to < totalPages && (
+          <>
+            {to < totalPages - 1 && <span style={{ ...btnBase, cursor: 'default', border: 'none', background: 'none' }}>…</span>}
+            <button style={btnBase} onClick={() => onPage(totalPages)}>{totalPages}</button>
+          </>
+        )}
+        <button style={page === totalPages ? btnDisabled : btnBase} disabled={page === totalPages} onClick={() => onPage(page + 1)}>›</button>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Main page
 // ═════════════════════════════════════════════════════════════════════════════
+const PAGE_SIZE = 20;
+
 export default function PartsPage() {
   const canWrite = useCan('MANAGE_MASTER_DATA');
 
-  const [parts,   setParts]   = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search,  setSearch]  = useState('');
-  const [vtFilter, setVtFilter] = useState('');
+  const [parts,          setParts]          = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [searchTerm,     setSearchTerm]     = useState('');
+  const [vtFilter,       setVtFilter]       = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [page,           setPage]           = useState(1);
 
-  const [modal,       setModal]       = useState(null); // null | 'add' | { edit: item } | { delete: item }
-  const [deleting,    setDeleting]    = useState(false);
-  const [toast,       setToast]       = useState(null); // { msg, type }
+  const [modal,    setModal]    = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [toast,    setToast]    = useState(null);
 
   const showToast = useCallback((msg, type = 'success') => setToast({ msg, type }), []);
 
@@ -253,8 +312,7 @@ export default function PartsPage() {
     setLoading(true);
     try {
       const query = new URLSearchParams();
-      if (search.trim()) query.set('search', search.trim());
-      if (vtFilter)      query.set('vehicle_type', vtFilter);
+      if (vtFilter) query.set('vehicle_type', vtFilter);
       const qs = query.toString() ? `?${query.toString()}` : '';
       const res = await api(`/api/parts${qs}`);
       setParts(res.items || []);
@@ -263,9 +321,12 @@ export default function PartsPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, vtFilter, showToast]);
+  }, [vtFilter, showToast]);
 
   useEffect(() => { fetchParts(); }, [fetchParts]);
+
+  // Reset to page 1 whenever any filter changes
+  useEffect(() => { setPage(1); }, [searchTerm, vtFilter, categoryFilter]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   function onSaved(item) {
@@ -296,15 +357,27 @@ export default function PartsPage() {
     }
   }
 
-  // ── Derived list ──────────────────────────────────────────────────────────
-  // Client-side filter on top of server-side (server handles the real filtering)
-  const visible = parts;
-
-  // Unique categories for the category column hint
+  // ── Derived data ──────────────────────────────────────────────────────────
   const categories = [...new Set(parts.map(p => p.category).filter(Boolean))].sort();
+
+  // Client-side filtering — single search term matches name OR hsn_code
+  const filtered = parts
+    .filter(p => !categoryFilter || p.category === categoryFilter)
+    .filter(p => {
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.trim().toLowerCase();
+      return (p.name     || '').toLowerCase().includes(term)
+          || (p.hsn_code || '').toLowerCase().includes(term);
+    });
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const visible    = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const hasFilters = searchTerm || vtFilter || categoryFilter;
 
   return (
     <div className="parts-page">
+
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
@@ -323,21 +396,57 @@ export default function PartsPage() {
         )}
       </div>
 
+      {/* ── Categories in use (moved from bottom) ────────────────────────── */}
+      {categories.length > 0 && (
+        <div className="card" style={{ padding: '12px 18px' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Categories in use
+          </div>
+          <div className="parts-cat-chips">
+            {categoryFilter && (
+              <button
+                className="cat-filter-chip cat-filter-chip--clear"
+                onClick={() => setCategoryFilter('')}
+                title="Clear category filter"
+              >
+                ✕ Clear
+              </button>
+            )}
+            {categories.map(cat => (
+              <button
+                key={cat}
+                className={`cat-filter-chip${categoryFilter === cat ? ' cat-filter-chip--active' : ''}`}
+                onClick={() => setCategoryFilter(prev => prev === cat ? '' : cat)}
+                title={`Filter by ${cat}`}
+              >
+                {cat}
+                <span style={{ marginLeft: 6, opacity: 0.6, fontSize: 10 }}>
+                  {parts.filter(p => p.category === cat).length}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Filters ──────────────────────────────────────────────────────── */}
-      <div className="parts-filters card" style={{ padding: '14px 18px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: '1 1 240px' }}>
+      <div className="parts-filters card" style={{ padding: '14px 18px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Combined name + HSN search */}
+        <div style={{ position: 'relative', flex: '1 1 260px' }}>
           <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             className="form-input"
             style={{ paddingLeft: 32 }}
-            placeholder="Search parts…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name or HSN code…"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
           />
         </div>
+
+        {/* Vehicle type */}
         <select
           className="form-input"
-          style={{ flex: '0 0 160px' }}
+          style={{ flex: '0 1 150px' }}
           value={vtFilter}
           onChange={e => setVtFilter(e.target.value)}
         >
@@ -345,11 +454,13 @@ export default function PartsPage() {
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
+
         <button className="btn btn-ghost" onClick={fetchParts} title="Refresh" style={{ flexShrink: 0 }}>
           <RefreshCw size={15} />
         </button>
-        <span style={{ fontSize: 13, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-          {visible.length} part{visible.length !== 1 ? 's' : ''}
+
+        <span style={{ fontSize: 13, color: 'var(--text-muted)', marginLeft: 'auto', flexShrink: 0 }}>
+          {filtered.length} part{filtered.length !== 1 ? 's' : ''}
         </span>
       </div>
 
@@ -363,7 +474,7 @@ export default function PartsPage() {
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
             <Package size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
             <p style={{ margin: 0 }}>
-              {search || vtFilter ? 'No parts match your filters.' : 'No parts yet. Add your first part above.'}
+              {hasFilters ? 'No parts match your filters.' : 'No parts yet. Add your first part above.'}
             </p>
           </div>
         ) : (
@@ -473,33 +584,18 @@ export default function PartsPage() {
                 </div>
               ))}
             </div>
+
+            {/* Pagination */}
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPage={setPage}
+            />
           </>
         )}
       </div>
-
-      {/* ── Category summary ─────────────────────────────────────────────── */}
-      {categories.length > 0 && (
-        <div className="card" style={{ padding: '14px 18px' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Categories in use
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {categories.map(cat => (
-              <button
-                key={cat}
-                className="cat-filter-chip"
-                onClick={() => setSearch(cat)}
-                title={`Filter by ${cat}`}
-              >
-                {cat}
-                <span style={{ marginLeft: 6, opacity: 0.6, fontSize: 10 }}>
-                  {parts.filter(p => p.category === cat).length}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* ── Modals ───────────────────────────────────────────────────────── */}
       {(modal === 'add' || modal?.edit) && (

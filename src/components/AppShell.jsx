@@ -111,8 +111,9 @@ const NAV_ITEMS = [
   { label: 'Customers',         to: '/customers',         permissions: ['VIEW_CUSTOMER','VIEW_LEAD','CREATE_LEAD'],              icon: Users2      },
   { label: 'Bulk Upload', to: '/bulk-upload', permissions: ['BULK_UPLOAD'],             icon: UploadCloud },
   { label: 'Reports',     to: '/reports',     permissions: ['VIEW_REPORTS'],            icon: BarChart3 },
-  { label: 'Users',   to: '/users', permissions: ['MANAGE_USERS'],                                          icon: UserCog },
-  { label: 'My Team', to: '/users', permissions: ['VIEW_TEAM_LEADS'], excludePermissions: ['MANAGE_USERS'], icon: Users2  },
+  { label: 'Users',        to: '/users',        permissions: ['MANAGE_USERS'],                                          icon: UserCog },
+  { label: 'My Team',     to: '/users',        permissions: ['VIEW_TEAM_LEADS'], excludePermissions: ['MANAGE_USERS'], icon: Users2  },
+  { label: 'Super Admins', to: '/super-admins', superAdminOnly: true,                                                   icon: Shield  },
 ];
 
 export default function AppShell({ children }) {
@@ -372,6 +373,7 @@ export default function AppShell({ children }) {
   // Filter nav by permissions. A nav group is shown if AT LEAST ONE of its
   // children is visible. An empty `permissions` array means visible to all.
   const itemVisible = (it) => {
+    if (it.superAdminOnly) return !!user?.is_super_admin;
     if (it.excludePermissions?.length && can(...it.excludePermissions)) return false;
     return it.permissions?.length ? can(...it.permissions) : !!user;
   };
