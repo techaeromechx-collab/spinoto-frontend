@@ -8,7 +8,7 @@ import {
   Calendar, Search, Eye, X, AlertCircle, CheckCircle2,
   ChevronLeft, ChevronRight, Clock, Car, Bike, Network,
   User, Phone, MapPin, Wrench, IndianRupee, ChevronDown,
-  FileText, MessageCircle, Plus, Pencil,
+  FileText, MessageCircle, Plus, Pencil, Filter,
 } from 'lucide-react';
 import '../styles/AppointmentsPage.css';
 
@@ -134,9 +134,13 @@ function ApptStatusSelect({
       const dropHeight  = itemCount * 36 + 12; // approx height
       const spaceBelow  = window.innerHeight - r.bottom;
       const openUpward  = spaceBelow < dropHeight + 8 && r.top > dropHeight;
+      const width       = Math.max(r.width, 220);
+      // Clamp so the panel never overflows the right/left edge of the screen
+      // (on mobile the status button sits near the right edge of the card).
+      const left        = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
       setPos({
-        left:   r.left,
-        width:  Math.max(r.width, 220),
+        left,
+        width,
         top:    openUpward ? undefined : r.bottom + 4,
         bottom: openUpward ? window.innerHeight - r.top + 4 : undefined,
       });
@@ -2483,6 +2487,7 @@ export default function AppointmentsPage() {
   const canCreate = useCan('CREATE_APPOINTMENT');
   const [appts, setAppts] = useState([]);
   const [total, setTotal] = useState(0);
+  const [statusCounts, setStatusCounts] = useState({}); // { status_id: count } for mobile tabs
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusList, setStatusList] = useState([]);
@@ -2497,6 +2502,7 @@ export default function AppointmentsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  const [showFilters, setShowFilters] = useState(true); // mobile funnel toggle
   const [modal, setModal] = useState(null); // null | { mode: 'view', appt }
   const [createModal, setCreateModal] = useState(false);
   const [editAppt, setEditAppt] = useState(null); // appt being edited
@@ -2528,6 +2534,9 @@ export default function AppointmentsPage() {
       const r = await api(`/api/appointments?${qs}`);
       setAppts(r.items || []);
       setTotal(r.total || 0);
+      const counts = {};
+      for (const sc of r.status_counts || []) counts[sc.status_id] = sc.count;
+      setStatusCounts(counts);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
   }, [search, filterStatus, filterHub, dateFrom, dateTo, page, pageSize]);
@@ -2593,31 +2602,70 @@ export default function AppointmentsPage() {
 
       {error && <div className="banner error">{error}</div>}
 
-      {/* Filters */}
+      {/* Filters — wrappers use display:contents on desktop so the layout
+          there is unchanged; on mobile they become rows per the design. */}
       <div className="appt-filters">
-        <div className="appt-search-wrap">
-          <Search size={14} className="appt-search-icon" />
-          <input className="appt-search" placeholder="Search customer, mobile, vehicle no…"
-            onChange={e => handleSearchChange(e.target.value)} />
+        <div className="appt-search-row">
+          <div className="appt-search-wrap">
+            <Search size={14} className="appt-search-icon" />
+            <input className="appt-search" placeholder="Search customer, vehicle, mobile no…"
+              onChange={e => handleSearchChange(e.target.value)} />
+          </div>
+          <button
+            type="button"
+            className={`appt-filter-toggle ${showFilters ? 'appt-filter-toggle--on' : ''}`}
+            onClick={() => setShowFilters(v => !v)}
+            title="Show / hide filters"
+          >
+            <Filter size={15} />
+          </button>
         </div>
-        <select className="appt-filter-sel" value={filterStatus}
-          onChange={e => { setFilterStatus(e.target.value); setPage(1); }}>
-          <option value="">All Statuses</option>
-          {statusList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        {!isHubUser && (
-          <select className="appt-filter-sel" value={filterHub}
-            onChange={e => { setFilterHub(e.target.value); setPage(1); }}>
-            <option value="">All Hubs</option>
-            {hubs.map(h => <option key={h.id} value={h.id}>{h.hub_name}</option>)}
+        <div className={`appt-filter-row ${showFilters ? '' : 'appt-filter-row--collapsed'}`}>
+          <select className="appt-filter-sel" value={filterStatus}
+            onChange={e => { setFilterStatus(e.target.value); setPage(1); }}>
+            <option value="">All Status</option>
+            {statusList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-        )}
-        <input type="date" className="appt-filter-sel" value={dateFrom}
-          onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-          title="From date" style={{ minWidth: 140 }} />
-        <input type="date" className="appt-filter-sel" value={dateTo}
-          onChange={e => { setDateTo(e.target.value); setPage(1); }}
-          title="To date" style={{ minWidth: 140 }} />
+          {!isHubUser && (
+            <select className="appt-filter-sel" value={filterHub}
+              onChange={e => { setFilterHub(e.target.value); setPage(1); }}>
+              <option value="">All Hubs</option>
+              {hubs.map(h => <option key={h.id} value={h.id}>{h.hub_name}</option>)}
+            </select>
+          )}
+          <div className="appt-date-range">
+            <input type="date" className="appt-filter-sel" value={dateFrom}
+              onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+              title="From date" style={{ minWidth: 140 }} />
+            <span className="appt-date-dash">–</span>
+            <input type="date" className="appt-filter-sel" value={dateTo}
+              onChange={e => { setDateTo(e.target.value); setPage(1); }}
+              title="To date" style={{ minWidth: 140 }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Status tabs — mobile only (hidden on desktop via CSS) */}
+      <div className="appt-tabs">
+        <button
+          className={`appt-tab ${!filterStatus ? 'appt-tab--active' : ''}`}
+          onClick={() => { setFilterStatus(''); setPage(1); }}
+        >
+          All
+          <span className="appt-tab-count">
+            {Object.values(statusCounts).reduce((s, n) => s + n, 0)}
+          </span>
+        </button>
+        {statusList.filter(s => (statusCounts[s.id] || 0) > 0).map(s => (
+          <button
+            key={s.id}
+            className={`appt-tab ${String(filterStatus) === String(s.id) ? 'appt-tab--active' : ''}`}
+            onClick={() => { setFilterStatus(String(s.id)); setPage(1); }}
+          >
+            {s.name}
+            <span className="appt-tab-count">{statusCounts[s.id]}</span>
+          </button>
+        ))}
       </div>
 
       {/* Table */}
@@ -2735,6 +2783,73 @@ export default function AppointmentsPage() {
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Card list — mobile only (hidden on desktop via CSS) */}
+        <div className="appt-cards">
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="appt-card"><div className="appt-skel" style={{ width: '100%', height: 56 }} /></div>
+            ))
+          ) : appts.length === 0 ? (
+            <div className="appt-empty">
+              <Calendar size={36} style={{ opacity: .2, marginBottom: 10 }} />
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>No appointments found</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {search || filterStatus || filterHub || dateFrom || dateTo
+                  ? 'Try adjusting your filters.'
+                  : 'Appointments appear here when leads are converted.'}
+              </div>
+            </div>
+          ) : appts.map(a => {
+            const statusCfg = statusList.find(s => s.id === a.status_id);
+            const created = a.created_at
+              ? new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+              : '';
+            return (
+              <div key={a.id} className="appt-card" onClick={() => setModal({ mode: 'view', appt: a })}>
+                <div className="appt-card-left">
+                  <span className="appt-id-badge">#{a.id}</span>
+                  <span className="appt-card-created">{created}</span>
+                </div>
+                <div className="appt-card-main">
+                  <div className="appt-card-name">{a.customer_name || 'Unknown'}</div>
+                  <div className="appt-card-vehline">
+                    <span className="appt-card-vehno">{a.vehicle_number || 'No number'}</span>
+                    <span className="appt-card-model">
+                      {[a.make_name, a.model_name].filter(Boolean).join(' ')}
+                    </span>
+                  </div>
+                  <div className="appt-card-meta">
+                    <div className="appt-card-meta-row"><MapPin size={11} /> {a.hub_name || '—'}</div>
+                    <div className="appt-card-meta-row">
+                      <Calendar size={11} /> {fmtDate(a.scheduled_date) || '—'}
+                      {a.scheduled_time && (
+                        <span className="appt-card-time"><Clock size={11} /> {fmtTime(a.scheduled_time)}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="appt-card-right" onClick={e => e.stopPropagation()}>
+                  <div className="appt-card-price" onClick={() => setModal({ mode: 'view', appt: a })}>
+                    ₹{Number(a.total_price || 0).toLocaleString('en-IN')}
+                  </div>
+                  <ApptStatusSelect
+                    apptId={a.id}
+                    current={statusCfg}
+                    statusList={statusList}
+                    onChange={handleUpdated}
+                    pickupRequired={a.pickup_required}
+                    pickupTimestamp={a.pickup_timestamp}
+                    estimateStatus={a.estimate_status}
+                    invoiceId={a.invoice_id}
+                    invoiceStatus={a.invoice_status}
+                  />
+                </div>
+                <ChevronRight size={16} className="appt-card-chev" />
+              </div>
+            );
+          })}
         </div>
 
         <PaginationBar

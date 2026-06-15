@@ -583,6 +583,19 @@
   border-color: var(--primary);
 }
 
+/* Wrappers are transparent on desktop — original flex layout untouched */
+.appt-search-row,
+.appt-filter-row,
+.appt-date-range {
+  display: contents;
+}
+
+/* Funnel toggle + dash are mobile-only */
+.appt-filter-toggle,
+.appt-date-dash {
+  display: none;
+}
+
 /* Table */
 .appt-table {
   min-width: 900px;
@@ -1484,12 +1497,67 @@
     gap: 8px;
   }
 
-  .appt-search-wrap {
-    min-width: 0;
+  /* Row 1: search bar + funnel button */
+  .appt-search-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
 
-  .appt-filter-sel {
+  .appt-filter-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .appt-filter-toggle--on {
+    color: var(--primary);
+    border-color: var(--primary);
+  }
+
+  /* Row 2: status + hubs side by side, date range full width below */
+  .appt-filter-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .appt-filter-row--collapsed {
+    display: none;
+  }
+
+  .appt-filter-row .appt-filter-sel {
     width: 100%;
+    min-width: 0 !important;
+  }
+
+  .appt-date-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    grid-column: 1 / -1;
+  }
+
+  .appt-date-range .appt-filter-sel {
+    flex: 1;
+  }
+
+  .appt-date-dash {
+    display: inline;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .appt-search-wrap {
+    min-width: 0;
   }
 
   .appt-backdrop {
@@ -1525,10 +1593,11 @@
     margin-right: 0;
   }
 
-  /* Page header actions wrap */
+  /* Page header: title left, New Appointment button top-right (per design) */
   .appt-page .page-header {
-    flex-direction: column;
+    flex-direction: row;
     align-items: flex-start;
+    justify-content: space-between;
     gap: 8px;
   }
 
@@ -1697,5 +1766,199 @@
     min-width: 36px;
     height: 36px;
     font-size: 14px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Mobile card view + status tabs
+   Desktop (>768px): table shown, tabs + cards hidden.
+   Mobile (≤768px):  table hidden, tabs + cards shown.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Hidden on desktop */
+.appt-tabs,
+.appt-cards {
+  display: none;
+}
+
+/* ── Status tabs ── */
+.appt-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.appt-tab--active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.appt-tab-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--bg-soft, #f3f4f6);
+  color: var(--text-muted);
+}
+
+.appt-tab--active .appt-tab-count {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* ── Appointment cards ── */
+.appt-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto 14px;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 12px 14px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  background: var(--bg, #fff);
+}
+
+.appt-card:active {
+  background: var(--bg-soft, #f9fafb);
+}
+
+.appt-card-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.appt-card-created {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.appt-card-main {
+  min-width: 0;
+}
+
+.appt-card-name {
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Vehicle number + model share one line */
+.appt-card-vehline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  min-width: 0;
+}
+
+.appt-card-vehno {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.appt-card-model {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appt-card-model:not(:empty)::before {
+  content: '· ';
+}
+
+.appt-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+.appt-card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appt-card-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.appt-card-meta-row svg {
+  flex-shrink: 0;
+}
+
+.appt-card-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.appt-card-price {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.appt-card-chev {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── The switch ── */
+@media (max-width: 768px) {
+  .appt-table {
+    display: none;
+  }
+
+  .appt-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+    background: var(--bg, #fff);
+    border-radius: 10px 10px 0 0;
+    padding: 0 4px;
+  }
+
+  .appt-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .appt-cards {
+    display: flex;
+    flex-direction: column;
   }
 }
