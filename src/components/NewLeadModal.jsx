@@ -580,7 +580,7 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                         <div className="nlm-field">
                           <label>Mobile Number <em>*</em></label>
                           <input className="nlm-input" required placeholder="10-digit mobile"
-                            value={form.mobile} maxLength={10}
+                            value={form.mobile}
                             onChange={e => {
                               const v = e.target.value.replace(/\D/g, '').slice(0, 10);
                               setDuplicates([]);
@@ -649,7 +649,7 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                           </label>
                           <input className="nlm-input" placeholder="10-digit WhatsApp"
                             value={whatsappSame ? form.mobile : form.whatsapp}
-                            disabled={whatsappSame} maxLength={10}
+                            disabled={whatsappSame}
                             onChange={e => {
                               const v = e.target.value.replace(/\D/g, '').slice(0, 10);
                               setForm(f => ({ ...f, whatsapp: v }));
@@ -740,7 +740,7 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                                   onChange={v => setForm(f => ({ ...f, make_id: v, model_id: '' }))}
                                   options={masters.makes} placeholder="Select Make"
                                   disabled={!masters.makes.length}
-                                  emptyMsg="No makes available" />
+                                  emptyMsg="No makes available" clearable />
                               </div>
                               <div className="nlm-field">
                                 <label>Model <span className="nlm-opt">(optional)</span></label>
@@ -750,7 +750,7 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                                   options={modelsWithBadge}
                                   placeholder={form.make_id ? 'Select Model' : 'Select a make first'}
                                   disabled={!form.make_id} loading={modelsLoading}
-                                  emptyMsg="No models found for this make" />
+                                  emptyMsg="No models found for this make" clearable />
                               </div>
                               {/* Body Type full width */}
                               <div className="nlm-field nlm-span-full">
