@@ -204,6 +204,7 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
   const [whatsappSame, setWhatsappSame] = useState(false);
   const [selectedCatId, setSelectedCatId] = useState('');
   const [serviceSearch, setServiceSearch] = useState('');
+  const [allServices, setAllServices] = useState([]);
   const [statusList,  setStatusList]  = useState([]);
   const [leadSources, setLeadSources] = useState([]);
 
@@ -233,7 +234,7 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
     if (!isOpen) return;
     setStep(1); setVehicleClass('4W');
     setEngineCc(''); setCcCategoryId(null); setCcPreview(''); setNoCcWarning(false);
-    setWhatsappSame(false); setSelectedCatId(''); setServiceSearch(''); setError(null); setDuplicates([]); setExistingCustomer(null);
+    setWhatsappSame(false); setSelectedCatId(''); setServiceSearch(''); setAllServices([]); setError(null); setDuplicates([]); setExistingCustomer(null);
     setForm({
       name: '', mobile: '', whatsapp: '', state_id: '', city_id: '', area_id: '',
       vehicle_type_id: '', make_id: '', model_id: '', body_type_id: '',
@@ -341,10 +342,16 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
 
   useEffect(() => {
     if (!isOpen) return;
-    setSelectedCatId(''); setServiceSearch('');
+    setSelectedCatId(''); setServiceSearch(''); setAllServices([]);
     setMasters(m => ({ ...m, categories: [], services: [] }));
-    api(`/api/services/categories?vehicle_class=${vehicleClass}`)
-      .then(r => setMasters(m => ({ ...m, categories: r.items || [] })))
+    Promise.all([
+      api(`/api/services/categories?vehicle_class=${vehicleClass}`),
+      api(`/api/services/services?vehicle_class=${vehicleClass}&is_active=true`),
+    ])
+      .then(([cats, svcs]) => {
+        setMasters(m => ({ ...m, categories: cats.items || [] }));
+        setAllServices(svcs.items || []);
+      })
       .catch(() => { });
   }, [vehicleClass, isOpen]); // eslint-disable-line
 
@@ -470,8 +477,9 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
     return seg ? { ...m, badge: seg.name.charAt(0).toUpperCase() } : m;
   });
 
+  // Global search across all services; fall back to category services when no search
   const filteredSvcs = serviceSearch
-    ? masters.services.filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase()))
+    ? allServices.filter(s => s.name.toLowerCase().includes(serviceSearch.toLowerCase()))
     : masters.services;
 
   // quick summary of vehicle for step-2 header breadcrumb
@@ -910,9 +918,8 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                           <div className="nlm-svc-col">
                             <div className="nlm-svc-search">
                               <Search size={13} className="nlm-svc-si" />
-                              <input className="nlm-svc-si-input" placeholder="Search services…"
-                                value={serviceSearch} onChange={e => setServiceSearch(e.target.value)}
-                                disabled={!selectedCatId} />
+                              <input className="nlm-svc-si-input" placeholder="Search all services…"
+                                value={serviceSearch} onChange={e => { setServiceSearch(e.target.value); if (e.target.value) setSelectedCatId(''); }} />
                               {serviceSearch && (
                                 <button type="button" className="nlm-svc-clear" onClick={() => setServiceSearch('')}>
                                   <X size={12} />
@@ -920,8 +927,8 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                               )}
                             </div>
                             <div className="nlm-svc-grid">
-                              {!selectedCatId && <div className="nlm-svc-prompt">← Pick a category</div>}
-                              {selectedCatId && filteredSvcs.length === 0 && (
+                              {!selectedCatId && !serviceSearch && <div className="nlm-svc-prompt">← Pick a category or search above</div>}
+                              {(selectedCatId || serviceSearch) && filteredSvcs.length === 0 && (
                                 <div className="nlm-svc-prompt">
                                   {serviceSearch ? `No match for "${serviceSearch}"` : 'No services here'}
                                 </div>

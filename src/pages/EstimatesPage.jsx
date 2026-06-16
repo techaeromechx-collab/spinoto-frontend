@@ -1544,24 +1544,23 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                           </div>
                         ) : (
                           pickerParts.map(p => {
-                            const alreadyAdded = addedPartIds.has(Number(p.id));
+                            const matchedItem = items.find(it => it.type === 'part' && Number(it.item_id) === Number(p.id));
+                            const alreadyAdded = !!matchedItem;
+                            const qty = matchedItem ? Number(matchedItem.quantity) : 0;
                             return (
-                              <button
+                              <div
                                 key={p.id}
-                                type="button"
-                                onClick={() => { if (!alreadyAdded) addPartItem(p); }}
-                                disabled={alreadyAdded}
                                 style={{
-                                  width: '100%', textAlign: 'left', padding: '9px 16px',
+                                  width: '100%', padding: '9px 16px',
                                   background: alreadyAdded ? '#f0fdf4' : 'transparent',
-                                  border: 'none', borderBottom: '1px solid var(--border)',
-                                  cursor: alreadyAdded ? 'default' : 'pointer',
+                                  borderBottom: '1px solid var(--border)',
                                   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                                 }}
-                                onMouseEnter={e => { if (!alreadyAdded) e.currentTarget.style.background = 'var(--bg-soft)'; }}
-                                onMouseLeave={e => { e.currentTarget.style.background = alreadyAdded ? '#f0fdf4' : 'transparent'; }}
                               >
-                                <div>
+                                <div
+                                  style={{ flex: 1, cursor: alreadyAdded ? 'default' : 'pointer' }}
+                                  onClick={() => { if (!alreadyAdded) addPartItem(p); }}
+                                >
                                   <div style={{ fontSize: 13, fontWeight: alreadyAdded ? 600 : 400, color: alreadyAdded ? '#15803d' : 'var(--text)' }}>{p.name}</div>
                                   {p.category && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{p.category}</div>}
                                 </div>
@@ -1569,12 +1568,37 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                                   {p.customer_rate && (
                                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>₹{Number(p.customer_rate).toLocaleString('en-IN')}</span>
                                   )}
-                                  {alreadyAdded
-                                    ? <Check size={14} style={{ color: '#16a34a' }} />
-                                    : <Plus size={13} style={{ color: 'var(--primary)' }} />
-                                  }
+                                  {alreadyAdded ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 0, border: '1.5px solid #16a34a', borderRadius: 8, overflow: 'hidden' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (qty <= 1) {
+                                            setItems(prev => prev.filter(it => it._key !== matchedItem._key));
+                                          } else {
+                                            updateItem(matchedItem._key, 'quantity', qty - 1);
+                                          }
+                                        }}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px', fontSize: 16, fontWeight: 700, color: '#16a34a', lineHeight: 1 }}
+                                      >−</button>
+                                      <span style={{ minWidth: 22, textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#15803d' }}>{qty}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateItem(matchedItem._key, 'quantity', qty + 1)}
+                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px', fontSize: 16, fontWeight: 700, color: '#16a34a', lineHeight: 1 }}
+                                      >+</button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => addPartItem(p)}
+                                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                    >
+                                      <Plus size={13} style={{ color: 'var(--primary)' }} />
+                                    </button>
+                                  )}
                                 </div>
-                              </button>
+                              </div>
                             );
                           })
                         )}

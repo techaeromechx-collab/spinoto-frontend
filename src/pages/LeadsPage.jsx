@@ -158,7 +158,7 @@ function segBadgeStyle(letter) {
 
 function SearchableSelect({
   value, onChange, options = [], placeholder = 'Select…',
-  disabled = false, loading = false, emptyMsg = 'No options',
+  disabled = false, loading = false, emptyMsg = 'No options', clearable = false,
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -189,7 +189,7 @@ function SearchableSelect({
         onClick={handleOpen} tabIndex={disabled ? -1 : 0}
         onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && handleOpen()}
       >
-        <span className={selected ? 'ess-val' : 'ess-ph'} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span className={selected ? 'ess-val' : 'ess-ph'} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
           {loading ? 'Loading…' : selected ? (
             <>
               {selected.name}
@@ -201,6 +201,12 @@ function SearchableSelect({
             </>
           ) : placeholder}
         </span>
+        {clearable && selected && !disabled && (
+          <span
+            onMouseDown={e => { e.stopPropagation(); onChange(''); setOpen(false); setQuery(''); }}
+            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-muted)', marginRight: 2 }}
+          ><X size={12} /></span>
+        )}
         <ChevronDown size={13} className={`ess-caret${open ? ' ess-caret-up' : ''}`} />
       </div>
       <AnimatePresence>
@@ -1113,10 +1119,13 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
 
   // ── load models when make changes ─────────────────────────────────────────
   useEffect(() => {
-    if (!vForm.make_id) { setVMasters(m => ({ ...m, models: [] })); return; }
+    // For 2W: load all models (no make filter) so user can search model first
+    // For 4W: require make selection first
+    if (!vForm.make_id && vehicleClass !== '2W') { setVMasters(m => ({ ...m, models: [] })); return; }
     setModelsLoading(true);
     setVMasters(m => ({ ...m, models: [] }));
-    const params = new URLSearchParams({ make_id: vForm.make_id });
+    const params = new URLSearchParams();
+    if (vForm.make_id) params.set('make_id', vForm.make_id);
     if (vehicleClass === '4W' && vForm.body_type_id) {
       params.set('body_type_id', vForm.body_type_id);
     }
@@ -1124,7 +1133,7 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
       .then(r => setVMasters(m => ({ ...m, models: r.items || [] })))
       .catch(() => setVMasters(m => ({ ...m, models: [] })))
       .finally(() => setModelsLoading(false));
-  }, [vForm.make_id]); // eslint-disable-line
+  }, [vForm.make_id, vehicleClass]); // eslint-disable-line
 
   // ── Auto-fill body_type + segment from selected model (4W) ──────────────
   useEffect(() => {
@@ -1344,7 +1353,7 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
               <div className="lp-form-group">
                 <label>Mobile <span className="lp-req">*</span></label>
                 <input className="lp-input" value={form.mobile}
-                  onChange={e => { setExistingCustomer(null); setForm(f => ({ ...f, mobile: e.target.value })); }}
+                  onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); setExistingCustomer(null); setForm(f => ({ ...f, mobile: v })); }}
                   onBlur={handleMobileBlur}
                   required />
                 {existingCustomer && (
@@ -1490,16 +1499,27 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
                   <SearchableSelect
                     value={vForm.make_id}
                     onChange={v => setVForm(f => ({ ...f, make_id: v, model_id: '', body_type_id: '', segment_ids: [] }))}
-                    options={vMasters.makes} placeholder="Select Make" />
+                    options={vMasters.makes} placeholder="Select Make" clearable />
                 </div>
                 <div className="lp-form-group">
                   <label>Model</label>
                   <SearchableSelect
                     value={vForm.model_id}
-                    onChange={v => setVForm(f => ({ ...f, model_id: v }))}
+                    onChange={v => {
+                      if (!v) { setVForm(f => ({ ...f, model_id: '' })); return; }
+                      const model = vMasters.models.find(m => String(m.id) === String(v));
+                      setVForm(f => ({
+                        ...f,
+                        model_id: v,
+                        // Auto-fill make from model if not already set
+                        make_id: f.make_id || (model?.make_id ? String(model.make_id) : f.make_id),
+                      }));
+                    }}
                     options={modelsWithBadge}
-                    placeholder={vForm.make_id ? 'Select Model' : 'Select a make first'}
-                    disabled={!vForm.make_id} loading={modelsLoading} />
+                    placeholder={vehicleClass === '2W' ? 'Search Model' : (vForm.make_id ? 'Select Model' : 'Select a make first')}
+                    disabled={vehicleClass !== '2W' && !vForm.make_id}
+                    loading={modelsLoading}
+                    clearable />
                 </div>
                 <div className="lp-form-group">
                   <label>Body Type <span className="elm-hint">auto-filled from model</span></label>
@@ -2370,7 +2390,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                 <input className={`ca-input${errors.mobile ? ' ca-input--err' : ''}`}
                   placeholder="Mobile number"
                   value={cust.mobile}
-                  onChange={e => setC('mobile', e.target.value)} />
+                  onChange={e => setC('mobile', e.target.value.replace(/\D/g, '').slice(0, 10))} />
                 {errors.mobile && <span className="ca-field-err"><AlertCircle size={10}/> {errors.mobile}</span>}
               </div>
               <div className="ca-field">
@@ -2378,7 +2398,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                 <input className="ca-input"
                   placeholder="WhatsApp number"
                   value={cust.whatsapp}
-                  onChange={e => setC('whatsapp', e.target.value)} />
+                  onChange={e => setC('whatsapp', e.target.value.replace(/\D/g, '').slice(0, 10))} />
               </div>
             </div>
             </div>

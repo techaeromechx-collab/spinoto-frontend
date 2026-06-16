@@ -187,57 +187,147 @@ function HubPaymentsTab({ hubName, hubId }) {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [total, setTotal]       = useState(0);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate]     = useState('');
+  const [search, setSearch]     = useState('');
 
   useEffect(() => {
     setLoading(true);
-    api(`/api/purchase-invoices/hub-payments?hub_id=${hubId}`)
+    const params = new URLSearchParams({ hub_id: hubId });
+    if (fromDate) params.set('from', fromDate);
+    if (toDate)   params.set('to',   toDate);
+    api(`/api/purchase-invoices/hub-payments?${params}`)
       .then(res => { setPayments(res.payments || []); setTotal(res.total || 0); })
       .catch(() => setPayments([]))
       .finally(() => setLoading(false));
-  }, [hubId]);
+  }, [hubId, fromDate, toDate]);
 
-  if (loading) return <div style={{ padding:40, textAlign:'center', color:'var(--text-muted)' }}><Clock size={24} style={{ opacity:0.3 }}/></div>;
+  // Client-side search: PI# or reference_no
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return payments;
+    return payments.filter(p =>
+      `pi-${String(p.purchase_invoice_id).padStart(6,'0')}`.includes(q) ||
+      (p.reference_no || '').toLowerCase().includes(q)
+    );
+  }, [payments, search]);
 
-  if (payments.length === 0) return (
-    <div style={{ padding:40, textAlign:'center', color:'var(--text-muted)', fontSize:13 }}>
-      No payments recorded for {hubName} yet.
-    </div>
+  const filteredTotal = useMemo(
+    () => filtered.reduce((s, p) => s + parseFloat(p.amount), 0),
+    [filtered]
   );
+
+  const hasFilters = fromDate || toDate || search;
+
+  function clearFilters() { setFromDate(''); setToDate(''); setSearch(''); }
 
   return (
     <div>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', background:'#f0fdf4', borderBottom:'1px solid #86efac' }}>
-        <span style={{ fontSize:13, color:'#166534', fontWeight:600 }}>{payments.length} payment{payments.length!==1?'s':''} found</span>
-        <span style={{ fontSize:15, fontWeight:800, color:'#16a34a' }}>Total Paid: {fmt(total)}</span>
+      {/* Filter bar */}
+      <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', padding:'12px 16px', borderBottom:'1px solid var(--border)', background:'var(--bg-soft)' }}>
+        {/* Search */}
+        <div style={{ position:'relative', flex:'1 1 180px', display:'flex', alignItems:'center' }}>
+          <Search size={13} style={{ position:'absolute', left:9, color:'var(--text-muted)', pointerEvents:'none' }}/>
+          <input
+            className="po-input"
+            style={{ paddingLeft:29, paddingRight: search ? 28 : 10, fontSize:13 }}
+            placeholder="Search PI# or reference…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {search && (
+            <button onClick={() => setSearch('')} style={{ position:'absolute', right:7, background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', display:'flex' }}>
+              <X size={12}/>
+            </button>
+          )}
+        </div>
+
+        {/* Date range */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, flex:'0 0 auto' }}>
+          <Calendar size={13} style={{ color:'var(--text-muted)', flexShrink:0 }}/>
+          <input
+            type="date"
+            className="po-input"
+            style={{ fontSize:13, width:130 }}
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={e => setFromDate(e.target.value)}
+            title="From date"
+          />
+          <span style={{ fontSize:12, color:'var(--text-muted)' }}>to</span>
+          <input
+            type="date"
+            className="po-input"
+            style={{ fontSize:13, width:130 }}
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={e => setToDate(e.target.value)}
+            title="To date"
+          />
+        </div>
+
+        {hasFilters && (
+          <button className="po-btn-ghost" style={{ fontSize:12, padding:'5px 12px', whiteSpace:'nowrap' }} onClick={clearFilters}>
+            Clear filters
+          </button>
+        )}
       </div>
-      <div style={{ overflowX:'auto' }}>
-        <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
-          <thead>
-            <tr>
-              {['Date & Time','PI #','Vehicle','Amount','Method','Reference','By'].map(h => (
-                <th key={h} style={{ padding:'9px 14px', fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em', borderBottom:'1px solid var(--border)', background:'var(--bg-soft)', textAlign: h==='Amount'?'right':'left', whiteSpace:'nowrap' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {payments.map((p, i) => (
-              <tr key={p.id} style={{ background: i%2===0?undefined:'var(--bg-soft)' }}>
-                <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(p.paid_at)}</td>
-                <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
-                  <button onClick={() => navigate('/purchase-invoices', { state:{ openId: p.purchase_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
-                    PI-{String(p.purchase_invoice_id).padStart(6,'0')}
-                  </button>
-                </td>
-                <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
-                <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
-                <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}><MethodBadge method={p.method}/></td>
-                <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</td>
-                <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.created_by_name||'—'}</td>
+
+      {/* Summary bar */}
+      {!loading && (
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 16px', background:'#f0fdf4', borderBottom:'1px solid #86efac' }}>
+          <span style={{ fontSize:13, color:'#166534', fontWeight:600 }}>
+            {filtered.length} payment{filtered.length !== 1 ? 's' : ''}
+            {hasFilters && payments.length !== filtered.length && (
+              <span style={{ fontWeight:400, color:'#4ade80', marginLeft:4 }}>
+                (filtered from {payments.length})
+              </span>
+            )}
+          </span>
+          <span style={{ fontSize:15, fontWeight:800, color:'#16a34a' }}>
+            Total: {fmt(filteredTotal)}
+          </span>
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ padding:40, textAlign:'center', color:'var(--text-muted)' }}>
+          <Clock size={24} style={{ opacity:0.3 }}/>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ padding:40, textAlign:'center', color:'var(--text-muted)', fontSize:13 }}>
+          {hasFilters ? 'No payments match your filters.' : `No payments recorded for ${hubName} yet.`}
+        </div>
+      ) : (
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
+            <thead>
+              <tr>
+                {['Date & Time','PI #','Vehicle','Amount','Method','Reference','By'].map(h => (
+                  <th key={h} style={{ padding:'9px 14px', fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em', borderBottom:'1px solid var(--border)', background:'var(--bg-soft)', textAlign: h==='Amount'?'right':'left', whiteSpace:'nowrap' }}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {filtered.map((p, i) => (
+                <tr key={p.id} style={{ background: i%2===0?undefined:'var(--bg-soft)' }}>
+                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(p.paid_at)}</td>
+                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
+                    <button onClick={() => navigate('/purchase-invoices', { state:{ openId: p.purchase_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
+                      PI-{String(p.purchase_invoice_id).padStart(6,'0')}
+                    </button>
+                  </td>
+                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
+                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
+                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}><MethodBadge method={p.method}/></td>
+                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</td>
+                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.created_by_name||'—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -251,15 +341,21 @@ function GlobalPaymentHistory() {
   const [loading, setLoading]   = useState(true);
   const [hubFilter, setHubFilter] = useState('');
   const [search, setSearch]     = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate]     = useState('');
 
   useEffect(() => {
     setLoading(true);
-    const q = hubFilter ? `?hub_id=${hubFilter}` : '';
+    const params = new URLSearchParams();
+    if (hubFilter) params.set('hub_id', hubFilter);
+    if (fromDate)  params.set('from', fromDate);
+    if (toDate)    params.set('to',   toDate);
+    const q = params.toString() ? `?${params}` : '';
     api(`/api/purchase-invoices/hub-payments${q}`)
       .then(res => { setPayments(res.payments||[]); setByHub(res.by_hub||[]); setTotal(res.total||0); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [hubFilter]);
+  }, [hubFilter, fromDate, toDate]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -299,17 +395,45 @@ function GlobalPaymentHistory() {
 
       {/* Filters */}
       <div className="card" style={{ padding:'12px 16px', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', marginBottom:16 }}>
+        {/* Search */}
         <div style={{ position:'relative', flex:'1 1 200px', display:'flex', alignItems:'center' }}>
           <Search size={14} style={{ position:'absolute', left:10, color:'var(--text-muted)', pointerEvents:'none' }}/>
           <input className="po-input" style={{ paddingLeft:32, paddingRight:search?32:12 }} placeholder="Search PI#, vehicle, hub, reference…" value={search} onChange={e=>setSearch(e.target.value)}/>
           {search && <button onClick={()=>setSearch('')} style={{ position:'absolute', right:8, background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', display:'flex' }}><X size={13}/></button>}
         </div>
+        {/* Hub filter */}
         <select className="po-input" style={{ flex:'0 0 auto', width:'auto' }} value={hubFilter} onChange={e=>setHubFilter(e.target.value)}>
           <option value="">All Hubs</option>
           {byHub.map(h => <option key={h.hub_id} value={h.hub_id}>{h.hub_name}</option>)}
         </select>
-        {hubFilter && <button className="po-btn-ghost" style={{ padding:'7px 14px', fontSize:13, display:'flex', alignItems:'center', gap:5 }} onClick={()=>setHubFilter('')}>← All Hubs</button>}
-        {(search||hubFilter) && <button className="po-btn-ghost" style={{ padding:'7px 14px', fontSize:13 }} onClick={()=>{ setSearch(''); setHubFilter(''); }}>Clear</button>}
+        {/* Date range */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, flex:'0 0 auto' }}>
+          <Calendar size={13} style={{ color:'var(--text-muted)', flexShrink:0 }}/>
+          <input
+            type="date"
+            className="po-input"
+            style={{ fontSize:13, width:130 }}
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={e=>setFromDate(e.target.value)}
+            title="From date"
+          />
+          <span style={{ fontSize:12, color:'var(--text-muted)' }}>to</span>
+          <input
+            type="date"
+            className="po-input"
+            style={{ fontSize:13, width:130 }}
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={e=>setToDate(e.target.value)}
+            title="To date"
+          />
+        </div>
+        {(search||hubFilter||fromDate||toDate) && (
+          <button className="po-btn-ghost" style={{ padding:'7px 14px', fontSize:13 }} onClick={()=>{ setSearch(''); setHubFilter(''); setFromDate(''); setToDate(''); }}>
+            Clear all
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -576,7 +700,7 @@ function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
 // ── Invoice Panel (with tabs) ─────────────────────────────────────────────────
 const PAGE_SIZES = [10, 25, 50];
 
-function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments }) {
+function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkSuccess }) {
   const navigate    = useNavigate();
   const [tab, setTab]           = useState('invoices');
   const [page, setPage]         = useState(1);
@@ -641,6 +765,23 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments }) {
       {/* Invoices tab */}
       {tab==='invoices' && (
         <>
+          {/* Bulk selection action bar */}
+          {selected.size > 0 && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 16px', background:'color-mix(in srgb, var(--primary) 8%, var(--bg))', borderBottom:'1px solid var(--border)', borderTop:'1px solid var(--border)' }}>
+              <span style={{ fontSize:13, fontWeight:600, color:'var(--primary)' }}>
+                {selected.size} invoice{selected.size !== 1 ? 's' : ''} selected
+              </span>
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <button className="po-btn-ghost" style={{ fontSize:12, padding:'5px 12px' }} onClick={() => setSelected(new Set())}>
+                  Clear
+                </button>
+                <button className="po-btn-primary" style={{ fontSize:12, padding:'5px 16px', display:'flex', alignItems:'center', gap:6 }} onClick={() => setBulkModal(true)}>
+                  <CreditCard size={13}/> Pay {selected.size} Invoice{selected.size !== 1 ? 's' : ''}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:720 }}>
               <thead>
@@ -731,6 +872,15 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments }) {
 
       {/* Payments tab */}
       {tab==='payments' && <HubPaymentsTab hubName={hubName} hubId={hubId}/>}
+
+      {/* Bulk payment modal */}
+      {bulkModal && selectedInvoices.length > 0 && (
+        <BulkPaymentModal
+          selectedInvoices={selectedInvoices}
+          onClose={() => setBulkModal(false)}
+          onSuccess={() => { setBulkModal(false); setSelected(new Set()); onBulkSuccess?.(); }}
+        />
+      )}
     </div>
   );
 }
@@ -953,6 +1103,11 @@ export default function PayoutsPage() {
     await load();
   }
 
+  async function handleBulkPaySuccess() {
+    showToast('Bulk payment recorded successfully.');
+    await load();
+  }
+
   const SECTIONS = ['overdue','due_today','due_this_week','due_this_month','upcoming'];
   const allInvoices = useMemo(()=>{ if(!data)return []; return SECTIONS.flatMap(k=>data[k]||[]); }, [data]);
 
@@ -1089,6 +1244,7 @@ export default function PayoutsPage() {
                     invoices={hubInvoices}
                     onPay={setPayPi}
                     onViewPayments={setViewPaymentsPi}
+                    onBulkSuccess={handleBulkPaySuccess}
                   />
                 )}
               </div>
