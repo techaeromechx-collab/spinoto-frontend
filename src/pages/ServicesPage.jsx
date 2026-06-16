@@ -671,28 +671,51 @@ function PricingRulesList({ targetId, targetParam, targetName, serviceCategoryId
   const hasSmartForm = (pricingConfig || []).length > 0;
   const [smartModal, setSmartModal] = useState(false);
   const [rules,        setRules]        = useState([]);
+  const [total,        setTotal]        = useState(0);
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState('');
+  const [searchDebounced, setSearchDebounced] = useState('');
   const [ruleFilter,   setRuleFilter]   = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page,         setPage]         = useState(1);
   const [catRules,     setCatRules]     = useState([]); // category-level fallback rules
   const [showCatRules, setShowCatRules] = useState(false);
+  const [totalAll,     setTotalAll]     = useState(0);  // unfiltered total across all pages
   const LIMIT = 50;
+
+  // Debounce search — wait 350ms after user stops typing before hitting the API
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset to page 1 when any filter changes
+  useEffect(() => { setPage(1); }, [searchDebounced, ruleFilter, statusFilter]);
 
   const loadRules = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ [targetParam]: targetId, page, limit: LIMIT });
-      if (statusFilter) params.set('is_active', statusFilter === 'active' ? 'true' : 'false');
+      if (statusFilter)      params.set('is_active',  statusFilter === 'active' ? 'true' : 'false');
+      if (searchDebounced)   params.set('search',     searchDebounced);
+      if (ruleFilter)        params.set('rule_type',  ruleFilter);
       const r = await api(`/api/pricing?${params}`);
       setRules(r.items || []);
+      setTotal(r.total  ?? 0);
     } catch (e) { showToast(e.message, 'error'); }
     finally { setLoading(false); }
-  }, [targetId, targetParam, page, statusFilter, showToast]);
+  }, [targetId, targetParam, page, statusFilter, searchDebounced, ruleFilter, showToast]);
 
   useEffect(() => { loadRules(); }, [loadRules]);
-  useEffect(() => { setPage(1); setSearch(''); setRuleFilter(''); setStatusFilter(''); }, [targetId]);
+
+  // Fetch unfiltered total whenever the target changes (independent of filters/pages)
+  useEffect(() => {
+    api(`/api/pricing?${targetParam}=${targetId}&limit=1&page=1`)
+      .then(r => setTotalAll(r.total ?? 0))
+      .catch(() => {});
+  }, [targetId, targetParam]);
+
+  useEffect(() => { setPage(1); setSearch(''); setSearchDebounced(''); setRuleFilter(''); setStatusFilter(''); }, [targetId]);
 
   // Fetch category-level fallback rules when viewing a service's pricing tab
   useEffect(() => {
@@ -702,12 +725,19 @@ function PricingRulesList({ targetId, targetParam, targetName, serviceCategoryId
       .catch(() => {});
   }, [targetParam, serviceCategoryId]);
 
+  function refreshTotalAll() {
+    api(`/api/pricing?${targetParam}=${targetId}&limit=1&page=1`)
+      .then(r => setTotalAll(r.total ?? 0))
+      .catch(() => {});
+  }
+
   async function handleDelete(rule) {
     if (!window.confirm('Delete this pricing rule?')) return;
     try {
       await api(`/api/pricing/${rule.id}`, { method: 'DELETE' });
       showToast('Pricing rule deleted');
       loadRules();
+      refreshTotalAll();
     } catch (e) { showToast(e.message, 'error'); }
   }
 
@@ -718,13 +748,8 @@ function PricingRulesList({ targetId, targetParam, targetName, serviceCategoryId
     } catch (e) { showToast(e.message, 'error'); }
   }
 
-  // Client-side filter by search + rule type (already paginated server-side by status)
-  const filtered = rules.filter(r => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || r.applies_to.toLowerCase().includes(q) || r.service_name?.toLowerCase().includes(q);
-    const matchType   = !ruleFilter || r.rule_type === ruleFilter || r.rule_type?.includes(ruleFilter);
-    return matchSearch && matchType;
-  });
+  // Rules are now fully filtered server-side; use directly
+  const filtered = rules;
 
   return (
     <div className="sp-pricing">
@@ -768,17 +793,20 @@ function PricingRulesList({ targetId, targetParam, targetName, serviceCategoryId
       {/* Toolbar */}
       <div className="sp-pricing-toolbar">
         <div className="sp-pt-left">
+          <span className="sp-total-badge" title="Total rules across all pages">
+            {totalAll} rule{totalAll !== 1 ? 's' : ''} total
+          </span>
           <div className="sp-search-wrap sp-search-wrap--sm">
             <Search size={13} className="sp-search-icon" />
             <input
               className="sp-search-input"
               placeholder="Search rules…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); }}
             />
-            {search && <button className="sp-search-clear" onClick={() => setSearch('')}><X size={12} /></button>}
+            {search && <button className="sp-search-clear" onClick={() => { setSearch(''); setSearchDebounced(''); }}><X size={12} /></button>}
           </div>
-          <select className="sp-filter-sel" value={ruleFilter} onChange={e => setRuleFilter(e.target.value)}>
+          <select className="sp-filter-sel" value={ruleFilter} onChange={e => { setRuleFilter(e.target.value); setPage(1); }}>
             <option value="">All Types</option>
             <option value="Universal">Universal</option>
             <option value="Body Type">Body Type</option>
@@ -811,7 +839,7 @@ function PricingRulesList({ targetId, targetParam, targetName, serviceCategoryId
         <PricingBulkPanel
           service={service}
           onClose={() => setShowBulk(false)}
-          onSuccess={() => { setShowBulk(false); loadRules(); }}
+          onSuccess={() => { setShowBulk(false); loadRules(); refreshTotalAll(); }}
           showToast={showToast}
         />
       )}
@@ -895,13 +923,16 @@ function PricingRulesList({ targetId, targetParam, targetName, serviceCategoryId
 
       {/* Pagination */}
       <div className="sp-pagination">
-        <span className="sp-page-info">{filtered.length} rule{filtered.length !== 1 ? 's' : ''}</span>
+        <span className="sp-page-info">
+          {total} rule{total !== 1 ? 's' : ''}
+          {(searchDebounced || ruleFilter || statusFilter) ? ' (filtered)' : ''}
+        </span>
         <div className="sp-page-btns">
           <button className="sp-page-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
             <ChevronLeft size={14} />
           </button>
-          <span>Page {page}</span>
-          <button className="sp-page-btn" disabled={rules.length < LIMIT} onClick={() => setPage(p => p + 1)}>
+          <span>Page {page} of {Math.max(1, Math.ceil(total / LIMIT))}</span>
+          <button className="sp-page-btn" disabled={page >= Math.ceil(total / LIMIT)} onClick={() => setPage(p => p + 1)}>
             <ChRight size={14} />
           </button>
         </div>

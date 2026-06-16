@@ -353,6 +353,13 @@
 }
 .sp-pt-left  { display: flex; align-items: center; gap: 10px; flex: 1; flex-wrap: wrap; }
 .sp-pt-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.sp-total-badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 20px;
+  background: var(--accent-muted, #eff6ff); color: var(--accent, #2563eb);
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+  border: 1px solid var(--accent-border, #bfdbfe);
+}
 
 .sp-filter-sel {
   border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
