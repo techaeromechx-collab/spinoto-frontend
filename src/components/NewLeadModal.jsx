@@ -31,7 +31,7 @@ function segBadgeStyle(letter) {
 // ── Searchable dropdown ────────────────────────────────────────────────────────
 function SearchableSelect({
   value, onChange, options = [], placeholder = 'Select…',
-  disabled = false, loading = false, emptyMsg = 'No options',
+  disabled = false, loading = false, emptyMsg = 'No options', clearable = false,
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -125,6 +125,12 @@ function SearchableSelect({
             )}{selected.name}</>)
             : placeholder}
         </span>
+        {clearable && selected && !disabled && (
+          <span
+            onMouseDown={e => { e.stopPropagation(); onChange(''); setOpen(false); setQuery(''); }}
+            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-muted)', marginRight: 2 }}
+          ><X size={12} /></span>
+        )}
         <ChevronDown size={14} className={`ss-caret${open ? ' ss-caret-up' : ''}`} />
       </div>
 
@@ -295,19 +301,23 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
   }, [form.vehicle_type_id, vehicleClass, form.body_type_id]); // eslint-disable-line
 
   useEffect(() => {
-    if (!form.make_id) {
+    // For 2W: load all models so user can search/select model first (no make required)
+    if (!form.make_id && vehicleClass !== '2W') {
       setMasters(m => ({ ...m, models: [] })); setModelsLoading(false); return;
     }
     setModelsLoading(true); setMasters(m => ({ ...m, models: [] }));
-    const params = new URLSearchParams({ make_id: form.make_id });
+    const params = new URLSearchParams();
+    if (form.make_id) params.set('make_id', form.make_id);
     if (vehicleClass === '4W' && form.body_type_id) {
       params.set('body_type_id', form.body_type_id);
     }
+    // When no make selected on 2W, still restrict to 2W models only
+    if (!form.make_id && vehicleClass === '2W') params.set('type_class', '2W');
     api(`/api/vehicles/models?${params.toString()}`)
       .then(r => setMasters(m => ({ ...m, models: r.items || [] })))
       .catch(() => setMasters(m => ({ ...m, models: [] })))
       .finally(() => setModelsLoading(false));
-  }, [form.make_id]); // eslint-disable-line
+  }, [form.make_id, vehicleClass]); // eslint-disable-line
 
   useEffect(() => {
     if (!form.model_id) { setNoCcWarning(false); return; }
@@ -806,17 +816,25 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                                   value={form.make_id}
                                   onChange={v => setForm(f => ({ ...f, make_id: v, model_id: '' }))}
                                   options={masters.makes} placeholder="Select Make"
-                                  disabled={!masters.makes.length} emptyMsg="No makes available" />
+                                  disabled={!masters.makes.length} emptyMsg="No makes available" clearable />
                               </div>
                               <div className="nlm-field">
                                 <label>Model <span className="nlm-opt">(optional)</span></label>
                                 <SearchableSelect
                                   value={form.model_id}
-                                  onChange={v => setForm(f => ({ ...f, model_id: v }))}
+                                  onChange={v => {
+                                    if (!v) { setForm(f => ({ ...f, model_id: '' })); return; }
+                                    const model = masters.models.find(m => String(m.id) === String(v));
+                                    setForm(f => ({
+                                      ...f,
+                                      model_id: v,
+                                      make_id: f.make_id || (model?.make_id ? String(model.make_id) : f.make_id),
+                                    }));
+                                  }}
                                   options={modelsWithBadge}
-                                  placeholder={form.make_id ? 'Select Model' : 'Select a make first'}
-                                  disabled={!form.make_id} loading={modelsLoading}
-                                  emptyMsg="No models found for this make" />
+                                  placeholder="Search Model"
+                                  loading={modelsLoading}
+                                  emptyMsg="No models found" clearable />
                               </div>
                               {/* Engine CC */}
                               <div className="nlm-field nlm-span-full">

@@ -1129,6 +1129,8 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
     if (vehicleClass === '4W' && vForm.body_type_id) {
       params.set('body_type_id', vForm.body_type_id);
     }
+    // When no make selected on 2W, still restrict to 2W models only
+    if (!vForm.make_id && vehicleClass === '2W') params.set('type_class', '2W');
     api(`/api/vehicles/models?${params.toString()}`)
       .then(r => setVMasters(m => ({ ...m, models: r.items || [] })))
       .catch(() => setVMasters(m => ({ ...m, models: [] })))
