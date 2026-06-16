@@ -1,25 +1,67 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { api } from '../api/client.js';
-import { 
-  Plus, 
-  Search, 
-  MapPin, 
-  Navigation, 
+import {
+  Plus,
+  Search,
+  MapPin,
+  Navigation,
   LocateFixed,
   Trash2,
+  Pencil,
+  Check,
+  X,
   ToggleLeft,
   ToggleRight
 } from 'lucide-react';
 import '../styles/LocationsPage.css';
 
+// Inline rename input — supports optional pincode field (for areas)
+function RenameInput({ value, pincode, onSave, onCancel }) {
+  const [val, setVal] = useState(value);
+  const [pin, setPin] = useState(pincode ?? '');
+  const inputRef = useRef(null);
+  const hasPin = pincode !== undefined;
+
+  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+
+  function handleKey(e) {
+    if (e.key === 'Enter') onSave(val.trim(), hasPin ? pin.trim() : undefined);
+    if (e.key === 'Escape') onCancel();
+  }
+
+  return (
+    <div className="rename-row" onClick={e => e.stopPropagation()}>
+      <input
+        ref={inputRef}
+        className="rename-input"
+        value={val}
+        placeholder="Name"
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={handleKey}
+      />
+      {hasPin && (
+        <input
+          className="rename-input pincode-input"
+          value={pin}
+          placeholder="Pincode"
+          onChange={e => setPin(e.target.value)}
+          onKeyDown={handleKey}
+        />
+      )}
+      <button className="icon-btn ok-btn" onClick={() => onSave(val.trim(), hasPin ? pin.trim() : undefined)} title="Save"><Check size={14} /></button>
+      <button className="icon-btn"        onClick={onCancel} title="Cancel"><X size={14} /></button>
+    </div>
+  );
+}
+
 export default function LocationsPage() {
   const [states, setStates] = useState([]);
   const [cities, setCities] = useState([]);
   const [areas, setAreas] = useState([]);
-  
+
   const [selState, setSelState] = useState(null);
   const [selCity, setSelCity] = useState(null);
-  
+
   const [stateSearch, setStateSearch] = useState('');
   const [citySearch, setCitySearch] = useState('');
   const [areaSearch, setAreaSearch] = useState('');
@@ -27,6 +69,11 @@ export default function LocationsPage() {
   const [newState, setNewState] = useState('');
   const [newCity, setNewCity] = useState('');
   const [newArea, setNewArea] = useState({ name: '', pincode: '' });
+
+  // editingId tracks which row is currently open for rename: { type, id }
+  const [editingId, setEditingId] = useState(null);
+  // confirmDelete tracks which row is pending delete confirmation: { type, id }
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   useEffect(() => { loadStates(); }, []);
   useEffect(() => { if (selState) loadCities(selState.id); else setCities([]); }, [selState]);
@@ -41,8 +88,29 @@ export default function LocationsPage() {
   async function addArea() { if (!newArea.name || !selCity) return; await api('/api/locations/areas', { method: 'POST', body: { city_id: selCity.id, ...newArea } }); setNewArea({ name: '', pincode: '' }); loadAreas(selCity.id); }
 
   async function toggleStatus(type, item) {
-    const endpoint = `/api/locations/${type}/${item.id}`;
-    await api(endpoint, { method: 'PATCH', body: { is_active: !item.is_active } });
+    await api(`/api/locations/${type}/${item.id}`, { method: 'PATCH', body: { is_active: !item.is_active } });
+    reload(type);
+  }
+
+  async function rename(type, id, name, pincode) {
+    if (!name) return setEditingId(null);
+    const body = { name };
+    if (pincode !== undefined) body.pincode = pincode || null;
+    await api(`/api/locations/${type}/${id}`, { method: 'PATCH', body });
+    setEditingId(null);
+    reload(type);
+  }
+
+  async function deleteItem(type, id) {
+    await api(`/api/locations/${type}/${id}`, { method: 'DELETE' });
+    setConfirmDelete(null);
+    // If we deleted the selected state/city, clear selection
+    if (type === 'states' && selState?.id === id) { setSelState(null); setSelCity(null); }
+    if (type === 'cities' && selCity?.id === id) { setSelCity(null); }
+    reload(type);
+  }
+
+  function reload(type) {
     if (type === 'states') loadStates();
     if (type === 'cities') loadCities(selState.id);
     if (type === 'areas') loadAreas(selCity.id);
@@ -51,6 +119,38 @@ export default function LocationsPage() {
   const filteredStates = states.filter(s => s.name.toLowerCase().includes(stateSearch.toLowerCase()));
   const filteredCities = cities.filter(c => c.name.toLowerCase().includes(citySearch.toLowerCase()));
   const filteredAreas  = areas.filter(a => a.name.toLowerCase().includes(areaSearch.toLowerCase()));
+
+  // Shared row actions (pencil + toggle + trash)
+  function RowActions({ type, item, onSelect }) {
+    const isEditing  = editingId?.type === type && editingId?.id === item.id;
+    const isDeleting = confirmDelete?.type === type && confirmDelete?.id === item.id;
+
+    if (isEditing) return null; // RenameInput replaces the whole row content
+
+    if (isDeleting) {
+      return (
+        <div className="delete-confirm" onClick={e => e.stopPropagation()}>
+          <span className="delete-confirm-label">Delete?</span>
+          <button className="icon-btn danger-btn" onClick={() => deleteItem(type, item.id)} title="Confirm delete"><Check size={14} /></button>
+          <button className="icon-btn"            onClick={() => setConfirmDelete(null)}    title="Cancel"><X size={14} /></button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="row-actions" onClick={e => e.stopPropagation()}>
+        <button className="icon-btn" onClick={() => { onSelect?.(); setEditingId({ type, id: item.id }); }} title="Rename">
+          <Pencil size={13} />
+        </button>
+        <button className="icon-btn" onClick={() => toggleStatus(type, item)} title={item.is_active ? 'Deactivate' : 'Activate'}>
+          {item.is_active ? <ToggleRight size={16} color="var(--ok)" /> : <ToggleLeft size={16} />}
+        </button>
+        <button className="icon-btn danger-btn" onClick={() => setConfirmDelete({ type, id: item.id })} title="Delete">
+          <Trash2 size={13} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="locations-page">
@@ -75,21 +175,28 @@ export default function LocationsPage() {
             </div>
           </div>
           <div className="pane-content">
-            {filteredStates.map(s => (
-              <div 
-                key={s.id} 
-                className={`pane-item ${selState?.id === s.id ? 'selected' : ''} ${!s.is_active ? 'inactive' : ''}`}
-                onClick={() => { setSelState(s); setSelCity(null); }}
-              >
-                <div className="pane-item-name">
-                  <MapPin size={14} />
-                  <span>{s.name}</span>
+            {filteredStates.map(s => {
+              const isEditing = editingId?.type === 'states' && editingId?.id === s.id;
+              return (
+                <div
+                  key={s.id}
+                  className={`pane-item ${selState?.id === s.id ? 'selected' : ''} ${!s.is_active ? 'inactive' : ''}`}
+                  onClick={() => { if (!isEditing) { setSelState(s); setSelCity(null); } }}
+                >
+                  {isEditing ? (
+                    <RenameInput value={s.name} onSave={v => rename('states', s.id, v)} onCancel={() => setEditingId(null)} />
+                  ) : (
+                    <>
+                      <div className="pane-item-name">
+                        <MapPin size={14} />
+                        <span>{s.name}</span>
+                      </div>
+                      <RowActions type="states" item={s} onSelect={() => { setSelState(s); setSelCity(null); }} />
+                    </>
+                  )}
                 </div>
-                <button className="icon-btn" onClick={(e) => { e.stopPropagation(); toggleStatus('states', s); }}>
-                  {s.is_active ? <ToggleRight size={16} color="var(--ok)" /> : <ToggleLeft size={16} />}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="pane-footer">
             <div className="pane-adder">
@@ -117,21 +224,28 @@ export default function LocationsPage() {
                 <Navigation size={32} />
                 <p>Select a state to view cities</p>
               </div>
-            ) : filteredCities.map(c => (
-              <div 
-                key={c.id} 
-                className={`pane-item ${selCity?.id === c.id ? 'selected' : ''} ${!c.is_active ? 'inactive' : ''}`}
-                onClick={() => setSelCity(c)}
-              >
-                <div className="pane-item-name">
-                  <Navigation size={14} />
-                  <span>{c.name}</span>
+            ) : filteredCities.map(c => {
+              const isEditing = editingId?.type === 'cities' && editingId?.id === c.id;
+              return (
+                <div
+                  key={c.id}
+                  className={`pane-item ${selCity?.id === c.id ? 'selected' : ''} ${!c.is_active ? 'inactive' : ''}`}
+                  onClick={() => { if (!isEditing) setSelCity(c); }}
+                >
+                  {isEditing ? (
+                    <RenameInput value={c.name} onSave={v => rename('cities', c.id, v)} onCancel={() => setEditingId(null)} />
+                  ) : (
+                    <>
+                      <div className="pane-item-name">
+                        <Navigation size={14} />
+                        <span>{c.name}</span>
+                      </div>
+                      <RowActions type="cities" item={c} onSelect={() => setSelCity(c)} />
+                    </>
+                  )}
                 </div>
-                <button className="icon-btn" onClick={(e) => { e.stopPropagation(); toggleStatus('cities', c); }}>
-                  {c.is_active ? <ToggleRight size={16} color="var(--ok)" /> : <ToggleLeft size={16} />}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="pane-footer">
             <div className="pane-adder">
@@ -159,20 +273,27 @@ export default function LocationsPage() {
                 <LocateFixed size={32} />
                 <p>Select a city to view areas</p>
               </div>
-            ) : filteredAreas.map(a => (
-              <div 
-                key={a.id} 
-                className={`pane-item ${!a.is_active ? 'inactive' : ''}`}
-              >
-                <div className="pane-item-name">
-                  <LocateFixed size={14} />
-                  <span>{a.name} <small className="muted">({a.pincode || 'No Pin'})</small></span>
+            ) : filteredAreas.map(a => {
+              const isEditing = editingId?.type === 'areas' && editingId?.id === a.id;
+              return (
+                <div
+                  key={a.id}
+                  className={`pane-item ${!a.is_active ? 'inactive' : ''}`}
+                >
+                  {isEditing ? (
+                    <RenameInput value={a.name} pincode={a.pincode ?? ''} onSave={(v, p) => rename('areas', a.id, v, p)} onCancel={() => setEditingId(null)} />
+                  ) : (
+                    <>
+                      <div className="pane-item-name">
+                        <LocateFixed size={14} />
+                        <span>{a.name} <small className="muted">({a.pincode || 'No Pin'})</small></span>
+                      </div>
+                      <RowActions type="areas" item={a} />
+                    </>
+                  )}
                 </div>
-                <button className="icon-btn" onClick={(e) => { e.stopPropagation(); toggleStatus('areas', a); }}>
-                  {a.is_active ? <ToggleRight size={16} color="var(--ok)" /> : <ToggleLeft size={16} />}
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="pane-footer">
             <div className="pane-adder" style={{ flexDirection: 'column' }}>
