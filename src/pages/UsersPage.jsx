@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import useSync from '../hooks/useSync.js';
 import { useBodyLock } from '../hooks/useBodyLock.js';
 
 // ── Role badge helper ────────────────────────────────────────────────────────
@@ -62,6 +63,7 @@ export default function UsersPage() {
   }, [isManager, canManageTeamPerms]);
 
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
+  useSync('users', () => load().catch(() => {}));
 
   // Fetch roles once at page level — passed down to avoid re-fetching per user
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { api } from '../api/client.js';
+import useSync from '../hooks/useSync.js';
 import {
   Plus,
   Search,
@@ -78,6 +79,17 @@ export default function LocationsPage() {
   useEffect(() => { loadStates(); }, []);
   useEffect(() => { if (selState) loadCities(selState.id); else setCities([]); }, [selState]);
   useEffect(() => { if (selCity) loadAreas(selCity.id); else setAreas([]); }, [selCity]);
+
+  // Real-time sync: re-fetch when any other user changes location data.
+  const selStateRef = useRef(selState);
+  const selCityRef = useRef(selCity);
+  useEffect(() => { selStateRef.current = selState; }, [selState]);
+  useEffect(() => { selCityRef.current = selCity; }, [selCity]);
+  useSync('locations', () => {
+    loadStates();
+    if (selStateRef.current) loadCities(selStateRef.current.id);
+    if (selCityRef.current) loadAreas(selCityRef.current.id);
+  });
 
   async function loadStates() { const r = await api('/api/locations/states'); setStates(r.items); }
   async function loadCities(sid) { const r = await api(`/api/locations/cities?state_id=${sid}`); setCities(r.items); }

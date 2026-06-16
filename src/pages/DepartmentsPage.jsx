@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../api/client.js';
+import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import { Plus, Pencil, Trash2, X, AlertCircle, CheckCircle2, Building2 } from 'lucide-react';
 import '../styles/DepartmentsPage.css';
@@ -111,6 +112,7 @@ export default function DepartmentsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useSync('departments', load);
 
   function showToast(msg, type = 'success') {
     setToast({ msg, type });

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api/client.js';
+import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import {
   Plus, Pencil, Trash2, X, Search, RefreshCw,
@@ -324,6 +325,7 @@ export default function PartsPage() {
   }, [vtFilter, showToast]);
 
   useEffect(() => { fetchParts(); }, [fetchParts]);
+  useSync('parts', fetchParts);
 
   // Reset to page 1 whenever any filter changes
   useEffect(() => { setPage(1); }, [searchTerm, vtFilter, categoryFilter]);

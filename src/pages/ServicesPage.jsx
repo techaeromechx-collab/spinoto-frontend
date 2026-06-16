@@ -7,6 +7,7 @@ import {
   Car, FileText, Download, Hash,
 } from 'lucide-react';
 import { api } from '../api/client.js';
+import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import '../styles/ServicesPage.css';
 
@@ -130,6 +131,7 @@ export default function ServicesPage() {
   }, [showToast]);
 
   useEffect(() => { loadCategories(); }, [loadCategories]);
+  useSync('services', loadCategories);
 
   // ── Load services for a category ─────────────────────────────────────────
   const loadServices = useCallback(async (catId) => {

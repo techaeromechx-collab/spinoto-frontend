@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { api } from '../api/client.js';
+import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import {
   Plus, Search, Edit2, Trash2, UploadCloud, Download,
@@ -128,6 +129,8 @@ export default function VehiclesPage() {
 
   // re-load when filters/page change
   useEffect(() => { loadVehicles(); }, [search, filterMake, page, limit]);
+
+  useSync('vehicles', () => { loadVehicles(); loadRefs(); });
 
   // Reload ref data every time the Add/Edit modal is opened so newly added or
   // just-activated body types and segments appear immediately without a page refresh

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../api/client.js';
+import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import {
   IndianRupee,
@@ -55,6 +56,7 @@ export default function PricingPage() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+  useSync('pricing', loadAll);
 
   useEffect(() => {
     if (form.make_id) {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api/client.js';
+import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import {
   Plus, Pencil, Trash2, X, AlertCircle, CheckCircle2,
@@ -270,6 +271,7 @@ function LeadStatusPanel({ canManage }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useSync('lead_statuses', load);
 
   function handleSaved(item) {
     setStatuses(prev => {
@@ -605,6 +607,7 @@ function GenericStatusPanel({ canManage, apiBase, title, description, addLabel }
   }, [apiBase]);
 
   useEffect(() => { load(); }, [load]);
+  useSync(['appointment_statuses', 'invoice_statuses'], load);
 
   function handleSaved(item) {
     setStatuses(prev => {
@@ -884,6 +887,7 @@ function LeadSourcesPanel({ canManage }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useSync('lead_sources', load);
 
   function showToast(msg, type = 'success') {
     setToast({ msg, type });

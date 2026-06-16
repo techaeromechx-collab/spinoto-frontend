@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { api, getToken, setToken } from '../api/client.js';
+import socket from '../lib/socket.js';
 
 const AuthContext = createContext(null);
 
@@ -23,6 +24,27 @@ export function AuthProvider({ children }) {
       }
     })();
     return () => { cancelled = true; };
+  }, []);
+
+  // Connect / disconnect socket when login state changes.
+  useEffect(() => {
+    if (user) {
+      if (!socket.connected) socket.connect();
+    } else {
+      socket.disconnect();
+    }
+  }, [user]);
+
+  // When another admin changes this user's permissions, re-fetch /me so
+  // the frontend reflects the new permission set without a page reload.
+  useEffect(() => {
+    function onInvalidate({ topic }) {
+      if (topic === 'users') {
+        api('/api/me').then(data => setUser(data.user)).catch(() => {});
+      }
+    }
+    socket.on('invalidate', onInvalidate);
+    return () => socket.off('invalidate', onInvalidate);
   }, []);
 
   const login = useCallback(async (email, password) => {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api/client.js';
+import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import {
   Plus, Pencil, Trash2, X, Search, RefreshCw,
@@ -400,6 +401,7 @@ export default function DiscountMasterPage() {
   }, [search, filterApplies, filterActive]);
 
   useEffect(() => { load(); }, [load]);
+  useSync('discounts', load);
 
   async function handleDelete() {
     setDeleting(true);
