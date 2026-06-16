@@ -529,6 +529,13 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
                         <span className="lp-vm-info-val">{lead.body_type_name}</span>
                       </div>
                     )}
+                    {/* Segment / Fuel Type */}
+                    {lead.segment_names?.length > 0 && (
+                      <div className="lp-vm-info-row">
+                        <span className="lp-vm-info-label">Fuel Type</span>
+                        <span className="lp-vm-info-val">{lead.segment_names.join(', ')}</span>
+                      </div>
+                    )}
                     {/* 2W: engine CC */}
                     {lead.engine_cc && (
                       <div className="lp-vm-info-row">
@@ -3810,7 +3817,6 @@ export default function LeadsPage() {
         {selectedLeads.size > 0 && (
           <div className="lp-bulk-bar">
             <span className="lp-bulk-count">
-              <input type="checkbox" className="lp-chk" checked readOnly style={{ marginRight: 8 }} />
               {selectedLeads.size} selected
             </span>
             <div className="lp-bulk-actions">
