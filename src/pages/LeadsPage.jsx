@@ -9,7 +9,7 @@ import {
   MoreVertical, Eye, Pencil, Trash2, X, CheckCircle2,
   AlertCircle, Phone, MessageCircle, Tag, FileText,
   IndianRupee, ChevronDown, UserCheck, Wrench, Plus, Info,
-  SlidersHorizontal, Bell, Clock, Send, MessageSquare, Activity, Download,
+  SlidersHorizontal, Bell, Clock, Send, MessageSquare, Activity, Download, Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import '../styles/LeadsPage.css';
@@ -1741,72 +1741,155 @@ function DeleteModal({ lead, onClose, onConfirm }) {
   );
 }
 
-// ── Follow-up scheduling mini-modal ──────────────────────────────────────────
-function FollowUpModal({ statusName, leadName, onConfirm, onCancel }) {
+// ── Merged Status Action Modal (Call Log + Follow-up) ────────────────────────
+// logsCall=true     → shows call outcome + notes section
+// needsFollowUp=true → shows follow-up date/time/note section
+// Both can be true → both sections shown in one modal
+function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onConfirm, onCancel }) {
   useBodyLock();
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('09:00');
-  const [note, setNote] = useState('');
-  const [error, setError] = useState('');
+  const [outcome,   setOutcome]   = useState('');
+  const [callNotes, setCallNotes] = useState('');
+  const [date,      setDate]      = useState('');
+  const [time,      setTime]      = useState('09:00');
+  const [note,      setNote]      = useState('');
+  const [error,     setError]     = useState('');
+  const [outcomes,  setOutcomes]  = useState([]);
+
+  // Outcome colors cycle — purely visual
+  const OUTCOME_COLORS = [
+    { color: '#16a34a', bg: '#dcfce7' },
+    { color: '#d97706', bg: '#fef3c7' },
+    { color: '#ea580c', bg: '#ffedd5' },
+    { color: '#2563eb', bg: '#dbeafe' },
+    { color: '#7c3aed', bg: '#ede9fe' },
+    { color: '#0891b2', bg: '#cffafe' },
+  ];
+
+  useEffect(() => {
+    if (!logsCall) return;
+    api('/api/call-outcomes')
+      .then(r => {
+        const list = r.items || [];
+        setOutcomes(list);
+        if (list.length > 0) setOutcome(list[0].name);
+      })
+      .catch(() => {});
+  }, [logsCall]);
 
   function handleConfirm() {
-    if (!date) { setError('Please select a follow-up date.'); return; }
-    onConfirm({ follow_up_date: date, follow_up_time: time, note });
+    if (needsFollowUp && !date) { setError('Please select a follow-up date.'); return; }
+    onConfirm({
+      ...(logsCall     ? { call_outcome: outcome, call_notes: callNotes || null } : {}),
+      ...(needsFollowUp ? { follow_up_date: date, follow_up_time: time, note }    : {}),
+    });
   }
+
+  const fieldStyle = { width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box', outline: 'none' };
+  const labelStyle = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 };
+
+  const title = logsCall && needsFollowUp ? 'Log Call & Schedule Follow-up'
+              : logsCall                  ? 'Log Call'
+              :                             'Schedule Follow-up';
 
   return (
     <div className="lr-backdrop" onClick={onCancel}>
       <div className="lr-modal" onClick={e => e.stopPropagation()}>
         <div className="lr-header">
-          <span className="lr-title">Schedule Follow-up</span>
+          <span className="lr-title">{title}</span>
           <button className="lr-close" onClick={onCancel}><X size={16} /></button>
         </div>
         <div className="lr-body">
           <p className="lr-sub">
-            Status changed to <strong>{statusName}</strong>. Set the next follow-up date for <strong>{leadName || 'this lead'}</strong>.
+            Status → <strong>{statusName}</strong> for <strong>{leadName || 'this lead'}</strong>
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>
-                Follow-up Date <span style={{ color: '#dc2626' }}>*</span>
-              </label>
-              <input
-                type="date"
-                value={date}
-                min={new Date().toISOString().split('T')[0]}
-                onChange={e => { setDate(e.target.value); setError(''); }}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box', outline: 'none' }}
-              />
+
+          {/* ── Call Log Section ── */}
+          {logsCall && (
+            <div style={{ marginBottom: needsFollowUp ? 18 : 0 }}>
+              {needsFollowUp && (
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+                  📞 Call Log
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>Call Outcome</label>
+                  {outcomes.length === 0 ? (
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading…</span>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {outcomes.map((o, idx) => {
+                        const c = OUTCOME_COLORS[idx % OUTCOME_COLORS.length];
+                        return (
+                          <button key={o.id} type="button"
+                            onClick={() => setOutcome(o.name)}
+                            style={{
+                              padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                              border: `2px solid ${outcome === o.name ? c.color : 'var(--border)'}`,
+                              background: outcome === o.name ? c.bg : 'var(--bg)',
+                              color: outcome === o.name ? c.color : 'var(--text-muted)',
+                              transition: 'all 0.15s',
+                            }}>
+                            {o.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label style={labelStyle}>Notes (optional)</label>
+                  <textarea value={callNotes} onChange={e => setCallNotes(e.target.value)}
+                    placeholder="What happened on this call?"
+                    rows={2}
+                    style={{ ...fieldStyle, resize: 'vertical', fontFamily: 'inherit' }}
+                  />
+                </div>
+              </div>
             </div>
+          )}
+
+          {/* ── Follow-up Section ── */}
+          {needsFollowUp && (
             <div>
-              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>
-                Follow-up Time
-              </label>
-              <input
-                type="time"
-                value={time}
-                onChange={e => setTime(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box', outline: 'none' }}
-              />
+              {logsCall && (
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+                  📅 Follow-up
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>Follow-up Date <span style={{ color: '#dc2626' }}>*</span></label>
+                  <input type="date" value={date} min={new Date().toISOString().split('T')[0]}
+                    onChange={e => { setDate(e.target.value); setError(''); }}
+                    style={fieldStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Follow-up Time</label>
+                  <input type="time" value={time} onChange={e => setTime(e.target.value)} style={fieldStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Note (optional)</label>
+                  <textarea value={note} onChange={e => setNote(e.target.value)}
+                    placeholder="What should the agent follow up about?"
+                    rows={2}
+                    style={{ ...fieldStyle, resize: 'vertical', fontFamily: 'inherit' }}
+                  />
+                </div>
+              </div>
             </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 }}>
-                Note (optional)
-              </label>
-              <textarea
-                value={note}
-                onChange={e => setNote(e.target.value)}
-                placeholder="What should the agent follow up about?"
-                rows={2}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }}
-              />
-            </div>
-          </div>
+          )}
+
           {error && <p className="lr-error"><AlertCircle size={12} /> {error}</p>}
         </div>
         <div className="lr-footer">
           <button className="lr-btn-cancel" onClick={onCancel}>Cancel</button>
-          <button className="lr-btn-confirm" onClick={handleConfirm}>Save Follow-up</button>
+          <button className="lr-btn-confirm" onClick={handleConfirm}>
+            {logsCall && needsFollowUp ? 'Save & Update Status'
+             : logsCall                ? 'Log Call & Update Status'
+             :                           'Save Follow-up'}
+          </button>
         </div>
       </div>
     </div>
@@ -2755,8 +2838,8 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const [lostModal, setLostModal] = useState(null);         // { statusName }
-  const [followUpModal, setFollowUpModal] = useState(null); // { statusName }
+  const [lostModal, setLostModal] = useState(null);   // { statusName }
+  const [actionModal, setActionModal] = useState(null); // { statusName, logsCall, needsFollowUp }
   const btnRef = useRef(null);
   const dropRef = useRef(null);
 
@@ -2815,10 +2898,14 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
       onOpenConvert?.({ statusName: name, leadId, leadName, saveFn: save });
       return;
     }
-    // 3. Intercept "needs_follow_up" flag — open follow-up scheduler
-    if (statusObj?.needs_follow_up) {
+    // 3. Intercept logs_call and/or needs_follow_up — open merged action modal
+    if (statusObj?.logs_call || statusObj?.needs_follow_up) {
       setOpen(false);
-      setFollowUpModal({ statusName: name });
+      setActionModal({
+        statusName:    name,
+        logsCall:      !!statusObj.logs_call,
+        needsFollowUp: !!statusObj.needs_follow_up,
+      });
       return;
     }
     await save(name, null);
@@ -2827,9 +2914,20 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
   async function save(status, lostReason, meta = {}) {
     setBusy(true);
     try {
+      // If a call outcome was selected, log the call first
+      if (meta.call_outcome) {
+        try {
+          await api(`/api/leads/${leadId}/calls`, {
+            method: 'POST',
+            body: { outcome: meta.call_outcome, notes: meta.call_notes || null },
+          });
+        } catch (callErr) {
+          console.error('[StatusInlineSelect] call log failed:', callErr?.message);
+          // Non-fatal — continue with status update
+        }
+      }
       const body = { status };
       if (lostReason) body.lost_reason = lostReason;
-      // Pass follow-up scheduling data from the FollowUpModal
       if (meta.follow_up_date)  body.follow_up_date  = meta.follow_up_date;
       if (meta.follow_up_time)  body.follow_up_time  = meta.follow_up_time;
       if (meta.note)            body.follow_up_note  = meta.note;
@@ -2841,7 +2939,9 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
     finally { setBusy(false); }
   }
 
-  const cfg = current ? getStatusCfg(current, statusList) : { color: '#0369a1', bg: '#e0f2fe' };
+  const cfg            = current ? getStatusCfg(current, statusList) : { color: '#0369a1', bg: '#e0f2fe' };
+  const currentStatus  = statusList.find(s => s.name === current);
+  const isLocked       = !!currentStatus?.is_locked;
 
   return (
     <>
@@ -2852,14 +2952,35 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
           onCancel={() => setLostModal(null)}
         />
       )}
-      {followUpModal && (
-        <FollowUpModal
-          statusName={followUpModal.statusName}
+      {actionModal && (
+        <StatusActionModal
+          statusName={actionModal.statusName}
           leadName={leadName}
-          onConfirm={data => { setFollowUpModal(null); save(followUpModal.statusName, null, data); }}
-          onCancel={() => setFollowUpModal(null)}
+          logsCall={actionModal.logsCall}
+          needsFollowUp={actionModal.needsFollowUp}
+          onConfirm={data => { const m = actionModal; setActionModal(null); save(m.statusName, null, data); }}
+          onCancel={() => setActionModal(null)}
         />
       )}
+
+      {/* ── Locked status — non-clickable badge ── */}
+      {isLocked ? (
+        <span
+          title="This status is locked and cannot be changed"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+            letterSpacing: 0.3, border: `2px solid ${cfg.color}33`,
+            background: cfg.bg, color: cfg.color,
+            whiteSpace: 'nowrap', maxWidth: 200, cursor: 'not-allowed', opacity: 0.85,
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {current}
+          </span>
+          <Lock size={10} style={{ flexShrink: 0, opacity: 0.7 }} />
+        </span>
+      ) : (
       <button
         ref={btnRef}
         type="button"
@@ -2880,6 +3001,7 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
         </span>
         <ChevronDown size={11} style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none' }} />
       </button>
+      )}
 
       {open && typeof document !== 'undefined' && (
         <div

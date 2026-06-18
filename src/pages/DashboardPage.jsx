@@ -16,7 +16,7 @@ import {
   BarChart2, Activity, Clock, Bell, CheckCircle2,
   CalendarDays, AlertCircle, Building2, ClipboardList,
   UserPlus, Calendar, Receipt, Wallet, UploadCloud,
-  MoreVertical, Package, Wrench, MessageSquare, ListChecks, Tag, GripVertical,
+  MoreVertical, Package, Wrench, MessageSquare, ListChecks, Tag, GripVertical, Phone,
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -64,10 +64,12 @@ export default function DashboardPage() {
   const [partsData,    setPartsData]    = useState(null);
   const [funnelData,   setFunnelData]   = useState([]);
   const [topServices,  setTopServices]  = useState([]);
+  const [callSummary,  setCallSummary]  = useState(null);
+  const [callLoading,  setCallLoading]  = useState(false);
 
   // ── Dashboard section order ───────────────────────────────────────────
   const DEFAULT_ORDER = [
-    'kpi', 'strip', 'row1', 'row2', 'row3', 'row4', 'row5', 'team', 'parts',
+    'kpi', 'strip', 'row1', 'row2', 'row3', 'row4', 'row5', 'team', 'calls', 'parts',
   ];
   const storageKey = `db-order-${user?.id || 'default'}`;
   const [sectionOrder, setSectionOrder] = useState(() => {
@@ -118,6 +120,10 @@ export default function DashboardPage() {
   const canViewDashTeamPerf         = isSuperAdmin
     || user?.permissions?.includes('VIEW_DASHBOARD_TEAM_PERFORMANCE')
     || user?.permissions?.includes('MANAGE_USERS');
+  const canViewDashCalls = isSuperAdmin
+    || user?.permissions?.includes('VIEW_LEAD')
+    || user?.permissions?.includes('VIEW_OWN_LEADS')
+    || user?.permissions?.includes('VIEW_TEAM_LEADS');
   const canViewDashStatsStrip       = isSuperAdmin || user?.permissions?.includes('VIEW_DASHBOARD_STATS_STRIP')
     || canViewReports || canViewDashRevenue || canViewDashLeads || canViewDashInvoices || canViewDashAppointments || canViewDashFollowups;
   const canViewDashRevenueTrend     = isSuperAdmin || user?.permissions?.includes('VIEW_DASHBOARD_REVENUE_TREND') || canViewReports || canViewDashRevenue;
@@ -212,6 +218,16 @@ export default function DashboardPage() {
       .catch(() => setHubPerfData(null))
       .finally(() => setHubLoading(false));
   }, [hubFilter, canViewDashHubPerformance]);
+
+  // Call summary fetch (today)
+  useEffect(() => {
+    if (!canViewDashCalls) return;
+    setCallLoading(true);
+    api('/api/leads/calls/summary')
+      .then(r => setCallSummary(r))
+      .catch(() => setCallSummary(null))
+      .finally(() => setCallLoading(false));
+  }, [canViewDashCalls]);
 
   function applyCustomFilter() {
     if (!customFrom || !customTo) return;
@@ -379,6 +395,7 @@ export default function DashboardPage() {
     row4:  row4Cols > 0,
     row5:  row5Cols > 0,
     team:  canViewDashTeamPerf,
+    calls: canViewDashCalls,
     parts: !!(canViewDashParts && partsData),
   };
 
@@ -1394,6 +1411,108 @@ export default function DashboardPage() {
               </table>
             </div>
           )}
+        </div>
+
+              ) : id === 'calls' && canViewDashCalls ? (
+        <div className="db-1col">
+          <div className="db-card">
+            <div className="db-card-hd">
+              <div className="db-card-title">
+                <span className="db-card-dot" style={{ background: '#6d28d9' }} />
+                <Phone size={13} style={{ marginRight: 4 }} />
+                Today's Call Log
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>9 AM – 6 PM</span>
+            </div>
+
+            {callLoading ? (
+              <SkeletonList n={3} h={36} />
+            ) : !callSummary || callSummary.agents.length === 0 ? (
+              /* ── Own count when no team data yet ── */
+              <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                <div style={{ fontSize: 40, fontWeight: 800, color: '#6d28d9', lineHeight: 1 }}>
+                  {callSummary?.my_count ?? 0}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                  {(callSummary?.my_count ?? 0) === 0 ? 'No calls logged yet today' : 'calls logged by you today'}
+                </div>
+              </div>
+            ) : (isManager || isSuperAdmin) ? (
+              /* ── Manager view: team table ── */
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                      <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Agent</th>
+                      {(callSummary.outcome_names || []).map(name => (
+                        <th key={name} style={{ textAlign: 'center', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>{name}</th>
+                      ))}
+                      <th style={{ textAlign: 'center', padding: '6px 8px', fontWeight: 700, color: 'var(--text)', fontSize: 11 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {callSummary.agents.map(agent => (
+                      <tr key={agent.user_id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '8px 8px', fontWeight: 500 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ width: 26, height: 26, borderRadius: '50%', background: '#ede9fe', color: '#6d28d9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                              {agent.agent_name?.charAt(0)?.toUpperCase()}
+                            </span>
+                            {agent.agent_name}
+                          </span>
+                        </td>
+                        {(callSummary.outcome_names || []).map(name => (
+                          <td key={name} style={{ textAlign: 'center', padding: '8px 8px', color: 'var(--text-muted)' }}>
+                            {agent.outcomes_breakdown?.[name] ?? 0}
+                          </td>
+                        ))}
+                        <td style={{ textAlign: 'center', padding: '8px 8px', fontWeight: 700, color: '#6d28d9' }}>
+                          {agent.total_calls}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: '2px solid var(--border)' }}>
+                      <td style={{ padding: '8px 8px', fontWeight: 700, color: 'var(--text-muted)', fontSize: 12 }}>Total</td>
+                      {(callSummary.outcome_names || []).map(name => (
+                        <td key={name} style={{ textAlign: 'center', padding: '8px 8px', fontWeight: 700, fontSize: 12 }}>
+                          {callSummary.agents.reduce((s, a) => s + (a.outcomes_breakdown?.[name] ?? 0), 0)}
+                        </td>
+                      ))}
+                      <td style={{ textAlign: 'center', padding: '8px 8px', fontWeight: 800, color: '#6d28d9', fontSize: 14 }}>
+                        {callSummary.agents.reduce((s, a) => s + a.total_calls, 0)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : (
+              /* ── Regular user: own count + breakdown ── */
+              <div>
+                <div style={{ textAlign: 'center', padding: '16px 0 20px' }}>
+                  <div style={{ fontSize: 44, fontWeight: 800, color: '#6d28d9', lineHeight: 1 }}>
+                    {callSummary.my_count}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>calls logged today</div>
+                </div>
+                {callSummary.agents.length > 0 && (() => {
+                  const myRow = callSummary.agents.find(a => a.user_id === user?.id);
+                  if (!myRow || !myRow.outcomes_breakdown) return null;
+                  return (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', paddingBottom: 8 }}>
+                      {(callSummary.outcome_names || []).map(name => (
+                        <div key={name} style={{ textAlign: 'center', padding: '8px 14px', background: 'var(--bg-soft)', borderRadius: 10, minWidth: 70 }}>
+                          <div style={{ fontSize: 20, fontWeight: 700 }}>{myRow.outcomes_breakdown[name] ?? 0}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{name}</div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
         </div>
 
               ) : id === 'parts' && canViewDashParts && partsData ? (

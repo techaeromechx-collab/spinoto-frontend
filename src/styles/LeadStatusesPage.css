@@ -81,9 +81,11 @@
           border-radius: 12px;
           white-space: nowrap;
         }
-        .ls-flag-badge--blue  { background: #dbeafe; color: #1e40af; }
-        .ls-flag-badge--cyan  { background: #cffafe; color: #0e7490; }
-        .ls-flag-badge--amber { background: #fef3c7; color: #92400e; }
+        .ls-flag-badge--blue   { background: #dbeafe; color: #1e40af; }
+        .ls-flag-badge--cyan   { background: #cffafe; color: #0e7490; }
+        .ls-flag-badge--amber  { background: #fef3c7; color: #92400e; }
+        .ls-flag-badge--purple { background: #ede9fe; color: #6d28d9; }
+        .ls-flag-badge--red    { background: #fee2e2; color: #b91c1c; }
 
         /* ── Page wrapper ─────────────────────────────────────────────────── */
         .ls-page { position: relative; }
@@ -112,8 +114,10 @@
         .button.danger:hover { background:#b91c1c; }
         .button.danger:disabled { opacity:.6; cursor:not-allowed; }
 
-        /* ── Card overflow managed by CSS (inline style removed) ──────────── */
+        /* ── Card overflow: allow table to scroll horizontally ─────────────── */
         .ls-page .card { overflow: hidden; }
+        .ls-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .ls-table-scroll .data-table { min-width: 900px; }
 
         /* ── Mobile card list — hidden on desktop ────────────────────────── */
         .ls-mobile-cards { display: none; }

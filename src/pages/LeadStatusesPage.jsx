@@ -4,7 +4,7 @@ import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import {
   Plus, Pencil, Trash2, X, AlertCircle, CheckCircle2,
-  GripVertical, Tag, Calendar, FileText, RefreshCw,
+  GripVertical, Tag, Calendar, FileText, RefreshCw, Phone,
 } from 'lucide-react';
 import '../styles/LeadStatusesPage.css';
 
@@ -128,6 +128,8 @@ function LeadStatusModal({ item, maxOrder, onClose, onSaved }) {
     needs_follow_up: item?.needs_follow_up ?? false,
     converts_to_appointment: item?.converts_to_appointment ?? false,
     is_pipeline: item?.is_pipeline ?? true,
+    logs_call:   item?.logs_call   ?? false,
+    is_locked:   item?.is_locked   ?? false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -208,6 +210,31 @@ function LeadStatusModal({ item, maxOrder, onClose, onSaved }) {
                 <span className="ls-behaviour-hint">
                   Leads with this status will be included in the Pipeline Value on the dashboard.
                   Turn OFF for closed statuses like Lost or Cancelled.
+                </span>
+              </div>
+            </label>
+
+            <label className="ls-behaviour-row">
+              <input type="checkbox" checked={form.logs_call}
+                onChange={e => setForm(f => ({ ...f, logs_call: e.target.checked }))} />
+              <div>
+                <span className="ls-behaviour-label">Log a call when this status is set</span>
+                <span className="ls-behaviour-hint">
+                  When a lead is moved to this status, a call-log popup will appear so the caller
+                  can record the outcome (Connected, Busy, etc.) and optional notes.
+                </span>
+              </div>
+            </label>
+
+            <label className="ls-behaviour-row">
+              <input type="checkbox" checked={form.is_locked}
+                onChange={e => setForm(f => ({ ...f, is_locked: e.target.checked }))} />
+              <div>
+                <span className="ls-behaviour-label">Lock this status (terminal)</span>
+                <span className="ls-behaviour-hint">
+                  Once a lead is set to this status it cannot be changed further.
+                  The status dropdown will be disabled with a 🔒 lock indicator.
+                  Use for final states like Lost, Junk, Cancelled.
                 </span>
               </div>
             </label>
@@ -331,6 +358,7 @@ function LeadStatusPanel({ canManage }) {
       {error && <div className="banner error">{error}</div>}
 
       <div className="card">
+        <div className="ls-table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -342,6 +370,8 @@ function LeadStatusPanel({ canManage }) {
               <th>Follow-up</th>
               <th>→ Appt</th>
               <th>Pipeline</th>
+              <th>Logs Call</th>
+              <th>Locked</th>
               <th>Active</th>
               {canManage && <th />}
             </tr>
@@ -406,6 +436,16 @@ function LeadStatusPanel({ canManage }) {
                     : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                 </td>
                 <td>
+                  {s.logs_call
+                    ? <span className="ls-flag-badge ls-flag-badge--purple">✓ Call Log</span>
+                    : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                </td>
+                <td>
+                  {s.is_locked
+                    ? <span className="ls-flag-badge ls-flag-badge--red">🔒 Locked</span>
+                    : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                </td>
+                <td>
                   <span style={{
                     fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20,
                     background: s.is_active ? '#dcfce7' : '#f3f4f6',
@@ -430,6 +470,7 @@ function LeadStatusPanel({ canManage }) {
             ))}
           </tbody>
         </table>
+        </div>{/* end ls-table-scroll */}
 
         {/* ── Mobile card list ── */}
         <div className="ls-mobile-cards">
@@ -450,6 +491,8 @@ function LeadStatusPanel({ canManage }) {
                   {s.needs_follow_up && <span className="ls-flag-badge ls-flag-badge--blue">Follow-up</span>}
                   {s.converts_to_appointment && <span className="ls-flag-badge ls-flag-badge--cyan">→ Appt</span>}
                   {s.is_pipeline && <span className="ls-flag-badge ls-flag-badge--amber">Pipeline</span>}
+                  {s.logs_call && <span className="ls-flag-badge ls-flag-badge--purple">Call Log</span>}
+                  {s.is_locked && <span className="ls-flag-badge ls-flag-badge--red">🔒 Locked</span>}
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: s.is_active ? '#dcfce7' : '#f3f4f6', color: s.is_active ? '#16a34a' : '#6b7280' }}>
                     {s.is_active ? 'Active' : 'Inactive'}
                   </span>
@@ -471,6 +514,8 @@ function LeadStatusPanel({ canManage }) {
             {' · '}{statuses.filter(s => s.needs_follow_up).length} trigger follow-up
             {' · '}{statuses.filter(s => s.converts_to_appointment).length} convert to appointment
             {' · '}{statuses.filter(s => s.is_pipeline).length} count in pipeline
+            {' · '}{statuses.filter(s => s.logs_call).length} log calls
+            {' · '}{statuses.filter(s => s.is_locked).length} locked
           </div>
         )}
       </div>
@@ -1081,6 +1126,223 @@ function LeadSourcesPanel({ canManage }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// CALL OUTCOMES PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+
+function CallOutcomeForm({ item, onClose, onSaved, canManage }) {
+  const isEdit = !!item?.id;
+  const [form, setForm] = useState({ name: item?.name || '', is_active: item?.is_active ?? true });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e) {
+    e.preventDefault(); setError(''); setSaving(true);
+    try {
+      const r = isEdit
+        ? await api(`/api/call-outcomes/${item.id}`, { method: 'PATCH', body: form })
+        : await api('/api/call-outcomes', { method: 'POST', body: form });
+      onSaved(r.item);
+    } catch (err) {
+      setError(err.message || 'Failed to save');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="ls-backdrop" onClick={onClose}>
+      <div className="ls-modal ls-modal--sm" onClick={e => e.stopPropagation()}>
+        <div className="ls-modal-hdr">
+          <h3>{isEdit ? 'Edit Outcome' : 'Add Outcome'}</h3>
+          <button className="ls-icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="ls-modal-body">
+            {error && <div className="ls-err"><AlertCircle size={13} /> {error}</div>}
+            <div className="ls-field">
+              <label className="ls-label">Outcome Name *</label>
+              <input className="ls-input" value={form.name} required
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Connected, Busy…" />
+            </div>
+            <div className="ls-field ls-field--row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.is_active}
+                  onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                Active (shown in call log popup)
+              </label>
+            </div>
+          </div>
+          <div className="ls-modal-ftr">
+            <button type="button" className="button secondary" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="submit" className="button primary" disabled={saving}>
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Outcome'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CallOutcomesPanel({ canManage }) {
+  const [outcomes, setOutcomes]   = useState([]);
+  const [loading,  setLoading]    = useState(true);
+  const [modal,    setModal]      = useState(null); // { mode: 'add'|'edit', item }
+  const [delItem,  setDelItem]    = useState(null);
+  const [delErr,   setDelErr]     = useState('');
+  const [delBusy,  setDelBusy]    = useState(false);
+  const [dragOver, setDragOver]   = useState(null);
+  const dragIdx                   = useRef(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await api('/api/call-outcomes?all=true');
+      setOutcomes(r.items || []);
+    } catch {}
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function onDrop(toIdx) {
+    setDragOver(null);
+    const fromIdx = dragIdx.current;
+    if (fromIdx === null || fromIdx === toIdx) return;
+    const reordered = [...outcomes];
+    const [moved]   = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    setOutcomes(reordered);
+    dragIdx.current = null;
+    try {
+      await api('/api/call-outcomes/reorder', { method: 'POST', body: { ids: reordered.map(o => o.id) } });
+    } catch { load(); }
+  }
+
+  async function handleDelete() {
+    if (!delItem) return;
+    setDelBusy(true); setDelErr('');
+    try {
+      await api(`/api/call-outcomes/${delItem.id}`, { method: 'DELETE' });
+      setDelItem(null);
+      load();
+    } catch (err) { setDelErr(err.message || 'Failed to delete'); }
+    finally { setDelBusy(false); }
+  }
+
+  return (
+    <div className="ls-panel">
+      <div className="ls-panel-hd">
+        <div>
+          <div className="ls-panel-title">Call Outcomes</div>
+          <div className="ls-panel-desc">Options shown in the call log popup when a caller logs a call. Drag to reorder.</div>
+        </div>
+        {canManage && (
+          <button className="button primary sm" onClick={() => setModal({ mode: 'add', item: null })}>
+            <Plus size={14} /> Add Outcome
+          </button>
+        )}
+      </div>
+
+      <table className="data-table">
+        <thead>
+          <tr>
+            {canManage && <th style={{ width: 28 }} />}
+            <th>Name</th>
+            <th>Active</th>
+            {canManage && <th />}
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? (
+            <tr><td colSpan="4" style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>Loading…</td></tr>
+          ) : outcomes.length === 0 ? (
+            <tr><td colSpan="4" style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>No outcomes yet.</td></tr>
+          ) : outcomes.map((o, idx) => (
+            <tr key={o.id}
+              draggable={canManage}
+              onDragStart={() => { dragIdx.current = idx; }}
+              onDragOver={e => { e.preventDefault(); setDragOver(idx); }}
+              onDrop={() => onDrop(idx)}
+              onDragLeave={() => setDragOver(null)}
+              style={{
+                opacity: o.is_active ? 1 : 0.45,
+                background: dragOver === idx ? 'var(--bg-soft)' : '',
+                borderTop: dragOver === idx ? '2px solid var(--primary)' : '',
+                cursor: canManage ? 'grab' : 'default',
+              }}
+            >
+              {canManage && (
+                <td><GripVertical size={14} style={{ color: 'var(--text-muted)', cursor: 'grab' }} /></td>
+              )}
+              <td style={{ fontWeight: 500, fontSize: 14 }}>{o.name}</td>
+              <td>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20,
+                  background: o.is_active ? '#dcfce7' : '#f3f4f6',
+                  color: o.is_active ? '#16a34a' : '#6b7280',
+                }}>
+                  {o.is_active ? 'Active' : 'Inactive'}
+                </span>
+              </td>
+              {canManage && (
+                <td>
+                  <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                    <button className="ls-icon-btn" title="Edit" onClick={() => setModal({ mode: 'edit', item: o })}>
+                      <Pencil size={14} />
+                    </button>
+                    <button className="ls-icon-btn ls-icon-btn--danger" title="Delete" onClick={() => { setDelItem(o); setDelErr(''); }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {outcomes.length > 0 && (
+        <div style={{ padding: '10px 20px', fontSize: 12, color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
+          {outcomes.filter(o => o.is_active).length} active · {outcomes.filter(o => !o.is_active).length} inactive
+        </div>
+      )}
+
+      {modal && (
+        <CallOutcomeForm
+          item={modal.item}
+          canManage={canManage}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); load(); }}
+        />
+      )}
+
+      {delItem && (
+        <div className="ls-backdrop" onClick={() => setDelItem(null)}>
+          <div className="ls-modal ls-modal--sm" onClick={e => e.stopPropagation()}>
+            <div className="ls-modal-hdr">
+              <h3>Delete Outcome</h3>
+              <button className="ls-icon-btn" onClick={() => setDelItem(null)}><X size={18} /></button>
+            </div>
+            <div className="ls-modal-body">
+              {delErr && <div className="ls-err"><AlertCircle size={13} /> {delErr}</div>}
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6 }}>
+                Delete outcome <strong>{delItem.name}</strong>? This cannot be undone.
+              </p>
+            </div>
+            <div className="ls-modal-ftr">
+              <button className="button secondary" onClick={() => setDelItem(null)} disabled={delBusy}>Cancel</button>
+              <button className="button danger" onClick={handleDelete} disabled={delBusy}>
+                {delBusy ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // MAIN PAGE — 3-tab layout
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1088,6 +1350,7 @@ const TABS = [
   { key: 'lead', label: 'Lead Status', icon: Tag },
   { key: 'appointment', label: 'Appointment Status', icon: Calendar },
   { key: 'invoice', label: 'Invoice Status', icon: FileText },
+  { key: 'call_outcomes', label: 'Call Outcomes', icon: Phone },
 ];
 
 export default function LeadStatusesPage() {
@@ -1138,6 +1401,9 @@ export default function LeadStatusesPage() {
             description="Configure the statuses available on Invoice records."
             addLabel="Add Status"
           />
+        )}
+        {activeTab === 'call_outcomes' && (
+          <CallOutcomesPanel canManage={canManage} />
         )}
       </div>
     </div>
