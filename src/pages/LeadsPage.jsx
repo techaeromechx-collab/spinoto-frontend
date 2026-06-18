@@ -341,6 +341,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState('');
   const timelineEndRef = useRef(null);
+  const [rescheduleId, setRescheduleId] = useState(null); // follow-up event id to reschedule
 
   useEffect(() => {
     setLoading(true);
@@ -389,6 +390,26 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
     } finally {
       setNoteSaving(false);
     }
+  }
+
+  async function handleReschedule({ date, time, note }) {
+    await api(`/api/lead-events/${rescheduleId}/done`, { method: 'PATCH' });
+    await api(`/api/leads/${leadId}`, {
+      method: 'PATCH',
+      body: {
+        status: lead?.status,
+        follow_up_date: date,
+        follow_up_time: time || null,
+        follow_up_note: note || null,
+      },
+    });
+    // Refresh follow-up list
+    const fu = await api(`/api/lead-events?lead_id=${leadId}&all=true`).catch(() => ({ items: [] }));
+    setFollowUps((fu.items || []).sort((a, b) => {
+      if (a.is_done !== b.is_done) return a.is_done ? 1 : -1;
+      return new Date(a.due_date) - new Date(b.due_date);
+    }));
+    setRescheduleId(null);
   }
 
   // Notes only, sorted oldest → newest
@@ -676,6 +697,14 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
                             </div>
                             {fu.note && <div className="lp-fu-detail-note">{fu.note}</div>}
                             <div className="lp-fu-detail-meta">Status: <strong>{fu.status_name || '—'}</strong></div>
+                            {!fu.is_done && (
+                              <button
+                                style={{ marginTop: 6, fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}
+                                onClick={() => setRescheduleId(fu.id)}
+                              >
+                                Reschedule
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -971,6 +1000,12 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
           )}
         </div>
       </div>
+      {rescheduleId && (
+        <RescheduleFollowUpModal
+          onConfirm={handleReschedule}
+          onCancel={() => setRescheduleId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1889,6 +1924,65 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
             {logsCall && needsFollowUp ? 'Save & Update Status'
              : logsCall                ? 'Log Call & Update Status'
              :                           'Save Follow-up'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reschedule Follow-up Modal ────────────────────────────────────────────────
+function RescheduleFollowUpModal({ onConfirm, onCancel }) {
+  useBodyLock();
+  const [date,  setDate]  = useState('');
+  const [time,  setTime]  = useState('10:00');
+  const [note,  setNote]  = useState('');
+  const [error, setError] = useState('');
+  const [saving,setSaving]= useState(false);
+
+  const fieldStyle = { width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box', outline: 'none' };
+  const labelStyle = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 };
+
+  async function handleConfirm() {
+    if (!date) { setError('Please select a new date.'); return; }
+    setSaving(true);
+    try { await onConfirm({ date, time, note }); }
+    catch (e) { setError(e.message || 'Failed to reschedule.'); setSaving(false); }
+  }
+
+  return (
+    <div className="lr-backdrop" onClick={onCancel}>
+      <div className="lr-modal" onClick={e => e.stopPropagation()}>
+        <div className="lr-header">
+          <span className="lr-title">Reschedule Follow-up</span>
+          <button className="lr-close" onClick={onCancel}><X size={16} /></button>
+        </div>
+        <div className="lr-body">
+          <p className="lr-sub">The current follow-up will be marked as done and a new one will be created.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>New Date <span style={{ color: '#dc2626' }}>*</span></label>
+              <input type="date" value={date} min={new Date().toISOString().split('T')[0]}
+                onChange={e => { setDate(e.target.value); setError(''); }}
+                style={fieldStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Time</label>
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} style={fieldStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Note (optional)</label>
+              <textarea value={note} onChange={e => setNote(e.target.value)}
+                placeholder="What should be followed up about?"
+                rows={2} style={{ ...fieldStyle, resize: 'vertical', fontFamily: 'inherit' }} />
+            </div>
+          </div>
+          {error && <p className="lr-error"><AlertCircle size={12} /> {error}</p>}
+        </div>
+        <div className="lr-footer">
+          <button className="lr-btn-cancel" onClick={onCancel} disabled={saving}>Cancel</button>
+          <button className="lr-btn-confirm" onClick={handleConfirm} disabled={saving}>
+            {saving ? 'Saving…' : 'Reschedule'}
           </button>
         </div>
       </div>
@@ -3059,6 +3153,7 @@ export default function LeadsPage() {
   const [todayEvents, setTodayEvents] = useState([]);
   const [eventsDone, setEventsDone] = useState({});
   const [fuDrawerOpen, setFuDrawerOpen] = useState(false);
+  const [rescheduleEvent, setRescheduleEvent] = useState(null); // { id, lead_id, lead_status }
   const [fuFilter, setFuFilter] = useState('today');
   const [fuLoading, setFuLoading] = useState(false);
   const [customFrom, setCustomFrom] = useState('');
@@ -3351,6 +3446,22 @@ export default function LeadsPage() {
     } catch (e) { console.error(e); }
   }
 
+  async function handleRescheduleDrawer({ date, time, note }) {
+    const { id, lead_id, lead_status } = rescheduleEvent;
+    await api(`/api/lead-events/${id}/done`, { method: 'PATCH' });
+    await api(`/api/leads/${lead_id}`, {
+      method: 'PATCH',
+      body: {
+        status: lead_status,
+        follow_up_date: date,
+        follow_up_time: time || null,
+        follow_up_note: note || null,
+      },
+    });
+    setEventsDone(prev => ({ ...prev, [id]: true }));
+    setRescheduleEvent(null);
+  }
+
   const visibleEvents = todayEvents.filter(e => !eventsDone[e.id]);
 
   function getStatusCfg(name) {
@@ -3373,6 +3484,13 @@ export default function LeadsPage() {
             saveFn(statusName, null, data);
           }}
           onCancel={() => setPageConvertModal(null)}
+        />
+      )}
+
+      {rescheduleEvent && (
+        <RescheduleFollowUpModal
+          onConfirm={handleRescheduleDrawer}
+          onCancel={() => setRescheduleEvent(null)}
         />
       )}
 
@@ -3580,9 +3698,17 @@ export default function LeadsPage() {
                         )}
                         {ev.note && <div className="lp-fu-meta" style={{ marginTop: 2 }}>{ev.note}</div>}
                       </div>
-                      <button className="lp-fu-done-btn" onClick={e => { e.stopPropagation(); markEventDone(ev.id); }}>
-                        <CheckCircle2 size={13} /> Done
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <button className="lp-fu-done-btn" onClick={e => { e.stopPropagation(); markEventDone(ev.id); }}>
+                          <CheckCircle2 size={13} /> Done
+                        </button>
+                        <button
+                          style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                          onClick={e => { e.stopPropagation(); setRescheduleEvent({ id: ev.id, lead_id: ev.lead_id, lead_status: ev.lead_current_status }); }}
+                        >
+                          Reschedule
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
