@@ -4,8 +4,16 @@ import {
   Tag, IndianRupee, Pencil, Trash2, X, Check, AlertCircle,
   CheckCircle2, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight as ChRight,
   UploadCloud, FileSpreadsheet, File, Info, ChevronUp, AlertTriangle, SlidersHorizontal,
-  Car, FileText, Download, Hash,
+  Car, FileText, Download, Hash, GripVertical,
 } from 'lucide-react';
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext, verticalListSortingStrategy,
+  useSortable, arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api/client.js';
 import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
@@ -95,11 +103,156 @@ function previewAppliesTo(form, { vehicleTypes, makes, models, segments, bodyTyp
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// SORTABLE SERVICE ROW
+// ══════════════════════════════════════════════════════════════════════════
+function SortableSvcRow({ svc, selService, P, canDrag, selectService, toggleServiceStatus }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: svc.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`sp-svc-row ${selService?.id === svc.id ? 'sp-svc-row--active' : ''} ${!svc.is_active ? 'sp-inactive' : ''}`}
+      onClick={() => selectService(svc)}
+    >
+      {canDrag && (
+        <span className="sp-grip" {...attributes} {...listeners} onClick={e => e.stopPropagation()}>
+          <GripVertical size={12} />
+        </span>
+      )}
+      <Wrench size={12} className="sp-svc-icon" />
+      <span className="sp-svc-name">{svc.name}</span>
+      {svc.vehicle_class && svc.vehicle_class !== 'both' && (
+        <span style={{
+          fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 10,
+          background: svc.vehicle_class === '4W' ? '#dbeafe' : '#dcfce7',
+          color:      svc.vehicle_class === '4W' ? '#1d4ed8' : '#166534',
+          flexShrink: 0,
+        }}>
+          {svc.vehicle_class === '4W' ? '4W' : '2W'}
+        </span>
+      )}
+      <div className="sp-cat-actions" onClick={e => e.stopPropagation()}>
+        {P.canUpdateService && (
+          <button className="sp-act-btn" title="Toggle" onClick={e => toggleServiceStatus(svc, e)}>
+            {svc.is_active ? <ToggleRight size={13} color="var(--ok,#16a34a)" /> : <ToggleLeft size={13} />}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SORTABLE CATEGORY BLOCK (with inner service DnD)
+// ══════════════════════════════════════════════════════════════════════════
+function SortableCatBlock({
+  cat, expanded, services, selService, selCategory, P, dndSensors, canDrag,
+  toggleCat, openCategoryRules, setCatModal, toggleCatStatus, setDeleteModal,
+  selectService, toggleServiceStatus, setSvcModal, handleSvcDragEnd,
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: cat.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  const svcList = services[cat.id] || [];
+
+  return (
+    <div ref={setNodeRef} style={style} className="sp-cat-block">
+      {/* Category row */}
+      <div
+        className={`sp-cat-row ${!cat.is_active ? 'sp-inactive' : ''}`}
+        onClick={() => toggleCat(cat)}
+      >
+        {canDrag && (
+          <span className="sp-grip" {...attributes} {...listeners} onClick={e => e.stopPropagation()}>
+            <GripVertical size={12} />
+          </span>
+        )}
+        <span className="sp-cat-chevron">
+          {expanded[cat.id] ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </span>
+        <Layers size={13} className="sp-cat-icon" />
+        <span className="sp-cat-name" title={cat.name}>{cat.name}</span>
+        <span className="sp-cat-count">{cat.service_count ?? 0}</span>
+        <div className="sp-cat-actions" onClick={e => e.stopPropagation()}>
+          {P.canViewPricing && (
+            <button
+              className={`sp-act-btn ${selCategory?.id === cat.id ? 'sp-act-btn--active' : ''}`}
+              title="Category pricing rules"
+              onClick={e => openCategoryRules(cat, e)}
+            >
+              <IndianRupee size={12} />
+            </button>
+          )}
+          {P.canUpdateService && (
+            <button className="sp-act-btn" title="Edit category" onClick={() => setCatModal({ mode: 'edit', item: cat })}>
+              <Pencil size={12} />
+            </button>
+          )}
+          {P.canUpdateService && (
+            <button className="sp-act-btn" title="Toggle status" onClick={e => toggleCatStatus(cat, e)}>
+              {cat.is_active ? <ToggleRight size={14} color="var(--ok,#16a34a)" /> : <ToggleLeft size={14} />}
+            </button>
+          )}
+          {P.canDeleteService && (
+            <button className="sp-act-btn sp-act-danger" title="Delete category" onClick={() => setDeleteModal({ type: 'category', item: cat })}>
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Service items */}
+      {expanded[cat.id] && (
+        <div className="sp-svc-list">
+          <DndContext sensors={dndSensors} collisionDetection={closestCenter}
+            onDragEnd={(e) => handleSvcDragEnd(cat.id, e)}>
+            <SortableContext items={svcList.map(s => s.id)} strategy={verticalListSortingStrategy}>
+              {svcList.map(svc => (
+                <SortableSvcRow
+                  key={svc.id}
+                  svc={svc}
+                  selService={selService}
+                  P={P}
+                  canDrag={P.canUpdateService}
+                  selectService={selectService}
+                  toggleServiceStatus={toggleServiceStatus}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+          {P.canCreateService && (
+            <button
+              className="sp-add-svc-btn"
+              onClick={() => setSvcModal({ mode: 'create', catId: cat.id })}
+            >
+              <Plus size={12} /> Add Service
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ══════════════════════════════════════════════════════════════════════════
 export default function ServicesPage() {
   const P = usePerms();
   const { toast, show: showToast } = useToast();
+
+  // DnD sensors
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   // Left panel state
   const [categories,   setCategories]   = useState([]);
@@ -245,6 +398,39 @@ export default function ServicesPage() {
     c.name.toLowerCase().includes(catSearch.toLowerCase())
   );
 
+  // ── Reorder categories (drag end) ─────────────────────────────────────────
+  async function handleCatDragEnd(event) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = categories.findIndex(c => c.id === active.id);
+    const newIdx = categories.findIndex(c => c.id === over.id);
+    const reordered = arrayMove(categories, oldIdx, newIdx);
+    setCategories(reordered);
+    try {
+      await api('/api/services/categories/reorder', { method: 'POST', body: { ids: reordered.map(c => c.id) } });
+    } catch {
+      showToast('Failed to save order', 'error');
+      setCategories(categories); // revert
+    }
+  }
+
+  // ── Reorder services within a category (drag end) ────────────────────────
+  async function handleSvcDragEnd(catId, event) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const list    = services[catId] || [];
+    const oldIdx  = list.findIndex(s => s.id === active.id);
+    const newIdx  = list.findIndex(s => s.id === over.id);
+    const reordered = arrayMove(list, oldIdx, newIdx);
+    setServices(prev => ({ ...prev, [catId]: reordered }));
+    try {
+      await api('/api/services/services/reorder', { method: 'POST', body: { ids: reordered.map(s => s.id) } });
+    } catch {
+      showToast('Failed to save order', 'error');
+      setServices(prev => ({ ...prev, [catId]: list })); // revert
+    }
+  }
+
   // ── CSV download helper ───────────────────────────────────────────────────
   function downloadCSV(rows, filename) {
     const headers = Object.keys(rows[0]);
@@ -357,89 +543,35 @@ export default function ServicesPage() {
               ))
             ) : filteredCats.length === 0 ? (
               <div className="sp-empty-left">No categories found</div>
-            ) : filteredCats.map(cat => (
-              <div key={cat.id} className="sp-cat-block">
-                {/* Category row */}
-                <div
-                  className={`sp-cat-row ${!cat.is_active ? 'sp-inactive' : ''}`}
-                  onClick={() => toggleCat(cat)}
-                >
-                  <span className="sp-cat-chevron">
-                    {expanded[cat.id] ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-                  </span>
-                  <Layers size={13} className="sp-cat-icon" />
-                  <span className="sp-cat-name" title={cat.name}>{cat.name}</span>
-                  <span className="sp-cat-count">{cat.service_count ?? 0}</span>
-                  <div className="sp-cat-actions" onClick={e => e.stopPropagation()}>
-                    {P.canViewPricing && (
-                      <button
-                        className={`sp-act-btn ${selCategory?.id === cat.id ? 'sp-act-btn--active' : ''}`}
-                        title="Category pricing rules"
-                        onClick={e => openCategoryRules(cat, e)}
-                      >
-                        <IndianRupee size={12} />
-                      </button>
-                    )}
-                    {P.canUpdateService && (
-                      <button className="sp-act-btn" title="Edit category" onClick={() => setCatModal({ mode: 'edit', item: cat })}>
-                        <Pencil size={12} />
-                      </button>
-                    )}
-                    {P.canUpdateService && (
-                      <button className="sp-act-btn" title="Toggle status" onClick={e => toggleCatStatus(cat, e)}>
-                        {cat.is_active ? <ToggleRight size={14} color="var(--ok,#16a34a)" /> : <ToggleLeft size={14} />}
-                      </button>
-                    )}
-                    {P.canDeleteService && (
-                      <button className="sp-act-btn sp-act-danger" title="Delete category" onClick={() => setDeleteModal({ type: 'category', item: cat })}>
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Service items */}
-                {expanded[cat.id] && (
-                  <div className="sp-svc-list">
-                    {(services[cat.id] || []).map(svc => (
-                      <div
-                        key={svc.id}
-                        className={`sp-svc-row ${selService?.id === svc.id ? 'sp-svc-row--active' : ''} ${!svc.is_active ? 'sp-inactive' : ''}`}
-                        onClick={() => selectService(svc)}
-                      >
-                        <Wrench size={12} className="sp-svc-icon" />
-                        <span className="sp-svc-name">{svc.name}</span>
-                        {svc.vehicle_class && svc.vehicle_class !== 'both' && (
-                          <span style={{
-                            fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 10,
-                            background: svc.vehicle_class === '4W' ? '#dbeafe' : '#dcfce7',
-                            color:      svc.vehicle_class === '4W' ? '#1d4ed8' : '#166534',
-                            flexShrink: 0,
-                          }}>
-                            {svc.vehicle_class === '4W' ? '4W' : '2W'}
-                          </span>
-                        )}
-                        <div className="sp-cat-actions" onClick={e => e.stopPropagation()}>
-                          {P.canUpdateService && (
-                            <button className="sp-act-btn" title="Toggle" onClick={e => toggleServiceStatus(svc, e)}>
-                              {svc.is_active ? <ToggleRight size={13} color="var(--ok,#16a34a)" /> : <ToggleLeft size={13} />}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    {P.canCreateService && (
-                      <button
-                        className="sp-add-svc-btn"
-                        onClick={() => setSvcModal({ mode: 'create', catId: cat.id })}
-                      >
-                        <Plus size={12} /> Add Service
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+            ) : (
+              <DndContext sensors={dndSensors} collisionDetection={closestCenter}
+                onDragEnd={catSearch ? undefined : handleCatDragEnd}>
+                <SortableContext items={filteredCats.map(c => c.id)} strategy={verticalListSortingStrategy}>
+                  {filteredCats.map(cat => (
+                    <SortableCatBlock
+                      key={cat.id}
+                      cat={cat}
+                      expanded={expanded}
+                      services={services}
+                      selService={selService}
+                      selCategory={selCategory}
+                      P={P}
+                      dndSensors={dndSensors}
+                      canDrag={!catSearch && P.canUpdateService}
+                      toggleCat={toggleCat}
+                      openCategoryRules={openCategoryRules}
+                      setCatModal={setCatModal}
+                      toggleCatStatus={toggleCatStatus}
+                      setDeleteModal={setDeleteModal}
+                      selectService={selectService}
+                      toggleServiceStatus={toggleServiceStatus}
+                      setSvcModal={setSvcModal}
+                      handleSvcDragEnd={handleSvcDragEnd}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            )}
           </div>
         </aside>
 

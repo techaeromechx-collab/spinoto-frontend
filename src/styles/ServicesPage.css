@@ -118,6 +118,21 @@
 
 .sp-cat-block { margin-bottom: 2px; }
 
+.sp-grip {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  opacity: 0;
+  cursor: grab;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 4px;
+  transition: opacity .15s;
+}
+.sp-grip:active { cursor: grabbing; }
+.sp-cat-row:hover .sp-grip,
+.sp-svc-row:hover .sp-grip { opacity: 1; }
+
 .sp-cat-row {
   display: flex; align-items: center; gap: 6px;
   padding: 8px 10px; border-radius: 8px;
