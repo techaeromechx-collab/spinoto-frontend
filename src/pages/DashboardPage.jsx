@@ -275,6 +275,9 @@ export default function DashboardPage() {
     const now = new Date();
     return leads.filter(l => {
       const d = new Date(l.created_at);
+      if (pipelineFilter === 'today') {
+        return d.toDateString() === now.toDateString();
+      }
       if (pipelineFilter === 'week') {
         const weekAgo = new Date(now); weekAgo.setDate(now.getDate() - 7);
         return d >= weekAgo;
@@ -579,6 +582,7 @@ export default function DashboardPage() {
                 value={pipelineFilter}
                 onChange={e => setPipelineFilter(e.target.value)}
               >
+                <option value="today">Today</option>
                 <option value="week">This Week</option>
                 <option value="month">This Month</option>
                 <option value="all">All Time</option>

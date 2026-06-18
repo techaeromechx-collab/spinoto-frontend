@@ -15,12 +15,12 @@
 }
 
 [data-theme="dark"] {
-  --bg: #0f172a;
-  --bg-soft: #1e293b;
-  --panel: #1e293b;
-  --text: #f8fafc;
-  --text-muted: #94a3b8;
-  --border: #334155;
+  --bg: #18181b;
+  --bg-soft: #27272a;
+  --panel: #27272a;
+  --text: #fafafa;
+  --text-muted: #a1a1aa;
+  --border: #3f3f46;
   --primary: #16b994;
   --primary-hover: #2dd4bf;
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);

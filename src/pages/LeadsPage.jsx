@@ -3283,9 +3283,12 @@ export default function LeadsPage() {
   // Reset to page 1 whenever filters change
   useEffect(() => { setPage(1); }, [search, statusFilters, createdByFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
 
-  // Status counts over ALL leads (null status = "New Lead")
-  const newLeadCount = leads.filter(l => !l.status).length;
-  const counts = leads.reduce((acc, l) => { if (l.status) { acc[l.status] = (acc[l.status] || 0) + 1; } return acc; }, {});
+  // Status counts — scoped to selected assignee if one is active
+  const leadsForCounts = createdByFilter
+    ? leads.filter(l => String(l.assigned_to) === createdByFilter)
+    : leads;
+  const newLeadCount = leadsForCounts.filter(l => !l.status).length;
+  const counts = leadsForCounts.reduce((acc, l) => { if (l.status) { acc[l.status] = (acc[l.status] || 0) + 1; } return acc; }, {});
 
   // Total value of filtered leads
   const totalValue = filtered.reduce((sum, l) => sum + Number(l.total_price || 0), 0);

@@ -175,23 +175,34 @@ function VehicleBadge({ value }) {
 }
 function StatusBadge({ active }) {
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
-      background: active ? '#dcfce7' : '#f3f4f6', color: active ? '#16a34a' : '#6b7280' }}>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
+      background: active ? '#dcfce7' : '#f3f4f6',
+      color: active ? '#16a34a' : '#6b7280',
+      whiteSpace: 'nowrap', width: 'fit-content',
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }} />
       {active ? 'Active' : 'Inactive'}
     </span>
   );
 }
 const VSTATUS_CONFIG = {
-  pending:  { bg: '#fef9c3', color: '#854d0e', label: 'Pending Verification' },
-  verified: { bg: '#dcfce7', color: '#15803d', label: 'Verified' },
-  rejected: { bg: '#fee2e2', color: '#b91c1c', label: 'Rejected' },
+  pending:  { bg: '#fef9c3', color: '#854d0e', label: 'Pending',  labelFull: 'Pending Verification', dot: '#f59e0b' },
+  verified: { bg: '#dcfce7', color: '#15803d', label: 'Verified', labelFull: 'Verified',              dot: '#22c55e' },
+  rejected: { bg: '#fee2e2', color: '#b91c1c', label: 'Rejected', labelFull: 'Rejected',              dot: '#ef4444' },
 };
-function VerificationBadge({ status }) {
+function VerificationBadge({ status, compact = false }) {
   const cfg = VSTATUS_CONFIG[status] || VSTATUS_CONFIG.pending;
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
-      background: cfg.bg, color: cfg.color, whiteSpace: 'nowrap' }}>
-      {cfg.label}
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
+      background: cfg.bg, color: cfg.color,
+      whiteSpace: 'nowrap', width: 'fit-content',
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
+      {compact ? cfg.label : cfg.labelFull}
     </span>
   );
 }
@@ -310,6 +321,7 @@ function HubModal({ hub, onClose, onSaved }) {
 
   const [form, setForm] = useState({
     hub_name:          hub?.hub_name         || '',
+    company_name:      hub?.company_name     || '',
     person_name:       hub?.person_name      || '',
     contact_number:    hub?.contact_number   || '',
     owner_name:        hub?.owner_name       || '',
@@ -504,6 +516,7 @@ function HubModal({ hub, onClose, onSaved }) {
     try {
       const payload = {
         hub_name:          form.hub_name.trim(),
+        company_name:      form.company_name.trim() || null,
         person_name:       form.person_name.trim(),
         contact_number:    form.contact_number.trim(),
         owner_name:        form.owner_name.trim()   || null,
@@ -601,39 +614,54 @@ function HubModal({ hub, onClose, onSaved }) {
                 value={form.hub_name} onChange={e => set('hub_name', e.target.value)}
                 placeholder="e.g. Mumbai Central HUB" autoFocus />
             </Field>
+            <Field label="Company Name" error={errors.company_name}>
+              <input className={`hb-input${errors.company_name ? ' hb-input--err' : ''}`}
+                value={form.company_name} onChange={e => set('company_name', e.target.value)}
+                placeholder="e.g. ABC Auto Works Pvt. Ltd." />
+            </Field>
+          </div>
+
+          <div className="hb-row-2">
             <Field label="Owner Name" error={errors.owner_name}>
               <input className={`hb-input${errors.owner_name ? ' hb-input--err' : ''}`}
                 value={form.owner_name} onChange={e => set('owner_name', e.target.value)}
                 placeholder="Hub owner full name" />
             </Field>
-          </div>
-
-          <div className="hb-row-2">
             <Field label="Owner Mobile Number" error={errors.owner_mobile}>
               <input className={`hb-input${errors.owner_mobile ? ' hb-input--err' : ''}`}
                 value={form.owner_mobile}
                 onChange={e => set('owner_mobile', e.target.value.replace(/\D/g, '').slice(0, 10))}
                 placeholder="10-digit mobile number" inputMode="numeric" maxLength={10} />
             </Field>
+          </div>
+
+          <div className="hb-row-2">
             <Field label="Point of Person Name" req error={errors.person_name}>
               <input className={`hb-input${errors.person_name ? ' hb-input--err' : ''}`}
                 value={form.person_name} onChange={e => set('person_name', e.target.value)}
                 placeholder="Full name" />
             </Field>
-          </div>
-
-          <div className="hb-row-2">
             <Field label="Point of Contact Number" req error={errors.contact_number}>
               <input className={`hb-input${errors.contact_number ? ' hb-input--err' : ''}`}
                 value={form.contact_number}
                 onChange={e => set('contact_number', e.target.value.replace(/\D/g, '').slice(0, 10))}
                 placeholder="10-digit mobile number" inputMode="numeric" maxLength={10} />
             </Field>
+          </div>
+
+          <div className="hb-row-2">
             <Field label="Vehicle Type" req error={errors.vehicle_class}>
               <select className={`hb-input${errors.vehicle_class ? ' hb-input--err' : ''}`}
                 value={form.vehicle_class} onChange={e => set('vehicle_class', e.target.value)}>
                 <option value="">Select Vehicle Type…</option>
                 {VEHICLE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Relationship Manager (RM)" req error={errors.rm_user_id}>
+              <select className={`hb-input${errors.rm_user_id ? ' hb-input--err' : ''}`}
+                value={form.rm_user_id} onChange={e => set('rm_user_id', e.target.value)}>
+                <option value="">Select RM…</option>
+                {rmUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </Field>
           </div>
@@ -665,13 +693,6 @@ function HubModal({ hub, onClose, onSaved }) {
           </div>
 
           <div className="hb-row-2">
-            <Field label="Relationship Manager (RM)" req error={errors.rm_user_id}>
-              <select className={`hb-input${errors.rm_user_id ? ' hb-input--err' : ''}`}
-                value={form.rm_user_id} onChange={e => set('rm_user_id', e.target.value)}>
-                <option value="">Select RM…</option>
-                {rmUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-            </Field>
             <Field label="Status">
               <select className="hb-input" value={form.is_active ? 'true' : 'false'}
                 onChange={e => set('is_active', e.target.value === 'true')}>
@@ -1184,6 +1205,12 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
           <div className="hbv-section">
             <div className="hbv-section-title">Ownership &amp; Contact</div>
             <div className="hbv-grid2">
+              {hub.company_name && (
+                <div className="hbv-field" style={{ gridColumn: '1 / -1' }}>
+                  <span className="hbv-lbl">Company Name</span>
+                  <span className="hbv-val">{hub.company_name}</span>
+                </div>
+              )}
               <div className="hbv-field"><span className="hbv-lbl">Owner Name</span><span className="hbv-val">{hub.owner_name || <span className="hbv-nil">—</span>}</span></div>
               <div className="hbv-field"><span className="hbv-lbl">Owner Mobile</span><span className="hbv-val">{hub.owner_mobile || <span className="hbv-nil">—</span>}</span></div>
               <div className="hbv-field"><span className="hbv-lbl">Point of Person</span><span className="hbv-val">{hub.person_name}</span></div>
@@ -1906,9 +1933,9 @@ export default function HubsPage() {
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{h.city_name} · {h.state_name}</div>
                   </td>
                   <td>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-start' }}>
                       <StatusBadge active={h.is_active} />
-                      <VerificationBadge status={h.verification_status} />
+                      <VerificationBadge status={h.verification_status} compact />
                     </div>
                   </td>
                   <td>
