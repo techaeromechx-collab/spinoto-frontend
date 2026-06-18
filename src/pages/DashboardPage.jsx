@@ -1422,7 +1422,7 @@ export default function DashboardPage() {
                 <Phone size={13} style={{ marginRight: 4 }} />
                 Today's Call Log
               </div>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>9 AM – 6 PM</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>12 AM – 12 AM</span>
             </div>
 
             {callLoading ? (
