@@ -466,6 +466,24 @@
   .db-drag-handle:hover { color: var(--primary); }
   .db-drag-handle:active { cursor: grabbing; }
 
+  /* ── Follow-up Summary card ─────────────────────────────────────────────── */
+  .db-fu-body        { padding: 12px 18px 14px; }
+  .db-fu-tiles       { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+  .db-fu-tile        { border-radius: 12px; padding: 14px 12px; position: relative; overflow: hidden; }
+  .db-fu-tile-icon   { position: absolute; top: 10px; right: 10px; width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+  .db-fu-tile-label  { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .db-fu-tile-val    { font-size: 34px; font-weight: 900; line-height: 1; margin-bottom: 6px; }
+  .db-fu-tile-sub    { font-size: 10px; font-weight: 500; opacity: 0.8; }
+  .db-fu-bottom      { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0; background: var(--bg-subtle, #f8fafc); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .db-fu-metric      { padding: 0; }
+  .db-fu-metric + .db-fu-metric { border-left: 1px solid var(--border); padding-left: 12px; }
+  .db-fu-metric-label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+  .db-fu-metric-val  { font-size: 20px; font-weight: 800; color: var(--text); }
+  .db-fu-bar-row     { display: flex; align-items: center; gap: 10px; }
+  .db-fu-bar         { flex: 1; height: 6px; border-radius: 99px; background: var(--border); overflow: hidden; }
+  .db-fu-bar-fill    { height: 100%; border-radius: 99px; transition: width 0.6s ease; }
+  .db-fu-delta       { font-size: 10px; font-weight: 700; line-height: 1.2; }
+
   /* ── Responsive ───────────────────────────────────────────────────────── */
   @media (max-width: 1200px) {
     .db-3col    { grid-template-columns: 1fr 1fr; }
@@ -474,6 +492,12 @@
     .db-parts-card { max-width: 100%; }
   }
   @media (max-width: 768px) {
+    .db-fu-tiles  { grid-template-columns: 1fr 1fr; }
+    .db-fu-bottom { grid-template-columns: 1fr 1fr; }
+    .db-fu-metric + .db-fu-metric { border-left: none; padding-left: 0; }
+    .db-fu-bottom .db-fu-metric:nth-child(even) { border-left: 1px solid var(--border); padding-left: 12px; }
+    .db-fu-bottom .db-fu-metric:nth-child(n+3)  { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+
     .db-3col    { grid-template-columns: 1fr; }
     .db-2col    { grid-template-columns: 1fr; }
     .db-kpi-row { grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -510,6 +534,15 @@
     .db-stat-warn  { width: 6px; height: 6px; }
   }
   @media (max-width: 480px) {
+    .db-fu-tiles      { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .db-fu-tile       { padding: 11px 10px; }
+    .db-fu-tile-val   { font-size: 28px; }
+    .db-fu-body       { padding: 10px 12px 12px; }
+    .db-fu-bottom     { grid-template-columns: 1fr; padding: 10px 12px; }
+    .db-fu-metric + .db-fu-metric { border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+    .db-fu-bottom .db-fu-metric:nth-child(even) { border-left: none; padding-left: 0; }
+    .db-fu-bottom .db-fu-metric:nth-child(n+3)  { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+
     .db-kpi-row { grid-template-columns: 1fr 1fr; gap: 10px; }
     .db-kpi-spark  { display: none; }
     .db-drag-handle { display: none; }

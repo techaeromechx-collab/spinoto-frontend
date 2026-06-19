@@ -360,6 +360,8 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
       {/* ── Print header — hidden on screen, shown when printing ── */}
       <div className="est-print-header">
         <div style={{ flex: 1 }}>
+          {/* Brand logo */}
+          <img src="/logo.svg" alt="Spinoto Logo" style={{ height: 44, marginBottom: 10, display: 'block' }} />
           {company?.company_name ? (
             <>
               <div style={{ fontWeight: 800, fontSize: 15, color: '#111', marginBottom: 4 }}>

@@ -140,11 +140,24 @@
   /* Table container — no clipping */
   .est-detail-view div[style*="overflow"] { overflow: visible !important; }
 
-  /* Footer */
-  .pi-invoice-footer { margin-top: 14px !important; padding-top: 10px !important; }
+  /* Footer — fixed at bottom of every printed page */
+  .pi-invoice-footer {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    margin: 0 !important;
+    padding: 8px 10mm 6px !important;
+    border-top: 1px solid #e5e7eb !important;
+    background: #fff !important;
+    text-align: center !important;
+    font-size: 9px !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
   .pi-invoice-footer * { font-size: 9px !important; }
 
-  @page { size: A4 portrait; margin: 10mm 10mm; }
+  @page { size: A4 portrait; margin: 10mm 10mm 20mm; }
 }
 
 /* ── Table scroll wrapper ─────────────────────────────────────────────────── */

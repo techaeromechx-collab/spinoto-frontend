@@ -2007,8 +2007,10 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
       <div className="card est-detail-view">
         {/* ── Print header (company + estimate title + QR) ── */}
         <div className="est-print-header">
-          {/* Left: company details */}
+          {/* Left: logo + company details */}
           <div style={{ flex: 1 }}>
+            {/* Brand logo */}
+            <img src="/logo.svg" alt="Spinoto Logo" style={{ height: 44, marginBottom: 10, display: 'block' }} />
             {company?.company_name ? (
               <>
                 <div style={{ fontWeight: 800, fontSize: 15, color: '#111', marginBottom: 4 }}>

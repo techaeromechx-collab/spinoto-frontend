@@ -293,7 +293,7 @@
     word-break: normal !important;
     display: inline-block !important;
   }
-  /* Discount cell — stack neatly */
+  /* Discount cell — stack neatly, match table font size */
   .est-items-table td .est-discount-cell {
     display: flex !important;
     flex-direction: column !important;
@@ -301,6 +301,8 @@
     gap: 1px !important;
     white-space: nowrap !important;
   }
+  .est-items-table td .est-discount-cell span { font-size: 9px !important; }
+  .est-items-table td .est-discount-cell span:last-child { font-size: 7px !important; }
   .est-items-table tbody tr:last-child td { border-bottom: none !important; }
 
   /* Zebra stripe for readability */
@@ -351,12 +353,24 @@
   /* Totals row */
   .est-totals-row { gap: 12px !important; padding-top: 10px !important; }
 
-  /* Footer */
-  .est-invoice-footer { margin-top: 14px !important; padding-top: 10px !important; }
+  /* Footer — fixed at bottom of every printed page */
+  .est-invoice-footer {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    margin: 0 !important;
+    padding: 8px 10mm 6px !important;
+    border-top: 1px solid #e5e7eb !important;
+    background: #fff !important;
+    text-align: center !important;
+    font-size: 9px !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
   .est-invoice-footer * { font-size: 9px !important; }
-  .est-invoice-footer { font-size: 9px !important; }
 
-  @page { size: A4 portrait; margin: 10mm 10mm; }
+  @page { size: A4 portrait; margin: 10mm 10mm 20mm; }
 }
 
 /* ── Info grid ────────────────────────────────────────────────────────────── */

@@ -169,11 +169,24 @@
   .est-detail-view table { font-size: 9px !important; }
   .est-detail-view table th, .est-detail-view table td { padding: 4px 5px !important; }
 
-  /* Footer */
-  .ci-invoice-footer { margin-top: 16px !important; padding-top: 10px !important; font-size: 9px !important; }
+  /* Footer — fixed at bottom of every printed page */
+  .ci-invoice-footer {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    margin: 0 !important;
+    padding: 8px 10mm 6px !important;
+    border-top: 1px solid #e5e7eb !important;
+    background: #fff !important;
+    text-align: center !important;
+    font-size: 9px !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
   .ci-invoice-footer * { font-size: 9px !important; }
 
-  @page { size: A4 portrait; margin: 10mm 10mm; }
+  @page { size: A4 portrait; margin: 10mm 10mm 20mm; }
 }
 
 /* ── Table scroll wrapper ─────────────────────────────────────────────────── */

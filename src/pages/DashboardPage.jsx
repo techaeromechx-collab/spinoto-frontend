@@ -66,10 +66,14 @@ export default function DashboardPage() {
   const [topServices,  setTopServices]  = useState([]);
   const [callSummary,  setCallSummary]  = useState(null);
   const [callLoading,  setCallLoading]  = useState(false);
+  const [fuStats,        setFuStats]        = useState(null);
+  const [fuStatsUser,    setFuStatsUser]    = useState('me');
+  const [fuStatsPeriod,  setFuStatsPeriod]  = useState('week');
+  const [fuStatsLoading, setFuStatsLoading] = useState(false);
 
   // ── Dashboard section order ───────────────────────────────────────────
   const DEFAULT_ORDER = [
-    'kpi', 'strip', 'row1', 'row2', 'row3', 'row4', 'row5', 'team', 'calls', 'parts',
+    'kpi', 'strip', 'fustat', 'row1', 'row2', 'row3', 'row4', 'row5', 'team', 'calls', 'parts',
   ];
   const storageKey = `db-order-${user?.id || 'default'}`;
   const [sectionOrder, setSectionOrder] = useState(() => {
@@ -238,13 +242,30 @@ export default function DashboardPage() {
       .finally(() => setFuLoading(false));
   }
 
-  // Team members for managers
+  // Team members for managers / all users for super admin
   useEffect(() => {
-    if (!isManager) return;
+    if (!isManager && !isSuperAdmin) return;
     api('/api/users')
-      .then(r => setTeamMembers((r.items || []).filter(u => u.manager_id === user?.id)))
+      .then(r => {
+        const all = r.items || [];
+        setTeamMembers(
+          isSuperAdmin
+            ? all.filter(u => u.is_active !== false && u.id !== user?.id)
+            : all.filter(u => u.manager_id === user?.id)
+        );
+      })
       .catch(console.error);
-  }, [isManager, user?.id]);
+  }, [isManager, isSuperAdmin, user?.id]);
+
+  // Follow-up stats card
+  useEffect(() => {
+    if (!canViewDashFollowups) return;
+    setFuStatsLoading(true);
+    api(`/api/lead-events/stats?user_id=${fuStatsUser}&period=${fuStatsPeriod}`)
+      .then(r => setFuStats(r))
+      .catch(() => {})
+      .finally(() => setFuStatsLoading(false));
+  }, [fuStatsUser, fuStatsPeriod, canViewDashFollowups]);
 
   // ── Derived metrics ──────────────────────────────────────────────────
   const todayStr      = now.toDateString();
@@ -390,9 +411,10 @@ export default function DashboardPage() {
 
   // ── Section render map ────────────────────────────────────────────────
   const sectionMap = {
-    kpi:   canViewDashAppointments || canViewDashRevenue || canViewDashInvoices || canViewDashLeads || canViewOwnDashboard,
-    strip: canViewDashStatsStrip,
-    row1:  canViewDashLeads || canViewDashAppointments || canViewDashFollowups,
+    kpi:    canViewDashAppointments || canViewDashRevenue || canViewDashInvoices || canViewDashLeads || canViewOwnDashboard,
+    strip:  canViewDashStatsStrip,
+    fustat: canViewDashFollowups,
+    row1:   canViewDashLeads || canViewDashAppointments || canViewDashFollowups,
     row2:  canViewDashLeads || canViewDashRevenueTrend || canViewDashQuickActions,
     row3:  row3Cols > 0,
     row4:  row4Cols > 0,
@@ -1516,6 +1538,143 @@ export default function DashboardPage() {
                 })()}
               </div>
             )}
+          </div>
+        </div>
+
+              ) : id === 'fustat' && canViewDashFollowups ? (
+        <div className="db-1col">
+          <div className="db-card">
+            {/* Header */}
+            <div className="db-card-hd" style={{ marginBottom: 14 }}>
+              <div className="db-card-title">
+                <span className="db-card-dot" style={{ background: '#8b5cf6' }} />
+                <Phone size={13} style={{ color: '#8b5cf6' }} />
+                Follow-up Summary
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <select
+                  className="db-pipeline-filter"
+                  value={fuStatsPeriod}
+                  onChange={e => setFuStatsPeriod(e.target.value)}
+                  style={{ fontSize: 11 }}
+                >
+                  <option value="today">Today</option>
+                  <option value="week">This Week</option>
+                  <option value="month">This Month</option>
+                  <option value="all">All Time</option>
+                </select>
+                {(isManager || isSuperAdmin) && (
+                  <select
+                    className="db-pipeline-filter"
+                    value={fuStatsUser}
+                    onChange={e => setFuStatsUser(e.target.value)}
+                    style={{ fontSize: 11 }}
+                  >
+                    <option value="me">Me</option>
+                    {teamMembers.map(m => (
+                      <option key={m.id} value={String(m.id)}>{m.name}</option>
+                    ))}
+                    <option value="all">{isManager ? 'All My Team' : 'All Users'}</option>
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {fuStatsLoading ? (
+              <div style={{ padding: '32px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-muted)' }}>
+                <Clock size={15} style={{ opacity: 0.5 }} />
+                <span style={{ fontSize: 12 }}>Loading…</span>
+              </div>
+            ) : fuStats ? (
+              <div className="db-fu-body">
+                {/* 4 stat tiles */}
+                <div className="db-fu-tiles">
+                  {/* Overdue */}
+                  <div className="db-fu-tile" style={{ background: 'linear-gradient(145deg,#fff1f1,#fde8e8)', border: '1.5px solid #fca5a5' }}>
+                    <div className="db-fu-tile-icon" style={{ background: 'rgba(239,68,68,0.12)' }}>
+                      <AlertCircle size={14} color="#ef4444" />
+                    </div>
+                    <div className="db-fu-tile-label" style={{ color: '#ef4444' }}>Overdue</div>
+                    <div className="db-fu-tile-val" style={{ color: '#dc2626' }}>{fuStats.overdue}</div>
+                    <div className="db-fu-tile-sub" style={{ color: '#ef4444' }}>
+                      {fuStats.overdue_new > 0 ? `+${fuStats.overdue_new} since yesterday` : 'None new yesterday'}
+                    </div>
+                  </div>
+
+                  {/* Due Today */}
+                  <div className="db-fu-tile" style={{ background: 'linear-gradient(145deg,#fffbeb,#fef3c7)', border: '1.5px solid #fcd34d' }}>
+                    <div className="db-fu-tile-icon" style={{ background: 'rgba(245,158,11,0.12)' }}>
+                      <Bell size={14} color="#d97706" />
+                    </div>
+                    <div className="db-fu-tile-label" style={{ color: '#d97706' }}>Due Today</div>
+                    <div className="db-fu-tile-val" style={{ color: '#b45309' }}>{fuStats.due_today}</div>
+                    <div className="db-fu-tile-sub" style={{ color: '#d97706' }}>Needs attention today</div>
+                  </div>
+
+                  {/* Upcoming */}
+                  <div className="db-fu-tile" style={{ background: 'linear-gradient(145deg,#eff6ff,#dbeafe)', border: '1.5px solid #93c5fd' }}>
+                    <div className="db-fu-tile-icon" style={{ background: 'rgba(59,130,246,0.12)' }}>
+                      <CalendarDays size={14} color="#3b82f6" />
+                    </div>
+                    <div className="db-fu-tile-label" style={{ color: '#3b82f6' }}>Upcoming</div>
+                    <div className="db-fu-tile-val" style={{ color: '#1d4ed8' }}>{fuStats.upcoming}</div>
+                    <div className="db-fu-tile-sub" style={{ color: '#3b82f6' }}>
+                      {fuStatsPeriod === 'today' ? 'Due after today' : fuStatsPeriod === 'week' ? 'Rest of this week' : fuStatsPeriod === 'month' ? 'Rest of this month' : 'All future pending'}
+                    </div>
+                  </div>
+
+                  {/* Completed */}
+                  <div className="db-fu-tile" style={{ background: 'linear-gradient(145deg,#f0fdf4,#dcfce7)', border: '1.5px solid #86efac' }}>
+                    <div className="db-fu-tile-icon" style={{ background: 'rgba(34,197,94,0.12)' }}>
+                      <CheckCircle2 size={14} color="#16a34a" />
+                    </div>
+                    <div className="db-fu-tile-label" style={{ color: '#16a34a' }}>Completed</div>
+                    <div className="db-fu-tile-val" style={{ color: '#15803d' }}>{fuStats.completed}</div>
+                    <div className="db-fu-tile-sub" style={{ color: '#16a34a' }}>
+                      {fuStatsPeriod === 'today' ? 'Done today' : fuStatsPeriod === 'week' ? 'Done this week' : fuStatsPeriod === 'month' ? 'Done this month' : 'All time'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom metrics strip */}
+                <div className="db-fu-bottom">
+                  {/* Completion Rate */}
+                  <div className="db-fu-metric">
+                    <div className="db-fu-metric-label">Completion Rate</div>
+                    <div className="db-fu-bar-row">
+                      <span className="db-fu-metric-val" style={{ minWidth: 44 }}>{fuStats.completion_rate}%</span>
+                      <div className="db-fu-bar">
+                        <div className="db-fu-bar-fill" style={{
+                          width: `${fuStats.completion_rate}%`,
+                          background: fuStats.completion_rate >= 70 ? '#10b981' : fuStats.completion_rate >= 40 ? '#f59e0b' : '#ef4444',
+                        }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Total */}
+                  <div className="db-fu-metric">
+                    <div className="db-fu-metric-label">Total Follow-ups</div>
+                    <div className="db-fu-metric-val">{fuStats.total}</div>
+                  </div>
+
+                  {/* Avg Response */}
+                  <div className="db-fu-metric">
+                    <div className="db-fu-metric-label">Avg Response</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap' }}>
+                      <span className="db-fu-metric-val">
+                        {fuStats.avg_response_days != null ? `${fuStats.avg_response_days}d` : '—'}
+                      </span>
+                      {fuStats.avg_response_delta != null && (
+                        <span className="db-fu-delta" style={{ color: fuStats.avg_response_delta <= 0 ? '#10b981' : '#ef4444' }}>
+                          {fuStats.avg_response_delta <= 0 ? '↓' : '↑'}{Math.abs(fuStats.avg_response_delta)}d
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
