@@ -311,9 +311,9 @@ function DiscountModeModal({ current, onSave, onClose }) {
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>Do you give discounts?</p>
           {[
-            { value: 'none',        label: 'No',                    desc: 'No discounts on this estimate' },
-            { value: 'line_item',   label: 'Line item level',       desc: 'Discount per individual item' },
-            { value: 'transaction', label: 'Transaction level',     desc: 'Single discount on the total amount' },
+            { value: 'none', label: 'No', desc: 'No discounts on this estimate' },
+            { value: 'line_item', label: 'Line item level', desc: 'Discount per individual item' },
+            { value: 'transaction', label: 'Transaction level', desc: 'Single discount on the total amount' },
           ].map(opt => (
             <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8, border: `1.5px solid ${mode === opt.value ? 'var(--primary)' : 'var(--border)'}`, background: mode === opt.value ? 'var(--primary-light, #eff6ff)' : 'transparent' }}>
               <input type="radio" name="discount_mode" value={opt.value} checked={mode === opt.value} onChange={() => setMode(opt.value)} style={{ marginTop: 2 }} />
@@ -335,7 +335,7 @@ function DiscountModeModal({ current, onSave, onClose }) {
 
 // ── Line Item Discount Popup ──────────────────────────────────────────────────
 function LineItemDiscountPopup({ item, onSave, onClose }) {
-  const [dType, setDType]   = react.useState(item.discount_type || 'percent');
+  const [dType, setDType] = react.useState(item.discount_type || 'percent');
   const [dValue, setDValue] = react.useState(item.discount_value || 0);
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -613,14 +613,14 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   const [discountMode, setDiscountMode] = react.useState(
     editEstimate?.discount_mode || 'none'
   );
-  const [txDiscountType, setTxDiscountType]   = react.useState(
+  const [txDiscountType, setTxDiscountType] = react.useState(
     editEstimate?.transaction_discount_type || 'percent'
   );
   const [txDiscountValue, setTxDiscountValue] = react.useState(
     parseFloat(editEstimate?.transaction_discount_value) || 0
   );
   const [showDiscountSettings, setShowDiscountSettings] = react.useState(false);
-  const [discountPopupKey, setDiscountPopupKey]         = react.useState(null); // _key of item being edited
+  const [discountPopupKey, setDiscountPopupKey] = react.useState(null); // _key of item being edited
 
   // Service / part search dropdowns
   const [serviceSearch, setServiceSearch] = react.useState('');
@@ -950,9 +950,9 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       txDiscountAmount = Math.min(txDiscountValue, itemsTotal);
     }
   }
-  const grandTotal   = discountMode === 'transaction' ? r2(itemsTotal - txDiscountAmount) : itemsTotal;
+  const grandTotal = discountMode === 'transaction' ? r2(itemsTotal - txDiscountAmount) : itemsTotal;
   const totalDiscount = discountMode === 'line_item' ? lineDiscount : txDiscountAmount;
-  const hasDiscount  = discountMode === 'line_item';
+  const hasDiscount = discountMode === 'line_item';
 
   async function submit(e) {
     e.preventDefault();
@@ -973,7 +973,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
         hub_id: Number(form.hub_id),
         notes: form.notes.trim() || null,
         discount_mode: discountMode,
-        transaction_discount_type:  discountMode === 'transaction' ? txDiscountType  : null,
+        transaction_discount_type: discountMode === 'transaction' ? txDiscountType : null,
         transaction_discount_value: discountMode === 'transaction' ? txDiscountValue : 0,
         items: items.map(it => {
           const itemForCalc = forceZero ? { ...it, discount_type: null, discount_value: 0 } : it;
@@ -985,9 +985,9 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
             quantity: Number(it.quantity) || 1,
             customer_rate: parseFloat(parseFloat(it.unit_rate).toFixed(4)) || 0,
             gst_percent: parseFloat(it.gst_percent) || 0,
-            discount_type:   forceZero ? null : (it.discount_type || null),
-            discount_value:  forceZero ? 0    : (it.discount_value || 0),
-            discount_amount: forceZero ? 0    : discountAmount,
+            discount_type: forceZero ? null : (it.discount_type || null),
+            discount_value: forceZero ? 0 : (it.discount_value || 0),
+            discount_amount: forceZero ? 0 : discountAmount,
             discount_source: forceZero ? null : (it.discount_source || null),
           };
         }),
@@ -1069,7 +1069,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                 display: 'flex', alignItems: 'center', gap: 5,
               }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg>
               {discountMode === 'none' ? 'No Discount' : discountMode === 'line_item' ? 'Line Item Discount' : 'Transaction Discount'}
             </button>
             <button className="modal-close" onClick={onClose}><X size={18} /></button>
@@ -1682,7 +1682,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, onCancel, onConfirm }) {
   const blockedByPi = hasPi && piPaid;
   const blockedByCi = hasCi && ciPaid;
-  const allBlocked  = (!hasPi || blockedByPi) && (!hasCi || blockedByCi);
+  const allBlocked = (!hasPi || blockedByPi) && (!hasCi || blockedByCi);
 
   return (
     <div className="modal-backdrop" onClick={!syncBusy ? onCancel : undefined}>
@@ -1740,11 +1740,11 @@ function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, onCan
 // Delete Confirm Modal
 // ─────────────────────────────────────────────────────────────────────────────
 function DeleteConfirmModal({ estimate, deleting, onCancel, onConfirm }) {
-  const hasPi    = !!estimate.purchase_invoice_id;
-  const piPaid   = estimate.purchase_invoice_status === 'paid';
-  const hasCi    = !!estimate.customer_invoice_id;
-  const ciPaid   = estimate.customer_invoice_status === 'paid';
-  const blocked  = (hasPi && piPaid) || (hasCi && ciPaid);
+  const hasPi = !!estimate.purchase_invoice_id;
+  const piPaid = estimate.purchase_invoice_status === 'paid';
+  const hasCi = !!estimate.customer_invoice_id;
+  const ciPaid = estimate.customer_invoice_status === 'paid';
+  const blocked = (hasPi && piPaid) || (hasCi && ciPaid);
 
   return (
     <div className="modal-backdrop" onClick={!deleting ? onCancel : undefined}>
@@ -1944,8 +1944,8 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   const items = estimate.items || [];
 
   // Transaction discount fields from saved estimate
-  const detailDiscountMode    = estimate.discount_mode || 'none';
-  const detailTxDiscountType  = estimate.transaction_discount_type || 'percent';
+  const detailDiscountMode = estimate.discount_mode || 'none';
+  const detailTxDiscountType = estimate.transaction_discount_type || 'percent';
   const detailTxDiscountValue = parseFloat(estimate.transaction_discount_value) || 0;
 
   // Totals + dynamic GST slab grouping
@@ -2047,7 +2047,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 alt="QR Code"
                 style={{ width: 72, height: 72, imageRendering: 'pixelated' }}
               />
-              <span style={{ fontSize: 8, color: '#888', letterSpacing: '0.03em' }}>Scan to visit us</span>
+              <span style={{ fontSize: 8, color: '#888', letterSpacing: '0.03em' }}>Scan to download</span>
             </div>
           </div>
         </div>

@@ -96,6 +96,7 @@ function CancelReasonModal({ statusName, onConfirm, onCancel }) {
 function ApptStatusSelect({
   apptId, current, statusList, onChange, pickupRequired,
   pickupTimestamp, estimateStatus, invoiceStatus, invoiceId,
+  showToast,
 }) {
   const canEdit  = useCan('EDIT_APPOINTMENT');
   const navigate = useNavigate();
@@ -154,8 +155,8 @@ function ApptStatusSelect({
   function checkPrerequisite(slug) {
     // estimate helper flags
     const estExists   = !!estimateStatus;
-    const estSubmitted = estExists && ['pending_company_review', 'approved', 'customer_approved', 'revision_requested'].includes(estimateStatus);
-    const estApproved  = estExists && ['approved', 'customer_approved'].includes(estimateStatus);
+    const estSubmitted = estExists && ['pending_company_review', 'approved', 'customer_approved', 'revision_requested', 'work_in_progress', 'work_completed'].includes(estimateStatus);
+    const estApproved  = estExists && ['approved', 'customer_approved', 'work_in_progress', 'work_completed'].includes(estimateStatus);
     // invoice helper flags
     const invExists   = !!invoiceId;
     const invApproved = invExists && ['approved', 'partially_paid', 'paid'].includes(invoiceStatus);
@@ -220,12 +221,17 @@ function ApptStatusSelect({
 
       case 'invoice-paid':
         if (!invPaid)
-          return { ok: false, message: 'Invoice has not been fully paid yet.' };
+          return { ok: false, message: 'Please pay the invoice first.' };
+        break;
+
+      case 'ready-for-delivery':
+        if (!invPaid)
+          return { ok: false, message: 'Please pay the invoice first before marking the vehicle as Ready for Delivery.' };
         break;
 
       case 'closed':
         if (!invPaid)
-          return { ok: false, message: 'Invoice must be fully paid before the appointment can be closed.' };
+          return { ok: false, message: 'Please pay the invoice first before closing the appointment.' };
         break;
 
       default:
@@ -241,8 +247,14 @@ function ApptStatusSelect({
       if (cancellationReason) body.cancellation_reason = cancellationReason;
       const r = await api(`/api/appointments/${apptId}`, { method: 'PATCH', body });
       onChange(r.item);
-    } catch (e) { console.error('[ApptStatusSelect]', e.message); }
-    finally { setBusy(false); }
+    } catch (e) {
+      console.error('[ApptStatusSelect]', e.message);
+      if (showToast) {
+        showToast(e.message, 'error');
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   function pick(status) {
@@ -262,7 +274,11 @@ function ApptStatusSelect({
         setOpen(false); setBlockMsg('');
         navigate(check.redirect, { state: check.state });
       } else {
-        setBlockMsg(check.message);
+        setOpen(false);
+        setBlockMsg('');
+        if (showToast) {
+          showToast(check.message, 'error');
+        }
       }
       return;
     }
@@ -2755,6 +2771,7 @@ export default function AppointmentsPage() {
                         estimateStatus={a.estimate_status}
                         invoiceId={a.invoice_id}
                         invoiceStatus={a.invoice_status}
+                        showToast={showToast}
                       />
                     </td>
                     <td onClick={e => e.stopPropagation()}>
@@ -2844,6 +2861,7 @@ export default function AppointmentsPage() {
                     estimateStatus={a.estimate_status}
                     invoiceId={a.invoice_id}
                     invoiceStatus={a.invoice_status}
+                    showToast={showToast}
                   />
                 </div>
                 <ChevronRight size={16} className="appt-card-chev" />

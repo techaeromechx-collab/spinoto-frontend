@@ -21,18 +21,18 @@ function fmtDate(d) {
 }
 
 function amountToWords(amount) {
-  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
-                 'Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen',
-                 'Seventeen','Eighteen','Nineteen'];
-  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+    'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
   function words(n) {
     if (n === 0) return '';
     if (n < 20) return ones[n] + ' ';
-    if (n < 100) return tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '') + ' ';
-    if (n < 1000) return ones[Math.floor(n/100)] + ' Hundred ' + words(n%100);
-    if (n < 100000) return words(Math.floor(n/1000)) + 'Thousand ' + words(n%1000);
-    if (n < 10000000) return words(Math.floor(n/100000)) + 'Lakh ' + words(n%100000);
-    return words(Math.floor(n/10000000)) + 'Crore ' + words(n%10000000);
+    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '') + ' ';
+    if (n < 1000) return ones[Math.floor(n / 100)] + ' Hundred ' + words(n % 100);
+    if (n < 100000) return words(Math.floor(n / 1000)) + 'Thousand ' + words(n % 1000);
+    if (n < 10000000) return words(Math.floor(n / 100000)) + 'Lakh ' + words(n % 100000);
+    return words(Math.floor(n / 10000000)) + 'Crore ' + words(n % 10000000);
   }
   const num = Math.round(Math.abs(amount || 0));
   const paise = Math.round((Math.abs(amount || 0) - num) * 100);
@@ -43,19 +43,19 @@ function amountToWords(amount) {
 
 // ── Status config ─────────────────────────────────────────────────────────────
 const STATUS_META = {
-  generated:      { bg: '#dbeafe', color: '#1e40af', label: 'Generated'       },
-  approved:       { bg: '#fef9c3', color: '#713f12', label: 'Approved'        },
-  partially_paid: { bg: '#fef3c7', color: '#92400e', label: 'Partially Paid'  },
-  paid:           { bg: '#dcfce7', color: '#166534', label: 'Paid'            },
-  cancelled:      { bg: '#fee2e2', color: '#991b1b', label: 'Cancelled'       },
+  generated: { bg: '#dbeafe', color: '#1e40af', label: 'Generated' },
+  approved: { bg: '#fef9c3', color: '#713f12', label: 'Approved' },
+  partially_paid: { bg: '#fef3c7', color: '#92400e', label: 'Partially Paid' },
+  paid: { bg: '#dcfce7', color: '#166534', label: 'Paid' },
+  cancelled: { bg: '#fee2e2', color: '#991b1b', label: 'Cancelled' },
 };
 
 const METHOD_META = {
-  cash:          { bg: '#f3f4f6', color: '#374151' },
-  upi:           { bg: '#dbeafe', color: '#1e40af' },
-  card:          { bg: '#f3e8ff', color: '#7e22ce' },
+  cash: { bg: '#f3f4f6', color: '#374151' },
+  upi: { bg: '#dbeafe', color: '#1e40af' },
+  card: { bg: '#f3e8ff', color: '#7e22ce' },
   bank_transfer: { bg: '#dcfce7', color: '#166534' },
-  other:         { bg: '#f3f4f6', color: '#374151' },
+  other: { bg: '#f3f4f6', color: '#374151' },
 };
 
 function StatusBadge({ status }) {
@@ -120,7 +120,7 @@ function InfoRow({ label, value }) {
 function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
   const [form, setForm] = useState({ amount: '', method: 'cash', reference_no: '', notes: '' });
   const [saving, setSaving] = useState(false);
-  const [err, setErr]       = useState(null);
+  const [err, setErr] = useState(null);
 
   const field = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -134,10 +134,10 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
       await api(`/api/customer-invoices/${invoiceId}/payments`, {
         method: 'POST',
         body: {
-          amount:       amt,
-          method:       form.method,
+          amount: amt,
+          method: form.method,
           reference_no: form.reference_no.trim() || undefined,
-          notes:        form.notes.trim()        || undefined,
+          notes: form.notes.trim() || undefined,
         },
       });
       setForm({ amount: '', method: 'cash', reference_no: '', notes: '' });
@@ -212,10 +212,10 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
 
 // ── Vehicle History Modal ─────────────────────────────────────────────────────
 function VehicleHistoryModal({ onClose }) {
-  const [query,   setQuery]   = useState('');
+  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result,  setResult]  = useState(null);
-  const [err,     setErr]     = useState('');
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState('');
 
   async function search(e) {
     e?.preventDefault();
@@ -230,13 +230,13 @@ function VehicleHistoryModal({ onClose }) {
   }
 
   const STATUS_COLOR = {
-    paid:           { bg: '#dcfce7', color: '#166534' },
+    paid: { bg: '#dcfce7', color: '#166534' },
     partially_paid: { bg: '#fef3c7', color: '#92400e' },
-    approved:       { bg: '#dbeafe', color: '#1e40af' },
-    generated:      { bg: '#f3f4f6', color: '#374151' },
+    approved: { bg: '#dbeafe', color: '#1e40af' },
+    generated: { bg: '#f3f4f6', color: '#374151' },
   };
 
-  const items      = result?.items || [];
+  const items = result?.items || [];
   const grandTotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
 
   return (
@@ -352,12 +352,12 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
   const { user } = useAuth();
   const isHubUser = !!user?.hub_id;
 
-  const [inv, setInv]         = useState(null);
+  const [inv, setInv] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deletingPayId, setDeletingPayId] = useState(null);
-  const [approving, setApproving]             = useState(false);
+  const [approving, setApproving] = useState(false);
   // generatingPI removed — PI is now created BEFORE CI in the new flow
-  const [company, setCompany]                 = useState(null);
+  const [company, setCompany] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -392,7 +392,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
     }
   }
 
-async function approveInvoice() {
+  async function approveInvoice() {
     setApproving(true);
     try {
       await api(`/api/customer-invoices/${invoiceId}/approve`, { method: 'POST' });
@@ -406,17 +406,17 @@ async function approveInvoice() {
     }
   }
 
-  const items    = inv?.items    || [];
+  const items = inv?.items || [];
   const payments = inv?.payments || [];
 
   const r2 = (n) => Math.round(n * 100) / 100;
   function computeDiscount(it) {
     const exRate = parseFloat(it.customer_rate ?? it.rate ?? 0);
-    const qty    = parseFloat(it.quantity ?? 1);
+    const qty = parseFloat(it.quantity ?? 1);
     const gstPct = parseFloat(it.gst_percent ?? 0);
     const incRate = r2(exRate * (1 + gstPct / 100));
     const totalBefore = r2(qty * incRate);
-    const dType  = it.discount_type;
+    const dType = it.discount_type;
     const dValue = parseFloat(it.discount_value) || 0;
     let discountAmount = 0;
     if (dType === 'percent' && dValue > 0) discountAmount = r2(totalBefore * dValue / 100);
@@ -424,29 +424,29 @@ async function approveInvoice() {
     return discountAmount;
   }
   // Discount mode from the CI (carried over from estimate)
-  const ciDiscountMode     = inv?.discount_mode || 'line_item';
-  const ciTxDiscountType   = inv?.transaction_discount_type  || null;
-  const ciTxDiscountValue  = parseFloat(inv?.transaction_discount_value)  || 0;
+  const ciDiscountMode = inv?.discount_mode || 'line_item';
+  const ciTxDiscountType = inv?.transaction_discount_type || null;
+  const ciTxDiscountValue = parseFloat(inv?.transaction_discount_value) || 0;
   const ciTxDiscountAmount = parseFloat(inv?.transaction_discount_amount) || 0;
 
   const lineItemDiscount = r2(items.reduce((s, it) => s + computeDiscount(it), 0));
-  const totalDiscount    = ciDiscountMode === 'transaction' ? ciTxDiscountAmount : lineItemDiscount;
-  const hasDiscount      = totalDiscount > 0;
+  const totalDiscount = ciDiscountMode === 'transaction' ? ciTxDiscountAmount : lineItemDiscount;
+  const hasDiscount = totalDiscount > 0;
 
   // Recompute all totals from post-discount per-item values (don't trust stored grand_total)
   const { subtotal, totalGst, grandTotal: itemsGrandTotal } = items.reduce((acc, it) => {
-    const exRate      = parseFloat(it.customer_rate ?? it.rate ?? 0);
-    const qty         = parseFloat(it.quantity ?? 1);
-    const gstPct      = parseFloat(it.gst_percent ?? 0);
-    const incRate     = r2(exRate * (1 + gstPct / 100));
+    const exRate = parseFloat(it.customer_rate ?? it.rate ?? 0);
+    const qty = parseFloat(it.quantity ?? 1);
+    const gstPct = parseFloat(it.gst_percent ?? 0);
+    const incRate = r2(exRate * (1 + gstPct / 100));
     const totalBefore = r2(qty * incRate);
-    const discAmt     = ciDiscountMode === 'line_item' ? computeDiscount(it) : 0;
-    const total       = r2(Math.max(0, totalBefore - discAmt));
-    const taxable     = r2(total / (1 + gstPct / 100));
-    const gstAmt      = r2(total - taxable);
+    const discAmt = ciDiscountMode === 'line_item' ? computeDiscount(it) : 0;
+    const total = r2(Math.max(0, totalBefore - discAmt));
+    const taxable = r2(total / (1 + gstPct / 100));
+    const gstAmt = r2(total - taxable);
     return {
-      subtotal:   r2(acc.subtotal + taxable),
-      totalGst:   r2(acc.totalGst + gstAmt),
+      subtotal: r2(acc.subtotal + taxable),
+      totalGst: r2(acc.totalGst + gstAmt),
       grandTotal: r2(acc.grandTotal + total),
     };
   }, { subtotal: 0, totalGst: 0, grandTotal: 0 });
@@ -459,8 +459,8 @@ async function approveInvoice() {
   // Dynamic GST slab grouping
   const gstSlabMap = {};
   items.forEach(it => {
-    const pct    = parseFloat(it.gst_percent ?? 0);
-    const gstAmt = parseFloat(it.gst_amount  ?? 0);
+    const pct = parseFloat(it.gst_percent ?? 0);
+    const gstAmt = parseFloat(it.gst_amount ?? 0);
     if (pct > 0 && gstAmt > 0) {
       const key = pct.toString();
       if (!gstSlabMap[key]) gstSlabMap[key] = { pct, cgst: 0, sgst: 0 };
@@ -469,12 +469,12 @@ async function approveInvoice() {
     }
   });
   const gstSlabs = Object.values(gstSlabMap).sort((a, b) => b.pct - a.pct);
-  const paid       = inv?.amount_paid ?? payments.reduce((s, p) => s + parseFloat(p.amount ?? 0), 0);
-  const balance    = Math.max(0, parseFloat(grandTotal) - parseFloat(paid));
+  const paid = inv?.amount_paid ?? payments.reduce((s, p) => s + parseFloat(p.amount ?? 0), 0);
+  const balance = Math.max(0, parseFloat(grandTotal) - parseFloat(paid));
 
-  const canApprove      = !isHubUser && inv?.status === 'generated';
-  const canAddPayment   = inv && (inv.status === 'approved' || inv.status === 'partially_paid');
-  const canDeletePay    = inv && inv.status !== 'paid' && inv.status !== 'cancelled';
+  const canApprove = !isHubUser && inv?.status === 'generated';
+  const canAddPayment = inv && (inv.status === 'approved' || inv.status === 'partially_paid');
+  const canDeletePay = inv && inv.status !== 'paid' && inv.status !== 'cancelled';
 
   return (
     <div className="card est-detail-view">
@@ -518,7 +518,7 @@ async function approveInvoice() {
               alt="QR Code"
               style={{ width: 72, height: 72, imageRendering: 'pixelated' }}
             />
-            <span style={{ fontSize: 8, color: '#888', letterSpacing: '0.03em' }}>Scan to visit us</span>
+            <span style={{ fontSize: 8, color: '#888', letterSpacing: '0.03em' }}>Scan to download</span>
           </div>
         </div>
       </div>
@@ -540,374 +540,368 @@ async function approveInvoice() {
         </button>
       </div>
 
-        {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-            <Clock size={28} style={{ opacity: 0.3, marginBottom: 10 }} />
-            <p style={{ margin: 0 }}>Loading…</p>
-          </div>
-        ) : !inv ? null : (
-          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+          <Clock size={28} style={{ opacity: 0.3, marginBottom: 10 }} />
+          <p style={{ margin: 0 }}>Loading…</p>
+        </div>
+      ) : !inv ? null : (
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-            {/* Info grid — two-column bill-to / invoice-meta layout */}
-            <div className="ci-info-grid" style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0,
-              background: 'var(--bg-soft)', borderRadius: 12, overflow: 'hidden',
-            }}>
-              {/* Left: customer details */}
-              <div style={{ padding: '16px 20px', borderRight: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Bill To</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  {[
-                    { label: 'Customer',     value: inv.customer_name },
-                    { label: 'Mobile',       value: inv.mobile },
-                    { label: 'Hub / Branch', value: inv.hub_name },
-                  ].map(({ label, value }) => (
-                    <div key={label} style={{ display: 'flex' }}>
-                      <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>{label}</span>
-                      <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{value || '—'}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {/* Right: vehicle details + invoice meta */}
-              <div style={{ padding: '16px 20px' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Vehicle & Invoice</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  {/* Vehicle number */}
-                  <div style={{ display: 'flex' }}>
-                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Reg. No.</span>
-                    <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.vehicle_number || '—'}</span>
+          {/* Info grid — two-column bill-to / invoice-meta layout */}
+          <div className="ci-info-grid" style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0,
+            background: 'var(--bg-soft)', borderRadius: 12, overflow: 'hidden',
+          }}>
+            {/* Left: customer details */}
+            <div style={{ padding: '16px 20px', borderRight: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Bill To</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {[
+                  { label: 'Customer', value: inv.customer_name },
+                  { label: 'Mobile', value: inv.mobile },
+                  { label: 'Hub / Branch', value: inv.hub_name },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ display: 'flex' }}>
+                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>{label}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{value || '—'}</span>
                   </div>
-                  {/* Make + Model */}
-                  {(inv.make_name || inv.model_name) && (
-                    <div style={{ display: 'flex' }}>
-                      <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Make / Model</span>
-                      <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{[inv.make_name, inv.model_name].filter(Boolean).join(' ')}</span>
-                    </div>
-                  )}
-                  {/* 4W: Body Type */}
-                  {inv.body_type_name && (
-                    <div style={{ display: 'flex' }}>
-                      <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Body Type</span>
-                      <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.body_type_name}{inv.segment_names ? ` (${inv.segment_names})` : ''}</span>
-                    </div>
-                  )}
-                  {/* 2W: CC Category */}
-                  {inv.cc_category_name && (
-                    <div style={{ display: 'flex' }}>
-                      <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>CC Category</span>
-                      <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.cc_category_name}{inv.engine_cc ? ` (${inv.engine_cc} cc)` : ''}</span>
-                    </div>
-                  )}
-                  {/* Invoice meta */}
-                  {[
-                    { label: 'Invoice No.', value: `CI-${String(inv.id).padStart(6, '0')}` },
-                    { label: 'Date',        value: fmtDate(inv.created_at) },
-                    { label: 'Status',      node: <StatusBadge status={inv.status} /> },
-                  ].map(({ label, value, node }) => (
-                    <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>{label}</span>
-                      {node ?? <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{value || '—'}</span>}
-                    </div>
-                  ))}
+                ))}
+              </div>
+            </div>
+            {/* Right: vehicle details + invoice meta */}
+            <div style={{ padding: '16px 20px' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Vehicle & Invoice</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {/* Vehicle number */}
+                <div style={{ display: 'flex' }}>
+                  <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Reg. No.</span>
+                  <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.vehicle_number || '—'}</span>
                 </div>
+                {/* Make + Model */}
+                {(inv.make_name || inv.model_name) && (
+                  <div style={{ display: 'flex' }}>
+                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Make / Model</span>
+                    <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{[inv.make_name, inv.model_name].filter(Boolean).join(' ')}</span>
+                  </div>
+                )}
+                {/* 4W: Body Type */}
+                {inv.body_type_name && (
+                  <div style={{ display: 'flex' }}>
+                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Body Type</span>
+                    <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.body_type_name}{inv.segment_names ? ` (${inv.segment_names})` : ''}</span>
+                  </div>
+                )}
+
+                {/* Invoice meta */}
+                {[
+                  { label: 'Invoice No.', value: `CI-${String(inv.id).padStart(6, '0')}` },
+                  { label: 'Date', value: fmtDate(inv.created_at) },
+                  { label: 'Status', node: <StatusBadge status={inv.status} /> },
+                ].map(({ label, value, node }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>{label}</span>
+                    {node ?? <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{value || '—'}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Approve Invoice action — screen only */}
+          {canApprove && (
+            <div className="ci-internal" style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#713f12' }}>Invoice Pending Approval</div>
+                <div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>Review the invoice and approve it before collecting payment.</div>
+              </div>
+              <button className="btn btn-primary" disabled={approving} onClick={approveInvoice} style={{ flexShrink: 0 }}>
+                {approving ? 'Approving…' : 'Approve Invoice'}
+              </button>
+            </div>
+          )}
+
+
+          {/* Line items */}
+          <div>
+            <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Line Items</h4>
+            <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
+              <table className="ci-table ci-items-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 36, textAlign: 'center' }}>Sr.</th>
+                    <th style={{ minWidth: 160, maxWidth: 220 }}>Item</th>
+                    <th>HSN/SAC</th>
+                    <th style={{ textAlign: 'right' }}>Qty</th>
+                    <th style={{ textAlign: 'right' }}>Rate</th>
+                    {hasDiscount && <th style={{ textAlign: 'center' }}>Discount</th>}
+                    <th style={{ textAlign: 'right' }}>Taxable</th>
+                    <th style={{ textAlign: 'right' }}>CGST %</th>
+                    <th style={{ textAlign: 'right' }}>SGST %</th>
+                    <th style={{ textAlign: 'right' }}>Tax Amount</th>
+                    <th style={{ textAlign: 'right' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.length === 0 ? (
+                    <tr><td colSpan={hasDiscount ? 11 : 10} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
+                  ) : items.map((it, i) => {
+                    const exRate = parseFloat(it.rate ?? it.customer_rate ?? 0);
+                    const qty = parseFloat(it.quantity ?? 1);
+                    const gstPct = parseFloat(it.gst_percent ?? 0);
+                    const incRate = r2(exRate * (1 + gstPct / 100));
+                    const halfPct = gstPct / 2;
+                    const discAmt = computeDiscount(it);
+                    const dType = it.discount_type;
+                    const dValue = parseFloat(it.discount_value) || 0;
+                    const totalBefore = r2(qty * incRate);
+                    const total = r2(Math.max(0, totalBefore - discAmt));
+                    const taxable = r2(total / (1 + gstPct / 100));
+                    const gstAmt = r2(total - taxable);
+                    return (
+                      <tr key={i}>
+                        <td style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{i + 1}</td>
+                        <td style={{ maxWidth: 220 }}>
+                          <div className="ci-item-name" style={{ fontWeight: 600, fontSize: 13, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }} title={it.description || it.name}>{it.description || it.name || '—'}</div>
+                          <span className="ci-item-type-badge" style={{
+                            fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4,
+                            background: it.item_type === 'service' ? '#dbeafe' : '#dcfce7',
+                            color: it.item_type === 'service' ? '#1e40af' : '#166534',
+                          }}>
+                            {it.item_type === 'service' ? 'Service' : 'Part'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{it.hsn_sac || '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{qty}</td>
+                        <td style={{ textAlign: 'right' }}>{fmt(incRate)}</td>
+                        {hasDiscount && (
+                          <td style={{ textAlign: 'center' }}>
+                            {discAmt > 0 ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: '#b45309', whiteSpace: 'nowrap' }}>{fmt(discAmt)}</span>
+                                <span style={{ fontSize: 11, color: '#92400e', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                                  {dType === 'percent' ? `${dValue}%` : 'Flat'}
+                                </span>
+                              </div>
+                            ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                          </td>
+                        )}
+                        <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(taxable)}</td>
+                        <td style={{ textAlign: 'right' }}>{halfPct > 0 ? `${halfPct.toFixed(1)}%` : '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{halfPct > 0 ? `${halfPct.toFixed(1)}%` : '—'}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(gstAmt)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(total)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── Totals ── */}
+          <div className="ci-totals-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+
+            {/* Amount in words — left */}
+            <div style={{
+              flex: '1 1 220px', maxWidth: 340,
+              background: '#f8fafc', borderRadius: 10,
+              padding: '12px 16px', borderLeft: '3px solid #16b994',
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Amount in Words</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontStyle: 'italic', lineHeight: 1.7 }}>
+                {amountToWords(parseFloat(grandTotal))}
               </div>
             </div>
 
-            {/* Approve Invoice action — screen only */}
-            {canApprove && (
-              <div className="ci-internal" style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: '#713f12' }}>Invoice Pending Approval</div>
-                  <div style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>Review the invoice and approve it before collecting payment.</div>
-                </div>
-                <button className="btn btn-primary" disabled={approving} onClick={approveInvoice} style={{ flexShrink: 0 }}>
-                  {approving ? 'Approving…' : 'Approve Invoice'}
-                </button>
+            {/* Summary — right */}
+            <div style={{ flex: '0 0 auto', minWidth: 250, display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+              {/* Subtotal */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6b7280', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
+                <span>Subtotal (ex-GST)</span>
+                <span style={{ fontWeight: 600, color: '#374151', minWidth: 100, textAlign: 'right' }}>{fmt(subtotal)}</span>
               </div>
-            )}
 
+              {/* Total Discount */}
+              {hasDiscount && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: '1px solid #f3f4f6', background: '#fffbeb', margin: '0 -2px', padding: '5px 2px' }}>
+                  <span style={{ color: '#b45309', fontWeight: 600 }}>
+                    {ciDiscountMode === 'transaction'
+                      ? `Discount (${ciTxDiscountType === 'percent' ? ciTxDiscountValue + '%' : '₹' + ciTxDiscountValue})`
+                      : 'Total Discount'}
+                  </span>
+                  <span style={{ fontWeight: 700, color: '#b45309', minWidth: 100, textAlign: 'right' }}>−{fmt(totalDiscount)}</span>
+                </div>
+              )}
 
-            {/* Line items */}
-            <div>
-              <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Line Items</h4>
+              {/* Tax breakdown */}
+              {gstSlabs.length > 0 && (
+                <div style={{ padding: '6px 0', borderBottom: '1px solid #f3f4f6' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Tax Breakdown</div>
+                  {gstSlabs.map(slab => {
+                    const halfLabel = (slab.pct / 2).toFixed(slab.pct % 2 === 0 ? 0 : 1);
+                    return (
+                      <div key={slab.pct} style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 2 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280' }}>
+                          <span>CGST ({halfLabel}%)</span>
+                          <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(slab.cgst)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280' }}>
+                          <span>SGST ({halfLabel}%)</span>
+                          <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(slab.sgst)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Grand Total */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, color: '#16b994', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
+                <span>Grand Total</span>
+                <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(grandTotal)}</span>
+              </div>
+
+              {/* Paid */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#16a34a', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
+                <span style={{ fontWeight: 500 }}>Paid</span>
+                <span style={{ fontWeight: 600, minWidth: 100, textAlign: 'right' }}>{fmt(paid)}</span>
+              </div>
+
+              {/* Balance Due */}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between',
+                fontSize: 13, fontWeight: 800, padding: '8px 0',
+                color: balance > 0.001 ? '#dc2626' : '#16a34a',
+              }}>
+                <span>Balance Due</span>
+                <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(balance)}</span>
+              </div>
+
+            </div>
+          </div>
+
+          {/* ── Linked document links — screen only ── */}
+          {!isHubUser && (inv?.estimate_id || inv?.linked_purchase_invoice_id) && (
+            <div className="ci-internal" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+              {inv.estimate_id && (
+                <button
+                  onClick={() => navigate('/estimates', { state: { openId: inv.estimate_id } })}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 7,
+                    padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
+                    background: '#f0fdf4', border: '1px solid #86efac',
+                    color: '#166534', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                  }}
+                >
+                  <CheckCircle2 size={13} />
+                  View Estimate #EST-{String(inv.estimate_id).padStart(6, '0')}
+                </button>
+              )}
+              {inv.linked_purchase_invoice_id && (
+                <button
+                  onClick={() => navigate('/purchase-invoices', { state: { openId: inv.linked_purchase_invoice_id } })}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 7,
+                    padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
+                    background: '#f0f9ff', border: '1px solid #7dd3fc',
+                    color: '#0369a1', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                  }}
+                >
+                  <CheckCircle2 size={13} />
+                  View Spinoto Invoice #{inv.linked_purchase_invoice_id}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Payments section */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Payments</h4>
+              <span style={{
+                background: 'var(--bg-soft)', border: '1px solid var(--border)',
+                borderRadius: 99, padding: '1px 8px', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)',
+              }}>{payments.length}</span>
+            </div>
+            {payments.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>No payments recorded yet.</div>
+            ) : (
               <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
-                <table className="ci-table ci-items-table">
+                <table className="ci-table ci-payments-table">
                   <thead>
                     <tr>
-                      <th style={{ width: 36, textAlign: 'center' }}>Sr.</th>
-                      <th style={{ minWidth: 160, maxWidth: 220 }}>Item</th>
-                      <th>HSN/SAC</th>
-                      <th style={{ textAlign: 'right' }}>Qty</th>
-                      <th style={{ textAlign: 'right' }}>Rate</th>
-                      {hasDiscount && <th style={{ textAlign: 'center' }}>Discount</th>}
-                      <th style={{ textAlign: 'right' }}>Taxable</th>
-                      <th style={{ textAlign: 'right' }}>CGST %</th>
-                      <th style={{ textAlign: 'right' }}>SGST %</th>
-                      <th style={{ textAlign: 'right' }}>Tax Amount</th>
-                      <th style={{ textAlign: 'right' }}>Total</th>
+                      <th>Date</th>
+                      <th>Method</th>
+                      <th>Reference</th>
+                      <th style={{ textAlign: 'right' }}>Amount</th>
+                      {canDeletePay && <th style={{ width: 40 }}></th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {items.length === 0 ? (
-                      <tr><td colSpan={hasDiscount ? 11 : 10} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
-                    ) : items.map((it, i) => {
-                      const exRate       = parseFloat(it.rate ?? it.customer_rate ?? 0);
-                      const qty          = parseFloat(it.quantity ?? 1);
-                      const gstPct       = parseFloat(it.gst_percent ?? 0);
-                      const incRate      = r2(exRate * (1 + gstPct / 100));
-                      const halfPct      = gstPct / 2;
-                      const discAmt      = computeDiscount(it);
-                      const dType        = it.discount_type;
-                      const dValue       = parseFloat(it.discount_value) || 0;
-                      const totalBefore  = r2(qty * incRate);
-                      const total        = r2(Math.max(0, totalBefore - discAmt));
-                      const taxable      = r2(total / (1 + gstPct / 100));
-                      const gstAmt       = r2(total - taxable);
-                      return (
-                        <tr key={i}>
-                          <td style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{i + 1}</td>
-                          <td style={{ maxWidth: 220 }}>
-                            <div className="ci-item-name" style={{ fontWeight: 600, fontSize: 13, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }} title={it.description || it.name}>{it.description || it.name || '—'}</div>
-                            <span className="ci-item-type-badge" style={{
-                              fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4,
-                              background: it.item_type === 'service' ? '#dbeafe' : '#dcfce7',
-                              color: it.item_type === 'service' ? '#1e40af' : '#166534',
-                            }}>
-                              {it.item_type === 'service' ? 'Service' : 'Part'}
-                            </span>
+                    {payments.map(pay => (
+                      <tr key={pay.id}>
+                        <td style={{ fontSize: 12 }}>{fmtDate(pay.paid_at || pay.created_at)}</td>
+                        <td><MethodBadge method={pay.method} /></td>
+                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{pay.reference_no || '—'}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(pay.amount)}</td>
+                        {canDeletePay && (
+                          <td>
+                            <button
+                              className="icon-action icon-action--danger"
+                              title="Delete payment"
+                              disabled={deletingPayId === pay.id}
+                              onClick={() => deletePayment(pay.id)}
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </td>
-                          <td style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{it.hsn_sac || '—'}</td>
-                          <td style={{ textAlign: 'right' }}>{qty}</td>
-                          <td style={{ textAlign: 'right' }}>{fmt(incRate)}</td>
-                          {hasDiscount && (
-                            <td style={{ textAlign: 'center' }}>
-                              {discAmt > 0 ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                                  <span style={{ fontSize: 12, fontWeight: 600, color: '#b45309', whiteSpace: 'nowrap' }}>{fmt(discAmt)}</span>
-                                  <span style={{ fontSize: 11, color: '#92400e', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                                    {dType === 'percent' ? `${dValue}%` : 'Flat'}
-                                  </span>
-                                </div>
-                              ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                            </td>
-                          )}
-                          <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(taxable)}</td>
-                          <td style={{ textAlign: 'right' }}>{halfPct > 0 ? `${halfPct.toFixed(1)}%` : '—'}</td>
-                          <td style={{ textAlign: 'right' }}>{halfPct > 0 ? `${halfPct.toFixed(1)}%` : '—'}</td>
-                          <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(gstAmt)}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(total)}</td>
-                        </tr>
-                      );
-                    })}
+                        )}
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-
-            {/* ── Totals ── */}
-            <div className="ci-totals-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
-
-              {/* Amount in words — left */}
-              <div style={{
-                flex: '1 1 220px', maxWidth: 340,
-                background: '#f8fafc', borderRadius: 10,
-                padding: '12px 16px', borderLeft: '3px solid #16b994',
-              }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Amount in Words</div>
-                <div style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontStyle: 'italic', lineHeight: 1.7 }}>
-                  {amountToWords(parseFloat(grandTotal))}
-                </div>
-              </div>
-
-              {/* Summary — right */}
-              <div style={{ flex: '0 0 auto', minWidth: 250, display: 'flex', flexDirection: 'column', gap: 0 }}>
-
-                {/* Subtotal */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6b7280', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
-                  <span>Subtotal (ex-GST)</span>
-                  <span style={{ fontWeight: 600, color: '#374151', minWidth: 100, textAlign: 'right' }}>{fmt(subtotal)}</span>
-                </div>
-
-                {/* Total Discount */}
-                {hasDiscount && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: '1px solid #f3f4f6', background: '#fffbeb', margin: '0 -2px', padding: '5px 2px' }}>
-                    <span style={{ color: '#b45309', fontWeight: 600 }}>
-                      {ciDiscountMode === 'transaction'
-                        ? `Discount (${ciTxDiscountType === 'percent' ? ciTxDiscountValue + '%' : '₹' + ciTxDiscountValue})`
-                        : 'Total Discount'}
-                    </span>
-                    <span style={{ fontWeight: 700, color: '#b45309', minWidth: 100, textAlign: 'right' }}>−{fmt(totalDiscount)}</span>
-                  </div>
-                )}
-
-                {/* Tax breakdown */}
-                {gstSlabs.length > 0 && (
-                  <div style={{ padding: '6px 0', borderBottom: '1px solid #f3f4f6' }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Tax Breakdown</div>
-                    {gstSlabs.map(slab => {
-                      const halfLabel = (slab.pct / 2).toFixed(slab.pct % 2 === 0 ? 0 : 1);
-                      return (
-                        <div key={slab.pct} style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 2 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280' }}>
-                            <span>CGST ({halfLabel}%)</span>
-                            <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(slab.cgst)}</span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280' }}>
-                            <span>SGST ({halfLabel}%)</span>
-                            <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(slab.sgst)}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Grand Total */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, color: '#16b994', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
-                  <span>Grand Total</span>
-                  <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(grandTotal)}</span>
-                </div>
-
-                {/* Paid */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#16a34a', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
-                  <span style={{ fontWeight: 500 }}>Paid</span>
-                  <span style={{ fontWeight: 600, minWidth: 100, textAlign: 'right' }}>{fmt(paid)}</span>
-                </div>
-
-                {/* Balance Due */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  fontSize: 13, fontWeight: 800, padding: '8px 0',
-                  color: balance > 0.001 ? '#dc2626' : '#16a34a',
-                }}>
-                  <span>Balance Due</span>
-                  <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(balance)}</span>
-                </div>
-
-              </div>
-            </div>
-
-            {/* ── Linked document links — screen only ── */}
-            {!isHubUser && (inv?.estimate_id || inv?.linked_purchase_invoice_id) && (
-              <div className="ci-internal" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-                {inv.estimate_id && (
-                  <button
-                    onClick={() => navigate('/estimates', { state: { openId: inv.estimate_id } })}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 7,
-                      padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
-                      background: '#f0fdf4', border: '1px solid #86efac',
-                      color: '#166534', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                    }}
-                  >
-                    <CheckCircle2 size={13} />
-                    View Estimate #EST-{String(inv.estimate_id).padStart(6, '0')}
-                  </button>
-                )}
-                {inv.linked_purchase_invoice_id && (
-                  <button
-                    onClick={() => navigate('/purchase-invoices', { state: { openId: inv.linked_purchase_invoice_id } })}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 7,
-                      padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
-                      background: '#f0f9ff', border: '1px solid #7dd3fc',
-                      color: '#0369a1', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                    }}
-                  >
-                    <CheckCircle2 size={13} />
-                    View Spinoto Invoice #{inv.linked_purchase_invoice_id}
-                  </button>
-                )}
-              </div>
             )}
-
-            {/* Payments section */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Payments</h4>
-                <span style={{
-                  background: 'var(--bg-soft)', border: '1px solid var(--border)',
-                  borderRadius: 99, padding: '1px 8px', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)',
-                }}>{payments.length}</span>
-              </div>
-              {payments.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>No payments recorded yet.</div>
-              ) : (
-                <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
-                  <table className="ci-table ci-payments-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Method</th>
-                        <th>Reference</th>
-                        <th style={{ textAlign: 'right' }}>Amount</th>
-                        {canDeletePay && <th style={{ width: 40 }}></th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {payments.map(pay => (
-                        <tr key={pay.id}>
-                          <td style={{ fontSize: 12 }}>{fmtDate(pay.paid_at || pay.created_at)}</td>
-                          <td><MethodBadge method={pay.method} /></td>
-                          <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{pay.reference_no || '—'}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(pay.amount)}</td>
-                          {canDeletePay && (
-                            <td>
-                              <button
-                                className="icon-action icon-action--danger"
-                                title="Delete payment"
-                                disabled={deletingPayId === pay.id}
-                                onClick={() => deletePayment(pay.id)}
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Add payment form — screen only */}
-            {canAddPayment && (
-              <div className="ci-internal" style={{
-                background: 'var(--bg-soft)', borderRadius: 12, padding: '16px 18px',
-                border: '1px solid var(--border)',
-              }}>
-                <AddPaymentForm
-                  invoiceId={invoiceId}
-                  balance={balance}
-                  showToast={showToast}
-                  onSuccess={async () => { await load(); onRefreshList(); }}
-                />
-              </div>
-            )}
-
-            {/* ── Invoice Footer ── */}
-            <div className="ci-invoice-footer" style={{
-              marginTop: 8,
-              borderTop: '1px solid #e5e7eb',
-              paddingTop: 16,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 4,
-            }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Thank you for your business.</div>
-              <div style={{ fontSize: 10, color: '#9ca3af' }}>This is a computer generated invoice and does not require a physical signature.</div>
-              {(company?.phone || company?.email) && (
-                <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
-                  {[company.phone && `📞 ${company.phone}`, company.email && `✉ ${company.email}`].filter(Boolean).join('   ·   ')}
-                </div>
-              )}
-            </div>
-
           </div>
-        )}
+
+          {/* Add payment form — screen only */}
+          {canAddPayment && (
+            <div className="ci-internal" style={{
+              background: 'var(--bg-soft)', borderRadius: 12, padding: '16px 18px',
+              border: '1px solid var(--border)',
+            }}>
+              <AddPaymentForm
+                invoiceId={invoiceId}
+                balance={balance}
+                showToast={showToast}
+                onSuccess={async () => { await load(); onRefreshList(); }}
+              />
+            </div>
+          )}
+
+          {/* ── Invoice Footer ── */}
+          <div className="ci-invoice-footer" style={{
+            marginTop: 8,
+            borderTop: '1px solid #e5e7eb',
+            paddingTop: 16,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 4,
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Thank you for your business.</div>
+            <div style={{ fontSize: 10, color: '#9ca3af' }}>This is a computer generated invoice and does not require a physical signature.</div>
+            {(company?.phone || company?.email) && (
+              <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+                {[company.phone && `📞 ${company.phone}`, company.email && `✉ ${company.email}`].filter(Boolean).join('   ·   ')}
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
     </div>
   );
 }
@@ -920,37 +914,37 @@ export default function CustomerInvoicesPage() {
   const location = useLocation();
   const isHubUser = !!user?.hub_id;
 
-  const [items,   setItems]   = useState([]);
-  const [total,   setTotal]   = useState(0);
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [page,     setPage]     = useState(1);
+  const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const [search,       setSearch]       = useState('');
-  const [hubFilter,    setHubFilter]    = useState(() => user?.hub_id ? String(user.hub_id) : '');
+  const [search, setSearch] = useState('');
+  const [hubFilter, setHubFilter] = useState(() => user?.hub_id ? String(user.hub_id) : '');
   const [statusFilter, setStatusFilter] = useState('');
-  const [hubs,         setHubs]         = useState([]);
+  const [hubs, setHubs] = useState([]);
 
   // Auto-open a specific invoice if navigated here from Estimates page
-  const [selectedId,     setSelectedId]     = useState(() => location.state?.openId ?? null);
+  const [selectedId, setSelectedId] = useState(() => location.state?.openId ?? null);
   const [showVehHistory, setShowVehHistory] = useState(false);
-  const [toast,          setToast]          = useState(null);
+  const [toast, setToast] = useState(null);
 
   const showToast = useCallback((msg, type = 'success') => setToast({ msg, type }), []);
 
   useEffect(() => {
     api('/api/hubs?limit=100')
       .then(r => setHubs(r.items || []))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
     try {
       const q = new URLSearchParams();
-      if (search.trim())  q.set('search', search.trim());
-      if (hubFilter)      q.set('hub_id', hubFilter);
-      if (statusFilter)   q.set('status', statusFilter);
+      if (search.trim()) q.set('search', search.trim());
+      if (hubFilter) q.set('hub_id', hubFilter);
+      if (statusFilter) q.set('status', statusFilter);
       q.set('page', page);
       q.set('limit', pageSize);
       const res = await api(`/api/customer-invoices?${q.toString()}`);
@@ -1074,51 +1068,51 @@ export default function CustomerInvoicesPage() {
               </div>
             ) : (
               <div className="ci-table-wrap">
-              <table className="ci-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Customer</th>
-                    <th>Vehicle</th>
-                    <th>Hub</th>
-                    <th style={{ textAlign: 'right' }}>Grand Total</th>
-                    <th style={{ textAlign: 'right' }}>Paid</th>
-                    <th style={{ textAlign: 'right' }}>Balance</th>
-                    <th>Status</th>
-                    <th style={{ width: 48 }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map(inv => {
-                    const gt  = parseFloat(inv.grand_total ?? 0);
-                    const pd  = parseFloat(inv.amount_paid ?? 0);
-                    const bal = Math.max(0, gt - pd);
-                    return (
-                      <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(inv.id)}>
-                        <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{inv.id}</td>
-                        <td>
-                          <div style={{ fontWeight: 600, fontSize: 13 }}>{inv.customer_name || '—'}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inv.mobile || ''}</div>
-                        </td>
-                        <td style={{ fontSize: 13 }}>{inv.vehicle_number || '—'}</td>
-                        <td style={{ fontSize: 13 }}>{inv.hub_name || inv.hub?.name || '—'}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmt(gt)}</td>
-                        <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 600 }}>{fmt(pd)}</td>
-                        <td style={{
-                          textAlign: 'right', fontWeight: 700, fontSize: 13,
-                          color: bal > 0.001 ? '#dc2626' : '#6b7280',
-                        }}>{fmt(bal)}</td>
-                        <td><StatusBadge status={inv.status} /></td>
-                        <td onClick={e => { e.stopPropagation(); setSelectedId(inv.id); }}>
-                          <button className="icon-action" title="View">
-                            <Eye size={15} />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                <table className="ci-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Customer</th>
+                      <th>Vehicle</th>
+                      <th>Hub</th>
+                      <th style={{ textAlign: 'right' }}>Grand Total</th>
+                      <th style={{ textAlign: 'right' }}>Paid</th>
+                      <th style={{ textAlign: 'right' }}>Balance</th>
+                      <th>Status</th>
+                      <th style={{ width: 48 }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map(inv => {
+                      const gt = parseFloat(inv.grand_total ?? 0);
+                      const pd = parseFloat(inv.amount_paid ?? 0);
+                      const bal = Math.max(0, gt - pd);
+                      return (
+                        <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(inv.id)}>
+                          <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{inv.id}</td>
+                          <td>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{inv.customer_name || '—'}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inv.mobile || ''}</div>
+                          </td>
+                          <td style={{ fontSize: 13 }}>{inv.vehicle_number || '—'}</td>
+                          <td style={{ fontSize: 13 }}>{inv.hub_name || inv.hub?.name || '—'}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmt(gt)}</td>
+                          <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 600 }}>{fmt(pd)}</td>
+                          <td style={{
+                            textAlign: 'right', fontWeight: 700, fontSize: 13,
+                            color: bal > 0.001 ? '#dc2626' : '#6b7280',
+                          }}>{fmt(bal)}</td>
+                          <td><StatusBadge status={inv.status} /></td>
+                          <td onClick={e => { e.stopPropagation(); setSelectedId(inv.id); }}>
+                            <button className="icon-action" title="View">
+                              <Eye size={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
