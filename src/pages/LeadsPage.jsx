@@ -1011,7 +1011,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
 }
 
 // ── Edit Lead Modal ───────────────────────────────────────────────────────────
-function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = LEAD_SOURCES }) {
+function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = LEAD_SOURCES, onOpenConvert }) {
   useBodyLock();
   // ── core form ──────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
@@ -1027,6 +1027,8 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
   const [error, setError] = useState('');
   const [priceRecalcNotice, setPriceRecalcNotice] = useState(false); // shown after vehicle-change recalc
   const [lostModal, setLostModal] = useState(null); // { statusName } when intercepting Lost
+  const [actionModal, setActionModal] = useState(null); // { statusName, logsCall, needsFollowUp }
+  const [actionData, setActionData] = useState(null); // call outcome, follow_up_date, etc.
   const [existingCustomer, setExistingCustomer] = useState(null);
 
   async function handleMobileBlur() {
@@ -1327,6 +1329,18 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
         setPriceRecalcNotice(true);
       }
 
+      // ── Call Log (if selected via modal) ──────────────────────────────────
+      if (actionData?.call_outcome) {
+        try {
+          await api(`/api/leads/${lead.id}/calls`, {
+            method: 'POST',
+            body: { outcome: actionData.call_outcome, notes: actionData.call_notes || null },
+          });
+        } catch (callErr) {
+          console.error('[EditLeadModal] call log failed:', callErr?.message);
+        }
+      }
+
       // ── Save ──────────────────────────────────────────────────────────────
       const r = await api(`/api/leads/${lead.id}`, {
         method: 'PATCH',
@@ -1338,6 +1352,9 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
           whatsapp: form.whatsapp.trim() || null,
           lead_source: form.lead_source.trim() || null,
           lost_reason: form.status.toLowerCase().includes('lost') ? (form.lost_reason || null) : null,
+          follow_up_date: actionData?.follow_up_date || undefined,
+          follow_up_time: actionData?.follow_up_time || undefined,
+          follow_up_note: actionData?.note || undefined,
           state_id: Number(locForm.state_id) || null,
           city_id: Number(locForm.city_id) || null,
           area_id: Number(locForm.area_id) || null,
@@ -1450,10 +1467,33 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
                   <select className="lp-input lp-status-select" value={form.status}
                     onChange={e => {
                       const newSt = e.target.value;
+                      const statusObj = statusList.find(s => s.name === newSt);
+
                       if (newSt.toLowerCase().includes('lost') && !form.status.toLowerCase().includes('lost')) {
                         setLostModal({ statusName: newSt });
+                      } else if (statusObj?.converts_to_appointment && onOpenConvert) {
+                        onClose();
+                        onOpenConvert({
+                          statusName: newSt, leadId: lead.id, leadName: lead.name,
+                          saveFn: async (st, reason, meta) => {
+                            // Let leads page handle the save directly since edit modal is closing
+                            const body = { status: st };
+                            if (meta.follow_up_date) body.follow_up_date = meta.follow_up_date;
+                            if (meta.follow_up_time) body.follow_up_time = meta.follow_up_time;
+                            if (meta.note) body.follow_up_note = meta.note;
+                            const r = await api(`/api/leads/${lead.id}`, { method: 'PATCH', body });
+                            onSaved(r.item);
+                          }
+                        });
+                      } else if (statusObj?.logs_call || statusObj?.needs_follow_up) {
+                        setActionModal({
+                          statusName: newSt,
+                          logsCall: !!statusObj.logs_call,
+                          needsFollowUp: !!statusObj.needs_follow_up,
+                        });
                       } else {
                         setForm(f => ({ ...f, status: newSt, lost_reason: newSt.toLowerCase().includes('lost') ? f.lost_reason : '' }));
+                        setActionData(null); // clear any previous action data
                       }
                     }}>
                     <option value="">Select status…</option>
@@ -1735,6 +1775,20 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
             setLostModal(null);
           }}
           onCancel={() => setLostModal(null)}
+        />
+      )}
+      {actionModal && (
+        <StatusActionModal
+          statusName={actionModal.statusName}
+          leadName={lead.name || lead.mobile}
+          logsCall={actionModal.logsCall}
+          needsFollowUp={actionModal.needsFollowUp}
+          onConfirm={data => {
+            setForm(f => ({ ...f, status: actionModal.statusName, lost_reason: '' }));
+            setActionData(data);
+            setActionModal(null);
+          }}
+          onCancel={() => setActionModal(null)}
         />
       )}
     </div>
@@ -4487,7 +4541,8 @@ export default function LeadsPage() {
       {editLead && (
         <EditLeadModal lead={editLead} statusList={statusList} leadSources={leadSources}
           onClose={() => setEditLead(null)}
-          onSaved={handleEditSaved} />
+          onSaved={handleEditSaved}
+          onOpenConvert={setPageConvertModal} />
       )}
       {deleteLead && (
         <DeleteModal lead={deleteLead}
