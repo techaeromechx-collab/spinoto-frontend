@@ -762,19 +762,22 @@ export default function ReportsPage() {
                   <th className="rp-th rp-th--sort" onClick={() => toggleSort('realized_revenue')}>
                     Realized <SortIcon col="realized_revenue" />
                   </th>
+                  <th className="rp-th rp-th--sort" onClick={() => toggleSort('ci_total')}>
+                    CI Total <SortIcon col="ci_total" />
+                  </th>
                   <th className="rp-th" style={{ width: 32 }} />
                 </tr>
               </thead>
               <tbody>
                 {sortedUsers.length === 0 && (
-                  <tr><td colSpan={7} className="rp-td-empty">No user data available</td></tr>
+                  <tr><td colSpan={8} className="rp-td-empty">No user data available</td></tr>
                 )}
                 {userSearch && sortedUsers.length > 0 &&
                   sortedUsers.filter(u =>
                     (u.user_name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
                     (u.email || '').toLowerCase().includes(userSearch.toLowerCase())
                   ).length === 0 && (
-                    <tr><td colSpan={7} className="rp-td-empty">No members match "{userSearch}"</td></tr>
+                    <tr><td colSpan={8} className="rp-td-empty">No members match "{userSearch}"</td></tr>
                   )}
                 {sortedUsers.filter(u =>
                   !userSearch ||
@@ -820,6 +823,9 @@ export default function ReportsPage() {
                       <td className="rp-td rp-td--num">{inr(u.total_revenue)}</td>
                       <td className="rp-td rp-td--num">
                         <span className="rp-rev-val">{inr(u.realized_revenue)}</span>
+                      </td>
+                      <td className="rp-td rp-td--num">
+                        <span style={{ fontWeight: 600, color: '#0f766e' }}>{inr(u.ci_total)}</span>
                       </td>
                       <td className="rp-td rp-td--chevron">
                         <ChevronRight size={14} className="rp-row-chevron" />
