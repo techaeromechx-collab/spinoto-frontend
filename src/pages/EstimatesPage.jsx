@@ -2653,6 +2653,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
 // ═════════════════════════════════════════════════════════════════════════════
 export default function EstimatesPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const isHubUser = !!user?.hub_id;
 
@@ -2866,8 +2867,19 @@ export default function EstimatesPage() {
                       >
                         <td style={{ fontWeight: 700, color: 'var(--primary)' }}>#{est.id}</td>
                         <td>
-                          <div style={{ fontWeight: 600, fontSize: 13 }}>{est.customer_name || '—'}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{est.vehicle_number || '—'}</div>
+                          <div
+                            className="est-cust-link"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate('/customers', { state: { openMobile: est.mobile } });
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 13 }} className="est-cust-name">{est.customer_name || '—'}</div>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{est.vehicle_number || '—'}</div>
+                            </div>
+                            <span className="est-cust-arrow">→</span>
+                          </div>
                         </td>
                         <td style={{ fontSize: 13 }}>{est.hub_name || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                         <td style={{ textAlign: 'right', fontSize: 13 }}>{est.item_count ?? (est.items?.length ?? '—')}</td>

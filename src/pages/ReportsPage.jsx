@@ -19,33 +19,33 @@ const CHART_COLORS = ['#3B82F6', '#06B6D4', '#10B981', '#8B5CF6', '#F59E0B', '#E
 
 // ── Date range presets ─────────────────────────────────────────────────────────
 const PRESETS = [
-  { label: '7D',   days: 7  },
-  { label: '30D',  days: 30 },
-  { label: '90D',  days: 90 },
-  { label: 'All',  days: 0  },
+  { label: '7D', days: 7 },
+  { label: '30D', days: 30 },
+  { label: '90D', days: 90 },
+  { label: 'All', days: 0 },
 ];
 
 function getPresetDates(days) {
   if (!days) return { from: '', to: '' };
-  const to   = new Date();
+  const to = new Date();
   const from = new Date();
   from.setDate(from.getDate() - days);
   return {
     from: from.toISOString().slice(0, 10),
-    to:   to.toISOString().slice(0, 10),
+    to: to.toISOString().slice(0, 10),
   };
 }
 
 function getPrevPeriodDates(dateRange) {
   if (!dateRange.from || !dateRange.to) return null;
   const from = new Date(dateRange.from);
-  const to   = new Date(dateRange.to);
+  const to = new Date(dateRange.to);
   const days = Math.round((to - from) / (1000 * 60 * 60 * 24));
-  const prevTo   = new Date(from); prevTo.setDate(prevTo.getDate() - 1);
+  const prevTo = new Date(from); prevTo.setDate(prevTo.getDate() - 1);
   const prevFrom = new Date(prevTo); prevFrom.setDate(prevFrom.getDate() - days);
   return {
     from: prevFrom.toISOString().slice(0, 10),
-    to:   prevTo.toISOString().slice(0, 10),
+    to: prevTo.toISOString().slice(0, 10),
   };
 }
 
@@ -59,10 +59,10 @@ function trendPct(curr, prev) {
 // Download data as CSV
 function downloadCSV(filename, rows, headers) {
   const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const lines  = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
-  const blob   = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url    = URL.createObjectURL(blob);
-  const a      = document.createElement('a');
+  const lines = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
@@ -79,7 +79,7 @@ function initials(name = '') {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) || '?';
 }
 function avatarColor(name = '') {
-  const colors = ['#3b82f6','#8b5cf6','#10b981','#f59e0b','#ef4444','#06b6d4','#ec4899'];
+  const colors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899'];
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffffff;
   return colors[Math.abs(h) % colors.length];
@@ -88,7 +88,7 @@ function avatarColor(name = '') {
 // ── KPI Card ───────────────────────────────────────────────────────────────────
 function KpiCard({ label, value, icon: Icon, accent = '#3b82f6', sub, trend, prevValue, compareOn }) {
   const trendNum = trend !== null && trend !== undefined ? Number(trend) : null;
-  const isUp   = trendNum !== null && trendNum > 0;
+  const isUp = trendNum !== null && trendNum > 0;
   const isDown = trendNum !== null && trendNum < 0;
   return (
     <div className="rp-kpi">
@@ -116,42 +116,42 @@ function KpiCard({ label, value, icon: Icon, accent = '#3b82f6', sub, trend, pre
 
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ReportsPage() {
-  const [tab,        setTab]        = useState('overview');   // 'overview' | 'leads' | 'by-user' | 'analytics'
-  const [revTrend,   setRevTrend]   = useState([]);
-  const [funnel,     setFunnel]     = useState([]);
-  const [topPerf,    setTopPerf]    = useState({ top_hubs: [], top_services: [] });
+  const [tab, setTab] = useState('overview');   // 'overview' | 'leads' | 'by-user' | 'analytics'
+  const [revTrend, setRevTrend] = useState([]);
+  const [funnel, setFunnel] = useState([]);
+  const [topPerf, setTopPerf] = useState({ top_hubs: [], top_services: [] });
   const [anlLoading, setAnlLoading] = useState(false);
-  const [preset,     setPreset]     = useState(30);           // days; 0 = all
-  const [dateRange,  setDateRange]  = useState(getPresetDates(30));
+  const [preset, setPreset] = useState(30);           // days; 0 = all
+  const [dateRange, setDateRange] = useState(getPresetDates(30));
 
   // ── Hub filter ───────────────────────────────────────────────────────────
-  const [hubs,      setHubs]      = useState([]);
-  const [hubId,     setHubId]     = useState('');   // '' = all hubs
+  const [hubs, setHubs] = useState([]);
+  const [hubId, setHubId] = useState('');   // '' = all hubs
 
   // ── Leads-over-time ──────────────────────────────────────────────────────
-  const [leadsData,    setLeadsData]    = useState([]);
+  const [leadsData, setLeadsData] = useState([]);
   const [leadsGroupBy, setLeadsGroupBy] = useState('day');
   const [leadsLoading, setLeadsLoading] = useState(false);
-  const [sourceData,   setSourceData]   = useState([]);
+  const [sourceData, setSourceData] = useState([]);
 
   // ── Compare / search ─────────────────────────────────────────────────────
-  const [compareOn,  setCompareOn]  = useState(false);
+  const [compareOn, setCompareOn] = useState(false);
   const [userSearch, setUserSearch] = useState('');
 
-  const [summary,    setSummary]    = useState(null);
+  const [summary, setSummary] = useState(null);
   const [statusData, setStatusData] = useState([]);
-  const [revData,    setRevData]    = useState([]);
-  const [byUser,     setByUser]     = useState([]);
-  const [scope,      setScope]      = useState('all'); // 'all' | 'team' | 'own'
+  const [revData, setRevData] = useState([]);
+  const [byUser, setByUser] = useState([]);
+  const [scope, setScope] = useState('all'); // 'all' | 'team' | 'own'
 
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // ── Custom date picker ───────────────────────────────────────────────────
-  const [pickerOpen,  setPickerOpen]  = useState(false);
-  const [tempFrom,    setTempFrom]    = useState('');
-  const [tempTo,      setTempTo]      = useState('');
-  const pickerRef                      = useRef(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [tempFrom, setTempFrom] = useState('');
+  const [tempTo, setTempTo] = useState('');
+  const pickerRef = useRef(null);
 
   useEffect(() => {
     function onOut(e) {
@@ -175,10 +175,10 @@ export default function ReportsPage() {
   }
 
   // ── User detail drawer ───────────────────────────────────────────────────
-  const [drawerUser,    setDrawerUser]    = useState(null); // { user_id, user_name, email }
-  const [drawerData,    setDrawerData]    = useState(null);
+  const [drawerUser, setDrawerUser] = useState(null); // { user_id, user_name, email }
+  const [drawerData, setDrawerData] = useState(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
-  const [drawerError,   setDrawerError]   = useState(null);
+  const [drawerError, setDrawerError] = useState(null);
 
   async function openUserDrawer(row) {
     setDrawerUser(row);
@@ -219,7 +219,7 @@ export default function ReportsPage() {
   useEffect(() => {
     api('/api/hubs?is_active=true&limit=200')
       .then(r => setHubs(r.items || []))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
@@ -311,8 +311,8 @@ export default function ReportsPage() {
   // ── Export PDF ───────────────────────────────────────────────────────────
   function exportPDF() {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageW  = doc.internal.pageSize.getWidth();
-    const now    = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const now = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     const period = dateRange.from
       ? `${dateRange.from}  →  ${dateRange.to}`
       : 'All Time';
@@ -340,11 +340,12 @@ export default function ReportsPage() {
       y += 6;
 
       const kpis = [
-        ['Total Leads',      summary.total_leads],
-        ['Converted Leads',  summary.converted_leads],
-        ['Conversion Rate',  pct(summary.converted_leads, summary.total_leads)],
-        ['Pipeline Value',   inr(summary.total_potential_revenue)],
-        ['Realized Revenue', inr(summary.realized_revenue)],
+        ['Total Leads', summary.total_leads],
+        ['Converted Leads', summary.converted_leads],
+        ['Conversion Rate', pct(summary.converted_leads, summary.total_leads)],
+        ['Lead Pipeline value', inr(summary.total_potential_revenue)],
+        ['Appointment Realized Revenue', inr(summary.realized_revenue)],
+        ['Customer Invoice Total', inr(summary.customer_invoice_total)],
       ];
 
       autoTable(doc, {
@@ -467,9 +468,9 @@ export default function ReportsPage() {
         <div>
           <h2 className="rp-title">Reports</h2>
           <p className="rp-sub">
-            {scope === 'all'  && 'Organisation-wide performance metrics.'}
+            {scope === 'all' && 'Organisation-wide performance metrics.'}
             {scope === 'team' && 'Performance metrics for your team.'}
-            {scope === 'own'  && 'Your personal performance metrics.'}
+            {scope === 'own' && 'Your personal performance metrics.'}
           </p>
         </div>
         <div className="rp-header-right">
@@ -620,16 +621,22 @@ export default function ReportsPage() {
                 )}
                 prevValue={summary.prev ? pct(summary.prev.converted_leads, summary.prev.total_leads) : undefined}
                 compareOn={compareOn} />
-              <KpiCard label="Pipeline Value" value={inr(summary.total_potential_revenue)}
+              <KpiCard label="Lead Pipeline value" value={inr(summary.total_potential_revenue)}
                 icon={IndianRupee} accent="#8b5cf6"
                 trend={trendPct(summary.total_potential_revenue, summary.prev?.total_potential_revenue)}
                 prevValue={summary.prev ? inr(summary.prev.total_potential_revenue) : undefined}
                 compareOn={compareOn} />
-              <KpiCard label="Realized Revenue" value={inr(summary.realized_revenue)}
+              <KpiCard label="Appointment Realized Revenue" value={inr(summary.realized_revenue)}
                 icon={IndianRupee} accent="#f59e0b"
                 sub="Converted leads only"
                 trend={trendPct(summary.realized_revenue, summary.prev?.realized_revenue)}
                 prevValue={summary.prev ? inr(summary.prev.realized_revenue) : undefined}
+                compareOn={compareOn} />
+              <KpiCard label="Customer Invoice Total" value={inr(summary.customer_invoice_total)}
+                icon={IndianRupee} accent="#06b6d4"
+                sub={`${inr(summary.customer_invoice_paid)} paid`}
+                trend={trendPct(summary.customer_invoice_total, summary.prev?.customer_invoice_total)}
+                prevValue={summary.prev ? inr(summary.prev.customer_invoice_total) : undefined}
                 compareOn={compareOn} />
             </div>
           )}
@@ -658,20 +665,27 @@ export default function ReportsPage() {
             </div>
 
             <div className="rp-chart-card">
-              <h3 className="rp-chart-title">Revenue by Category (₹)</h3>
-              {revData.filter(d => Number(d.value) > 0).length === 0
-                ? <div className="rp-empty">No revenue data for this period</div>
-                : (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={revData.filter(d => Number(d.value) > 0)} margin={{ left: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN')} />
-                      <Tooltip formatter={v => [inr(v), 'Revenue']} />
-                      <Bar dataKey="value" fill="var(--primary)" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
+              {(() => {
+                const categoryTotal = revData.reduce((acc, curr) => acc + Number(curr.value || 0), 0);
+                return (
+                  <>
+                    <h3 className="rp-chart-title">Revenue by Category (Total: {inr(categoryTotal)})</h3>
+                    {revData.filter(d => Number(d.value) > 0).length === 0
+                      ? <div className="rp-empty">No revenue data for this period</div>
+                      : (
+                        <ResponsiveContainer width="100%" height={300}>
+                          <BarChart data={revData.filter(d => Number(d.value) > 0)} margin={{ left: 10 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                            <YAxis tick={{ fontSize: 11 }} tickFormatter={v => '₹' + Number(v).toLocaleString('en-IN')} />
+                            <Tooltip formatter={v => [inr(v), 'Revenue']} />
+                            <Bar dataKey="value" fill="var(--primary)" radius={[6, 6, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -697,8 +711,13 @@ export default function ReportsPage() {
               </div>
               <div className="rp-ts-div" />
               <div className="rp-ts-item">
-                <span className="rp-ts-label">Realized Revenue</span>
+                <span className="rp-ts-label">Appointment Realized Revenue</span>
                 <span className="rp-ts-val">{inr(summary.realized_revenue)}</span>
+              </div>
+              <div className="rp-ts-div" />
+              <div className="rp-ts-item">
+                <span className="rp-ts-label">Customer Invoice Total</span>
+                <span className="rp-ts-val">{inr(summary.customer_invoice_total)}</span>
               </div>
               <div className="rp-ts-div" />
               <div className="rp-ts-item">
@@ -755,15 +774,15 @@ export default function ReportsPage() {
                     (u.user_name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
                     (u.email || '').toLowerCase().includes(userSearch.toLowerCase())
                   ).length === 0 && (
-                  <tr><td colSpan={7} className="rp-td-empty">No members match "{userSearch}"</td></tr>
-                )}
+                    <tr><td colSpan={7} className="rp-td-empty">No members match "{userSearch}"</td></tr>
+                  )}
                 {sortedUsers.filter(u =>
                   !userSearch ||
                   (u.user_name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
                   (u.email || '').toLowerCase().includes(userSearch.toLowerCase())
                 ).map(u => {
                   const convRate = pct(u.converted_leads, u.total_leads);
-                  const convNum  = Number(u.total_leads) > 0
+                  const convNum = Number(u.total_leads) > 0
                     ? (Number(u.converted_leads) / Number(u.total_leads)) * 100
                     : 0;
                   const bg = avatarColor(u.user_name || u.email);
@@ -838,13 +857,13 @@ export default function ReportsPage() {
             {drawerError && <div className="rpd-drawer-error">{drawerError}</div>}
 
             {drawerData && (() => {
-              const u  = drawerData.user;
+              const u = drawerData.user;
               const sb = drawerData.statusBreak;
               const ev = drawerData.pendingEvents;
               const rl = drawerData.recentLeads;
               const today = new Date().toISOString().slice(0, 10);
-              const todayEvents    = ev.filter(e => e.due_date.slice(0, 10) === today);
-              const overdueEvents  = ev.filter(e => e.due_date.slice(0, 10) < today);
+              const todayEvents = ev.filter(e => e.due_date.slice(0, 10) === today);
+              const overdueEvents = ev.filter(e => e.due_date.slice(0, 10) < today);
 
               return (
                 <div className="rpd-body">
@@ -880,12 +899,12 @@ export default function ReportsPage() {
                   {/* Revenue */}
                   <div className="rpd-rev-row">
                     <div className="rpd-rev-item">
-                      <span className="rpd-rev-label">Pipeline Value</span>
+                      <span className="rpd-rev-label">Lead Pipeline value</span>
                       <span className="rpd-rev-val">{inr(u.pipeline_value)}</span>
                     </div>
                     <div className="rpd-rev-div" />
                     <div className="rpd-rev-item">
-                      <span className="rpd-rev-label">Realized Revenue</span>
+                      <span className="rpd-rev-label">Appointment Realized Revenue</span>
                       <span className="rpd-rev-val rpd-rev-val--green">{inr(u.realized_revenue)}</span>
                     </div>
                   </div>
@@ -897,7 +916,7 @@ export default function ReportsPage() {
                       <div className="rpd-status-list">
                         {sb.map(s => {
                           const maxCount = Math.max(...sb.map(x => x.count));
-                          const pctVal   = maxCount > 0 ? (s.count / maxCount) * 100 : 0;
+                          const pctVal = maxCount > 0 ? (s.count / maxCount) * 100 : 0;
                           return (
                             <div key={s.status_name} className="rpd-status-row">
                               <span className="rpd-status-name">{s.status_name}</span>
@@ -1000,7 +1019,7 @@ export default function ReportsPage() {
                 {dateRange.from ? `${dateRange.from} → ${dateRange.to}` : 'All time'}
               </span>
               <div className="rp-groupby-toggle" style={{ marginLeft: 'auto' }}>
-                {['day','week','month'].map(g => (
+                {['day', 'week', 'month'].map(g => (
                   <button key={g}
                     className={`rp-groupby-btn${leadsGroupBy === g ? ' rp-groupby-btn--on' : ''}`}
                     onClick={() => setLeadsGroupBy(g)}>
@@ -1012,14 +1031,14 @@ export default function ReportsPage() {
 
             {/* Summary stats */}
             {!leadsLoading && leadsData.length > 0 && (() => {
-              const total   = leadsData.reduce((s, d) => s + d.count, 0);
-              const peak    = leadsData.reduce((a, b) => b.count > a.count ? b : a, leadsData[0]);
+              const total = leadsData.reduce((s, d) => s + d.count, 0);
+              const peak = leadsData.reduce((a, b) => b.count > a.count ? b : a, leadsData[0]);
               const divisor = leadsGroupBy === 'month' ? leadsData.length : leadsData.length || 1;
-              const avg     = (total / divisor).toFixed(1);
+              const avg = (total / divisor).toFixed(1);
               const peakLabel = (() => {
                 const d = new Date(peak.period);
                 if (leadsGroupBy === 'month') return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
-                if (leadsGroupBy === 'week')  return `W/C ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
+                if (leadsGroupBy === 'week') return `W/C ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
                 return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
               })();
               return (
@@ -1045,7 +1064,7 @@ export default function ReportsPage() {
                     tickFormatter={v => {
                       const d = new Date(v);
                       if (leadsGroupBy === 'month') return d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
-                      if (leadsGroupBy === 'week')  return `W/C ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
+                      if (leadsGroupBy === 'week') return `W/C ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
                       return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
                     }}
                     interval="preserveStartEnd" />
@@ -1054,7 +1073,7 @@ export default function ReportsPage() {
                     labelFormatter={v => {
                       const d = new Date(v);
                       if (leadsGroupBy === 'month') return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-                      if (leadsGroupBy === 'week')  return `Week of ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+                      if (leadsGroupBy === 'week') return `Week of ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
                       return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                     }} />
                   <Bar dataKey="count" fill="var(--primary)" radius={[4, 4, 0, 0]} />
@@ -1079,7 +1098,7 @@ export default function ReportsPage() {
                     <YAxis type="category" dataKey="source" width={100} tick={{ fontSize: 11, fill: 'var(--text)' }} />
                     <Tooltip formatter={(v, name) => [v, name === 'total' ? 'Total Leads' : 'Converted']} />
                     <Legend />
-                    <Bar dataKey="total"     name="Total"     fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="total" name="Total" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
                     <Bar dataKey="converted" name="Converted" fill="#10b981" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -1136,7 +1155,7 @@ export default function ReportsPage() {
                     <LineChart data={revTrend} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
-                      <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={v => `₹${Number(v) >= 1000 ? (Number(v)/1000).toFixed(0)+'k' : v}`} />
+                      <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} tickFormatter={v => `₹${Number(v) >= 1000 ? (Number(v) / 1000).toFixed(0) + 'k' : v}`} />
                       <Tooltip formatter={v => [`₹${Number(v).toLocaleString('en-IN')}`, 'Revenue']} />
                       <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4 }} />
                     </LineChart>
@@ -1171,7 +1190,7 @@ export default function ReportsPage() {
                             <div className="anl-funnel-count" style={{ color: colors[i] }}>{f.count.toLocaleString('en-IN')}</div>
                             {i > 0 && (
                               <div className="anl-funnel-drop" title={`Drop from previous stage`}>
-                                {funnel[i-1].count > 0 ? Math.round((f.count / funnel[i-1].count) * 100) : 0}%
+                                {funnel[i - 1].count > 0 ? Math.round((f.count / funnel[i - 1].count) * 100) : 0}%
                               </div>
                             )}
                           </div>
@@ -1196,7 +1215,7 @@ export default function ReportsPage() {
                     <ResponsiveContainer width="100%" height={220}>
                       <BarChart data={topPerf.top_hubs} layout="vertical" margin={{ left: 10, right: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                        <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={v => `₹${Number(v) >= 1000 ? (Number(v)/1000).toFixed(0)+'k' : v}`} />
+                        <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={v => `₹${Number(v) >= 1000 ? (Number(v) / 1000).toFixed(0) + 'k' : v}`} />
                         <YAxis type="category" dataKey="hub_name" width={90} tick={{ fontSize: 11, fill: 'var(--text)' }} />
                         <Tooltip formatter={v => [`₹${Number(v).toLocaleString('en-IN')}`, 'Revenue']} />
                         <Bar dataKey="revenue" fill="#0ea5e9" radius={[0, 6, 6, 0]} />
@@ -1221,7 +1240,7 @@ export default function ReportsPage() {
                   <ResponsiveContainer width="100%" height={Math.max(200, topPerf.top_services.length * 36)}>
                     <BarChart data={topPerf.top_services} layout="vertical" margin={{ left: 10, right: 40 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={v => `₹${Number(v) >= 1000 ? (Number(v)/1000).toFixed(0)+'k' : v}`} />
+                      <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} tickFormatter={v => `₹${Number(v) >= 1000 ? (Number(v) / 1000).toFixed(0) + 'k' : v}`} />
                       <YAxis type="category" dataKey="service_name" width={130} tick={{ fontSize: 11, fill: 'var(--text)' }} />
                       <Tooltip formatter={v => [`₹${Number(v).toLocaleString('en-IN')}`, 'Revenue']} />
                       <Bar dataKey="revenue" fill="#8b5cf6" radius={[0, 6, 6, 0]} />

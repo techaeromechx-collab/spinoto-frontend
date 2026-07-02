@@ -911,6 +911,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
 // ═════════════════════════════════════════════════════════════════════════════
 export default function CustomerInvoicesPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const isHubUser = !!user?.hub_id;
 
@@ -1091,8 +1092,19 @@ export default function CustomerInvoicesPage() {
                         <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(inv.id)}>
                           <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{inv.id}</td>
                           <td>
-                            <div style={{ fontWeight: 600, fontSize: 13 }}>{inv.customer_name || '—'}</div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inv.mobile || ''}</div>
+                            <div
+                              className="ci-cust-link"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate('/customers', { state: { openMobile: inv.mobile } });
+                              }}
+                            >
+                              <div>
+                                <div style={{ fontWeight: 600, fontSize: 13 }} className="ci-cust-name">{inv.customer_name || '—'}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inv.mobile || ''}</div>
+                              </div>
+                              <span className="ci-cust-arrow">→</span>
+                            </div>
                           </td>
                           <td style={{ fontSize: 13 }}>{inv.vehicle_number || '—'}</td>
                           <td style={{ fontSize: 13 }}>{inv.hub_name || inv.hub?.name || '—'}</td>

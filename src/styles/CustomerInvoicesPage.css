@@ -253,3 +253,32 @@
     .pgbar-controls { width: 100%; justify-content: center; }
     .pgbar-btn { min-width: 36px; height: 36px; font-size: 14px; }
   }
+
+/* ── Clickable Customer Link in Table ── */
+.ci-cust-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 2px 0;
+}
+.ci-cust-link .ci-cust-name {
+  transition: color 0.15s ease;
+}
+.ci-cust-link:hover .ci-cust-name {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.ci-cust-arrow {
+  font-size: 13px;
+  color: var(--primary);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  transform: translateX(-6px);
+  flex-shrink: 0;
+}
+.ci-cust-link:hover .ci-cust-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}

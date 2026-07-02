@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client.js';
 import {
   Users, Search, X, ChevronLeft, ChevronRight, ChevronDown,
@@ -1058,7 +1058,8 @@ export default function CustomersPage() {
   const [page,          setPage]          = useState(1);
   const [pageSize,      setPageSize]      = useState(10);
 
-  const [selectedMobile, setSelectedMobile] = useState(null); // null = list, string = detail
+  const location = useLocation();
+  const [selectedMobile, setSelectedMobile] = useState(() => location.state?.openMobile ?? null);
   const [detailEdit,     setDetailEdit]     = useState(false);
   const searchTimer = useRef(null);
 

@@ -1962,3 +1962,36 @@
     flex-direction: column;
   }
 }
+
+/* ── Clickable Customer Link in Table ── */
+.appt-cust-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 2px 0;
+}
+
+.appt-cust-link .appt-cust-name {
+  transition: color 0.15s ease;
+}
+
+.appt-cust-link:hover .appt-cust-name {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.appt-cust-arrow {
+  font-size: 13px;
+  color: var(--primary);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  transform: translateX(-6px);
+  flex-shrink: 0;
+}
+
+.appt-cust-link:hover .appt-cust-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}

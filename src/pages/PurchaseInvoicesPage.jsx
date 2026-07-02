@@ -1118,6 +1118,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 // ═════════════════════════════════════════════════════════════════════════════
 export default function PurchaseInvoicesPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const isHubUser = !!user?.hub_id;
 
@@ -1286,11 +1287,22 @@ export default function PurchaseInvoicesPage() {
                       >
                         <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{inv.id}</td>
                         <td>
-                          <div style={{ fontWeight: 600, fontSize: 13 }}>
-                            {inv.customer_name || inv.customer?.name || '—'}
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                            {inv.vehicle_number || [inv.make_name, inv.model_name].filter(Boolean).join(' ') || '—'}
+                          <div
+                            className="pi-cust-link"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate('/customers', { state: { openMobile: inv.mobile } });
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 13 }} className="pi-cust-name">
+                                {inv.customer_name || inv.customer?.name || '—'}
+                              </div>
+                              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                {inv.vehicle_number || [inv.make_name, inv.model_name].filter(Boolean).join(' ') || '—'}
+                              </div>
+                            </div>
+                            <span className="pi-cust-arrow">→</span>
                           </div>
                         </td>
                         <td style={{ fontSize: 13 }}>{inv.hub_name || inv.hub?.name || '—'}</td>

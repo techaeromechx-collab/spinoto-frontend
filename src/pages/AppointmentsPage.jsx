@@ -2695,7 +2695,7 @@ export default function AppointmentsPage() {
                 <th>Vehicle</th>
                 <th>Hub</th>
                 <th>Schedule</th>
-                <th>Total</th>
+                <th>Totals</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
@@ -2731,10 +2731,22 @@ export default function AppointmentsPage() {
                     <td>
                       <span className="appt-id-badge">#{a.id}</span>
                       {a.lead_id && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Lead #{a.lead_id}</div>}
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{fmtDate(a.created_at)}</div>
                     </td>
                     <td>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{a.customer_name || '—'}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{a.mobile}</div>
+                      <div
+                        className="appt-cust-link"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate('/customers', { state: { openMobile: a.mobile } });
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13 }} className="appt-cust-name">{a.customer_name || '—'}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{a.mobile}</div>
+                        </div>
+                        <span className="appt-cust-arrow">→</span>
+                      </div>
                     </td>
                     <td>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>
@@ -2756,8 +2768,39 @@ export default function AppointmentsPage() {
                       )}
                     </td>
                     <td>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f766e' }}>
-                        ₹{Number(a.total_price).toLocaleString('en-IN')}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11, minWidth: 100 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Booking:</span>
+                          <span style={{ fontWeight: 600 }}>₹{Number(a.total_price || 0).toLocaleString('en-IN')}</span>
+                        </div>
+                        {a.estimate_id && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                            <span 
+                              style={{ color: '#4f46e5', cursor: 'pointer', textDecoration: 'underline' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate('/estimates', { state: { openId: a.estimate_id } });
+                              }}
+                            >
+                              Estimate:
+                            </span>
+                            <span style={{ fontWeight: 600 }}>₹{Number(a.estimate_total || 0).toLocaleString('en-IN')}</span>
+                          </div>
+                        )}
+                        {a.invoice_id && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                            <span 
+                              style={{ color: '#0f766e', cursor: 'pointer', textDecoration: 'underline' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate('/customer-invoices', { state: { openId: a.invoice_id } });
+                              }}
+                            >
+                              Invoice:
+                            </span>
+                            <span style={{ fontWeight: 700, color: '#0f766e' }}>₹{Number(a.invoice_total || 0).toLocaleString('en-IN')}</span>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td onClick={e => e.stopPropagation()}>
@@ -2849,7 +2892,7 @@ export default function AppointmentsPage() {
                 </div>
                 <div className="appt-card-right" onClick={e => e.stopPropagation()}>
                   <div className="appt-card-price" onClick={() => setModal({ mode: 'view', appt: a })}>
-                    ₹{Number(a.total_price || 0).toLocaleString('en-IN')}
+                    ₹{Number(a.invoice_id ? a.invoice_total : (a.estimate_id ? a.estimate_total : a.total_price) || 0).toLocaleString('en-IN')}
                   </div>
                   <ApptStatusSelect
                     apptId={a.id}
