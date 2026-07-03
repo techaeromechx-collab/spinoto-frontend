@@ -157,7 +157,7 @@
   }
   .pi-invoice-footer * { font-size: 9px !important; }
 
-  @page { size: A4 portrait; margin: 10mm 10mm 20mm; }
+  @page { size: A4 portrait; margin: 0; }
 }
 
 /* ── Table scroll wrapper ─────────────────────────────────────────────────── */
