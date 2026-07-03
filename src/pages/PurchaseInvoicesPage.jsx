@@ -402,7 +402,12 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             className="btn btn-ghost"
-            onClick={() => window.print()}
+            onClick={() => {
+              const o = document.title;
+              document.title = inv ? `PI-${String(inv.id).padStart(6, '0')}` : o;
+              window.print();
+              document.title = o;
+            }}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
             title="Print / Save as PDF"
           >
