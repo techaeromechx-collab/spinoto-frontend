@@ -591,7 +591,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       return {
         _key: it.id || Math.random(),
         type: it.item_type || 'service',
-        item_id: it.service_id || it.item_id || '',
+        item_id: it.service_id || it.part_id || it.item_id || '',
         description: it.description || '',
         quantity: it.quantity ?? 1,
         unit_rate: exRate > 0 ? exRate.toFixed(4) : '',
