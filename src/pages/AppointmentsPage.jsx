@@ -909,8 +909,8 @@ function MiniSearchSelect({ value, onChange, options, placeholder = 'Select…',
           <div style={{ maxHeight: 180, overflowY: 'auto' }}>
             {filtered.length === 0
               ? <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>No results</div>
-              : filtered.map(o => (
-                <button key={o.value} type="button" onClick={() => pick(o)}
+              : filtered.map((o, i) => (
+                <button key={o.value !== null && o.value !== undefined ? String(o.value) : `fallback-${i}`} type="button" onClick={() => pick(o)}
                   style={{ width: '100%', textAlign: 'left', padding: '8px 12px', background: String(o.value) === String(value) ? 'rgba(22,185,148,0.10)' : 'transparent', border: 'none', cursor: 'pointer', fontSize: 13, color: String(o.value) === String(value) ? 'var(--primary)' : 'var(--text)', fontWeight: String(o.value) === String(value) ? 700 : 400 }}
                   onMouseEnter={e => { if (String(o.value) !== String(value)) e.currentTarget.style.background = 'var(--bg-soft,#f8fafc)'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = String(o.value) === String(value) ? 'rgba(22,185,148,0.10)' : 'transparent'; }}>
@@ -1015,10 +1015,11 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
             setModels(allRows);
             const groupMap = new Map();
             for (const m of allRows) {
-              if (!groupMap.has(m.name)) groupMap.set(m.name, { name: m.name, firstId: m.id, segmentIds: [], bodyTypeIds: [] });
+              if (!groupMap.has(m.name)) groupMap.set(m.name, { name: m.name, firstId: m.id, segmentIds: [], bodyTypeIds: [], ccCategoryIds: [] });
               const g = groupMap.get(m.name);
               if (m.segment_id && !g.segmentIds.includes(m.segment_id)) g.segmentIds.push(m.segment_id);
               if (m.body_type_id && !g.bodyTypeIds.includes(m.body_type_id)) g.bodyTypeIds.push(m.body_type_id);
+              if (m.cc_category_id && !g.ccCategoryIds.includes(m.cc_category_id)) g.ccCategoryIds.push(m.cc_category_id);
             }
             const groups = [...groupMap.values()];
             setModelGroups(groups);
@@ -1035,6 +1036,10 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
                   // Auto-fill body_type_id if not saved on the appointment and only 1 option
                   if (!appt.body_type_id && filtBT.length === 1) {
                     setForm(p => ({ ...p, body_type_id: String(filtBT[0].id) }));
+                  }
+                  // Auto-fill cc_category_id if not saved on the appointment and only 1 option
+                  if (!appt.cc_category_id && grp.ccCategoryIds?.length === 1) {
+                    setForm(p => ({ ...p, cc_category_id: String(grp.ccCategoryIds[0]) }));
                   }
                   // Auto-fill segment_ids: if not saved, try fetching from the customer vehicle record
                   if (!appt.segment_ids || appt.segment_ids.length === 0) {
@@ -1104,10 +1109,11 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
     setModels(allRows);
     const groupMap = new Map();
     for (const m of allRows) {
-      if (!groupMap.has(m.name)) groupMap.set(m.name, { name: m.name, firstId: m.id, segmentIds: [], bodyTypeIds: [] });
+      if (!groupMap.has(m.name)) groupMap.set(m.name, { name: m.name, firstId: m.id, segmentIds: [], bodyTypeIds: [], ccCategoryIds: [] });
       const g = groupMap.get(m.name);
       if (m.segment_id && !g.segmentIds.includes(m.segment_id)) g.segmentIds.push(m.segment_id);
       if (m.body_type_id && !g.bodyTypeIds.includes(m.body_type_id)) g.bodyTypeIds.push(m.body_type_id);
+      if (m.cc_category_id && !g.ccCategoryIds.includes(m.cc_category_id)) g.ccCategoryIds.push(m.cc_category_id);
     }
     setModelGroups([...groupMap.values()]);
   }
@@ -1129,6 +1135,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
       model_id: String(grp.firstId),
       body_type_id: filtBT.length === 1 ? String(filtBT[0].id) : '',
       segment_ids: [],
+      cc_category_id: grp.ccCategoryIds?.length === 1 ? String(grp.ccCategoryIds[0]) : '',
     }));
   }
 
@@ -1359,7 +1366,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
                   <label>CC Category</label>
                   <MiniSearchSelect value={form.cc_category_id}
                     onChange={v => setForm(p => ({ ...p, cc_category_id: v }))}
-                    options={ccCats.map(c => ({ value: String(c.id), label: c.name }))}
+                    options={ccCats.map((c, _i) => ({ value: c.id != null ? String(c.id) : `fallback-${_i}`, label: c.name }))}
                     placeholder="CC category" disabled={locked || !form.model_id} />
                 </div>
               ) : (
@@ -1377,10 +1384,10 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
                     <div className="ea-field ea-full">
                       <label>Segments</label>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {availableSegs.map(s => {
+                        {availableSegs.map((s, _i) => {
                           const on = form.segment_ids.includes(s.id);
                           return (
-                            <button key={s.id} type="button"
+                            <button key={s.id || _i} type="button"
                               disabled={locked}
                               onClick={() => !locked && setForm(p => ({
                                 ...p,
@@ -1475,8 +1482,8 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
               {/* Selected services list */}
               {apptServices.length > 0 && (
                 <div style={{ marginBottom: 10, border: '1px solid var(--border)', borderRadius: 9, overflow: 'hidden' }}>
-                  {apptServices.map(s => (
-                    <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
+                  {apptServices.map((s, _idx) => (
+                    <div key={s.id || _idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
                       <span style={{ fontSize: 13 }}>{s.name}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span style={{ fontSize: 13, fontWeight: 700, color: '#0f766e' }}>₹{Number(s.price).toLocaleString('en-IN')}</span>
@@ -1498,8 +1505,8 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
               {hubCategories.length > 0 && (
                 <div className="ca-svc-picker">
                   <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    {!svcSearch.trim() && hubCategories.map(c => (
-                      <button key={c.id} type="button" onClick={() => setSelectedCatId(c.id)}
+                    {!svcSearch.trim() && hubCategories.map((c, _idx) => (
+                      <button key={c.id || _idx} type="button" onClick={() => setSelectedCatId(c.id)}
                         style={{ padding: '3px 10px', borderRadius: 20, border: `1.5px solid ${selectedCatId === c.id ? 'var(--primary)' : 'var(--border)'}`, background: selectedCatId === c.id ? 'rgba(22,185,148,0.12)' : 'var(--bg)', color: selectedCatId === c.id ? 'var(--primary)' : 'var(--text)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                         {c.name}
                       </button>
@@ -1511,10 +1518,10 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
                     </div>
                   </div>
                   <div style={{ maxHeight: 160, overflowY: 'auto' }}>
-                    {pickerServices.map(svc => {
+                    {pickerServices.map((svc, _idx) => {
                       const on = apptServices.some(s => s.id === svc.service_id);
                       return (
-                        <div key={svc.service_id} onClick={() => toggleService(svc)}
+                        <div key={svc.service_id || _idx} onClick={() => toggleService(svc)}
                           style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', cursor: 'pointer', background: on ? '#f0f9ff' : 'transparent', borderBottom: '1px solid var(--border)', transition: 'background .1s' }}>
                           <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${on ? 'var(--primary)' : 'var(--border)'}`, background: on ? 'var(--primary)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             {on && <CheckCircle2 size={10} style={{ color: '#fff' }} />}
@@ -1742,11 +1749,12 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
       const groupMap = new Map();
       for (const m of allRows) {
         if (!groupMap.has(m.name)) {
-          groupMap.set(m.name, { name: m.name, firstId: m.id, segmentIds: [], bodyTypeIds: [] });
+          groupMap.set(m.name, { name: m.name, firstId: m.id, segmentIds: [], bodyTypeIds: [], ccCategoryIds: [] });
         }
         const g = groupMap.get(m.name);
         if (m.segment_id && !g.segmentIds.includes(m.segment_id)) g.segmentIds.push(m.segment_id);
         if (m.body_type_id && !g.bodyTypeIds.includes(m.body_type_id)) g.bodyTypeIds.push(m.body_type_id);
+        if (m.cc_category_id && !g.ccCategoryIds.includes(m.cc_category_id)) g.ccCategoryIds.push(m.cc_category_id);
       }
       setModelGroups([...groupMap.values()]);
     } catch { setModelGroups([]); }
@@ -1758,7 +1766,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
     setSelectedModelName(modelName);
     const group = modelGroups.find(g => g.name === modelName);
     if (!group) {
-      setNewVeh(v => ({ ...v, model_id: '', body_type_id: '', segment_ids: [] }));
+      setNewVeh(v => ({ ...v, model_id: '', body_type_id: '', segment_ids: [], cc_category_id: '' }));
       setAvailableSegs([]); setAvailableBodyTypes([]);
       return;
     }
@@ -1772,6 +1780,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
       model_id: group.firstId,
       body_type_id: filteredBT.length === 1 ? filteredBT[0].id : '',
       segment_ids: [],
+      cc_category_id: group.ccCategoryIds?.length === 1 ? group.ccCategoryIds[0] : '',
     }));
   }
 
@@ -1798,7 +1807,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
     if (!newVeh.vehicle_number.trim()) { setError('Vehicle number is required'); return; }
     if (!newVeh.make_id) { setError('Make is required'); return; }
     if (!newVeh.model_id) { setError('Model is required'); return; }
-    if (!newVeh.segment_ids?.length) { setError('Segment is required'); return; }
+    if (!newVehIs2W && !newVeh.segment_ids?.length) { setError('Segment is required'); return; }
     setError('');
     try {
       const r = await api(`/api/customers/${encodeURIComponent(selectedCust.mobile)}/vehicles`, {
@@ -2171,8 +2180,8 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                   {!vehLoading && custVehicles.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 13, color: 'var(--text-muted)' }}>No vehicles on record</div>
                   )}
-                  {custVehicles.map(v => (
-                    <button key={v.id} className="ca-veh-card" onClick={() => { setError(''); pickVehicle(v); }}>
+                  {custVehicles.map((v, _idx) => (
+                    <button key={v.id || _idx} className="ca-veh-card" onClick={() => { setError(''); pickVehicle(v); }}>
                       <div className="ca-veh-plate">{v.vehicle_number}</div>
                       <div className="ca-veh-details">
                         {[v.vehicle_type_name, v.make_name, v.model_name].filter(Boolean).join(' · ') || 'Vehicle'}
@@ -2245,10 +2254,10 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                         <div>
                           <label className="ca-lbl">Fuel Type <span style={{ color: '#dc2626' }}>*</span></label>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {availableSegs.map(s => {
+                            {availableSegs.map((s, _i) => {
                               const on = newVeh.segment_ids.includes(s.id);
                               return (
-                                <button key={s.id} type="button"
+                                <button key={s.id || _i} type="button"
                                   onClick={() => setNewVeh(v => ({
                                     ...v,
                                     segment_ids: on ? v.segment_ids.filter(x => x !== s.id) : [...v.segment_ids, s.id],
@@ -2272,7 +2281,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                         value={newVeh.cc_category_id}
                         onChange={v => setNewVeh(x => ({ ...x, cc_category_id: v }))}
                         placeholder="Select CC category…"
-                        options={ccCats.map(c => ({ value: c.id, label: c.name }))}
+                        options={ccCats.map((c, _i) => ({ value: c.id ?? `fallback-${_i}`, label: c.name }))}
                       />
                     </div>
                   )}
@@ -2395,8 +2404,8 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                     {/* Selected services */}
                     {apptServices.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
-                        {apptServices.map(s => (
-                          <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, background: 'rgba(22,185,148,0.12)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}>
+                        {apptServices.map((s, _idx) => (
+                          <span key={s.id || _idx} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, background: 'rgba(22,185,148,0.12)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}>
                             {s.name}
                             {s.price > 0 && <span style={{ fontWeight: 700, color: 'var(--primary-hover)' }}>₹{Number(s.price).toLocaleString('en-IN')}</span>}
                             <button type="button" onClick={() => setApptServices(prev => prev.filter(x => x.id !== s.id))}
@@ -2423,8 +2432,8 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                         <div style={{ width: 130, borderRight: '1px solid var(--border)', overflowY: 'auto', flexShrink: 0 }}>
                           {hubSvcLoading
                             ? <div style={{ padding: '10px', fontSize: 12, color: 'var(--text-muted)' }}>Loading…</div>
-                            : hubCategories.map(cat => (
-                              <button key={cat.id} type="button" onClick={() => setSelectedCatId(cat.id)}
+                            : hubCategories.map((cat, _idx) => (
+                              <button key={cat.id || _idx} type="button" onClick={() => setSelectedCatId(cat.id)}
                                 style={{ width: '100%', textAlign: 'left', padding: '8px 10px', background: selectedCatId === cat.id ? 'var(--primary-light,rgba(22,185,148,0.10))' : 'transparent', border: 'none', borderLeft: selectedCatId === cat.id ? '3px solid var(--primary)' : '3px solid transparent', cursor: 'pointer', fontSize: 12, fontWeight: selectedCatId === cat.id ? 700 : 400, color: selectedCatId === cat.id ? 'var(--primary)' : 'var(--text)' }}>
                                 {cat.name}
                               </button>
@@ -2439,10 +2448,10 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                           <div style={{ padding: '20px', textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
                             {svcSearch ? 'No services found' : hubCategories.length === 0 ? 'No services assigned to this hub' : '← Select a category'}
                           </div>
-                        ) : pickerServices.map(svc => {
+                        ) : pickerServices.map((svc, _idx) => {
                           const isOn = apptServices.some(s => s.id === svc.service_id);
                           return (
-                            <button key={svc.service_id} type="button"
+                            <button key={svc.service_id || _idx} type="button"
                               onClick={() => toggleService(svc)}
                               style={{ width: '100%', textAlign: 'left', padding: '8px 12px', background: isOn ? '#f0fdf4' : 'transparent', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, color: 'var(--text)' }}>
                               <span>{svc.name}</span>
