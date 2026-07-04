@@ -741,6 +741,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
             inc_rate: incRate > 0 ? incRate.toFixed(2) : '',
             unit_rate: exRate > 0 ? exRate.toFixed(2) : '',
             gst_percent: gst,
+            hsn_sac: s.sac_code || '',
             is_fixed: true,
             discount_type,
             discount_value,
@@ -1422,7 +1423,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                                 onClick={() => {
                                   if (alreadyAdded) return;
                                   const fullSvc = services.find(s => s.id === svc.service_id) || {};
-                                  addServiceItem({ id: svc.service_id, name: svc.name, gst_percent: fullSvc.gst_percent ?? 0 });
+                                  addServiceItem({ id: svc.service_id, name: svc.name, gst_percent: fullSvc.gst_percent ?? 0, sac_code: fullSvc.sac_code || '' });
                                 }}
                                 style={{
                                   width: '100%', textAlign: 'left', padding: '9px 16px',
