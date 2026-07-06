@@ -3222,7 +3222,9 @@ export default function LeadsPage() {
   const [search, setSearch] = useState(() => searchParams.get('search') || '');
   const [statusFilters, setStatusFilters] = useState([]); // multi-select array
   const [createdByFilter, setCreatedByFilter] = useState('');
+  const [creatorFilter, setCreatorFilter] = useState('');
   const [statusDDOpen, setStatusDDOpen] = useState(false);
+
   const statusDDRef = useRef(null);
 
   // Advanced filters panel
@@ -3380,6 +3382,15 @@ export default function LeadsPage() {
     return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [leads]);
 
+  const creators = useMemo(() => {
+    const map = {};
+    for (const l of leads) {
+      if (l.created_by_id && l.created_by_name) map[l.created_by_id] = l.created_by_name;
+    }
+    return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [leads]);
+
+
   // Count active advanced filters
   const advCount = [dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource].filter(Boolean).length;
 
@@ -3402,7 +3413,14 @@ export default function LeadsPage() {
       const matchesStatus = l.status && statusFilters.includes(l.status);
       if (!matchesNew && !matchesStatus) return false;
     }
-    if (createdByFilter && String(l.assigned_to) !== createdByFilter) return false;
+    if (createdByFilter) {
+      if (createdByFilter === 'unassigned') {
+        if (l.assigned_to) return false;
+      } else {
+        if (String(l.assigned_to) !== createdByFilter) return false;
+      }
+    }
+    if (creatorFilter && String(l.created_by_id) !== creatorFilter) return false;
 
     // Date range
     if (dateFrom || dateTo) {
@@ -3430,7 +3448,7 @@ export default function LeadsPage() {
   });
 
   // Reset to page 1 whenever filters change
-  useEffect(() => { setPage(1); }, [search, statusFilters, createdByFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
+  useEffect(() => { setPage(1); }, [search, statusFilters, createdByFilter, creatorFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
 
   // Status counts — scoped to selected assignee if one is active
   const leadsForCounts = createdByFilter
@@ -3990,10 +4008,23 @@ export default function LeadsPage() {
                 <UserCheck size={13} className="lp-creator-icon" />
                 <select className="lp-creator-select" value={createdByFilter} onChange={e => setCreatedByFilter(e.target.value)}>
                   <option value="">All assignees</option>
+                  <option value="unassigned">Unassigned</option>
                   {assignees.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
                 <ChevronDown size={13} className="lp-creator-caret" />
                 {createdByFilter && <button className="lp-creator-clear" onClick={() => setCreatedByFilter('')}><X size={11} /></button>}
+              </div>
+            )}
+
+            {creators.length > 0 && (
+              <div className="lp-creator-wrap">
+                <User size={13} className="lp-creator-icon" />
+                <select className="lp-creator-select" value={creatorFilter} onChange={e => setCreatorFilter(e.target.value)}>
+                  <option value="">All creators</option>
+                  {creators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown size={13} className="lp-creator-caret" />
+                {creatorFilter && <button className="lp-creator-clear" onClick={() => setCreatorFilter('')}><X size={11} /></button>}
               </div>
             )}
 
@@ -4242,6 +4273,7 @@ export default function LeadsPage() {
                 <th>Status</th>
                 <th><div className="th-cell"><UserCheck size={13} /> Assign To</div></th>
                 <th><div className="th-cell"><Calendar size={13} /> Next Follow-up</div></th>
+                <th><div className="th-cell"><User size={13} /> Created By</div></th>
                 <th style={{ width: 44 }} />
               </tr>
             </thead>
@@ -4271,25 +4303,6 @@ export default function LeadsPage() {
                   </td>
                   <td>
                     <div className="lp-customer-row">
-                      {(() => {
-                        const av = getAvatarStyle(l.name || l.mobile);
-                        const hasOverdue = l.next_follow_up_date && (() => { const d = new Date(l.next_follow_up_date); const today = new Date(); today.setHours(0,0,0,0); return d < today; })();
-                        return (
-                          <div style={{ position: 'relative', display: 'inline-block' }}>
-                            <div className="lp-cust-avatar" style={{ background: av.bg, color: av.color }}>
-                              {getAvatarInitials(l.name, l.mobile)}
-                            </div>
-                            {hasOverdue && (
-                              <span style={{
-                                position: 'absolute', top: 0, right: 0,
-                                width: 9, height: 9, borderRadius: '50%',
-                                background: '#dc2626', border: '2px solid #fff',
-                                display: 'block'
-                              }} />
-                            )}
-                          </div>
-                        );
-                      })()}
                       <div className="lp-customer">
                         <strong>{l.name || <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>—</span>}</strong>
                         <span>{l.mobile}</span>
@@ -4386,6 +4399,19 @@ export default function LeadsPage() {
                         </span>
                       );
                     })() : <span className="lp-muted">—</span>}
+                  </td>
+                  {/* Created By column */}
+                  <td>
+                    {l.created_by_name ? (
+                      <div className="lp-created-by">
+                        {(() => { const av = getAvatarStyle(l.created_by_name); return (
+                          <div className="lp-created-by-avatar" style={{ background: av.bg, color: av.color }}>
+                            {l.created_by_name.charAt(0).toUpperCase()}
+                          </div>
+                        ); })()}
+                        <span>{l.created_by_name}</span>
+                      </div>
+                    ) : <span className="lp-muted">—</span>}
                   </td>
                   <td onClick={e => e.stopPropagation()}>
                     <ActionMenu lead={l} canEdit={canEdit} canDelete={canDelete}
