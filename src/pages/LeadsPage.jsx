@@ -326,7 +326,7 @@ function ActionMenu({ lead, canEdit, canDelete, onView, onEdit, onDelete }) {
 }
 
 // ── View Lead Modal ───────────────────────────────────────────────────────────
-function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
+function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
   useBodyLock();
   const { user: currentUser } = useAuth();
   const [lead, setLead] = useState(null);
@@ -445,6 +445,9 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
       return [item.id, Math.floor((end - start) / 1000)];
     }));
   })();
+
+  const leadStatusObj = statusList.find(s => s.name === lead?.status);
+  const isLeadLocked = !!leadStatusObj?.is_locked || !!lead?.is_converted;
 
   const statusObj = lead ? { color: '#6366f1' } : null; // fallback; real color comes from StatusBadge
   const initials = lead?.name
@@ -677,8 +680,8 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
                       const d       = new Date(fu.due_date);
                       const today   = new Date(); today.setHours(0,0,0,0);
                       const diff    = Math.round((d - today) / 86400000);
-                      const isOverdue  = !fu.is_done && diff < 0;
-                      const isToday    = !fu.is_done && diff === 0;
+                      const isOverdue  = !fu.is_done && !isLeadLocked && diff < 0;
+                      const isToday    = !fu.is_done && !isLeadLocked && diff === 0;
                       const dateLabel  = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                       const timeLabel  = fu.due_at
                         ? new Date(fu.due_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
@@ -697,7 +700,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit }) {
                             </div>
                             {fu.note && <div className="lp-fu-detail-note">{fu.note}</div>}
                             <div className="lp-fu-detail-meta">Status: <strong>{fu.status_name || '—'}</strong></div>
-                            {!fu.is_done && (
+                            {!fu.is_done && !isLeadLocked && (
                               <button
                                 style={{ marginTop: 6, fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}
                                 onClick={() => setRescheduleId(fu.id)}
@@ -3732,10 +3735,12 @@ export default function LeadsPage() {
                   </div>
                 ) : null}
                 {!fuLoading && visibleEvents.map(ev => {
+                  const evStatusObj = statusList.find(s => s.name === ev.lead_current_status);
+                  const isEvLocked = !!evStatusObj?.is_locked || ev.lead_current_status === 'Appointment Scheduled' || ev.lead_current_status === 'Appointment Completed';
                   const cfg = getStatusCfg(ev.lead_current_status);
                   const initials = (ev.lead_name || ev.lead_mobile || '?').charAt(0).toUpperCase();
                   const _today = new Date(); const _localToday = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, '0')}-${String(_today.getDate()).padStart(2, '0')}`;
-                  const isOverdue = ev.due_date && ev.due_date < _localToday;
+                  const isOverdue = ev.due_date && ev.due_date < _localToday && !isEvLocked;
 
                   // Context message shown below the lead name
                   // is_team_followup  → manager seeing a team member's follow-up
@@ -3770,17 +3775,19 @@ export default function LeadsPage() {
                         )}
                         {ev.note && <div className="lp-fu-meta" style={{ marginTop: 2 }}>{ev.note}</div>}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <button className="lp-fu-done-btn" onClick={e => { e.stopPropagation(); markEventDone(ev.id); }}>
-                          <CheckCircle2 size={13} /> Done
-                        </button>
-                        <button
-                          style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-                          onClick={e => { e.stopPropagation(); setRescheduleEvent({ id: ev.id, lead_id: ev.lead_id, lead_status: ev.lead_current_status }); }}
-                        >
-                          Reschedule
-                        </button>
-                      </div>
+                      {!isEvLocked && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <button className="lp-fu-done-btn" onClick={e => { e.stopPropagation(); markEventDone(ev.id); }}>
+                            <CheckCircle2 size={13} /> Done
+                          </button>
+                          <button
+                            style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                            onClick={e => { e.stopPropagation(); setRescheduleEvent({ id: ev.id, lead_id: ev.lead_id, lead_status: ev.lead_current_status }); }}
+                          >
+                            Reschedule
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -4380,7 +4387,7 @@ export default function LeadsPage() {
                   </td>
                   {/* Next Follow-up column */}
                   <td>
-                    {l.next_follow_up_date ? (() => {
+                    {l.next_follow_up_date && !l.is_converted && !statusList.find(s => s.name === l.status)?.is_locked ? (() => {
                       const d     = new Date(l.next_follow_up_date);
                       const today = new Date(); today.setHours(0,0,0,0);
                       const diff  = Math.round((d - today) / 86400000);
@@ -4560,7 +4567,7 @@ export default function LeadsPage() {
 
       {/* Modals */}
       {viewId && (
-        <ViewLeadModal leadId={viewId} canEdit={canEdit}
+        <ViewLeadModal leadId={viewId} canEdit={canEdit} statusList={statusList}
           onClose={() => setViewId(null)}
           onEdit={l => { setViewId(null); setEditLead(l); }} />
       )}
