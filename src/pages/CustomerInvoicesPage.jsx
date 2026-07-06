@@ -303,8 +303,8 @@ function VehicleHistoryModal({ onClose }) {
                               #{inv.id}
                             </span>
                             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(inv.created_at)}</span>
-                            {inv.hub_name && (
-                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>📍 {inv.hub_name}</span>
+                            {(inv.hub_full_name || inv.hub_name) && (
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>📍 {inv.hub_full_name || inv.hub_name}</span>
                             )}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -534,10 +534,16 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
           className="btn btn-ghost"
           onClick={() => {
             const o = document.title;
-            document.title = inv ? `CI-${String(inv.id).padStart(6, '0')}` : o;
+            if (inv) {
+              const invId = `CI-${String(inv.id).padStart(6, '0')}`;
+              const vNum = inv.vehicle_number || '';
+              const vModel = inv.model_name || '';
+              document.title = [invId, vNum, vModel].filter(Boolean).join('_');
+            }
             window.print();
             document.title = o;
           }}
+
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
           title="Print / Save as PDF"
         >
@@ -565,7 +571,15 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
                 {[
                   { label: 'Customer', value: inv.customer_name },
                   { label: 'Mobile', value: inv.mobile },
-                  { label: 'Hub / Branch', value: inv.hub_name },
+                  {
+                    label: 'Hub / Branch',
+                    value: (
+                      <>
+                        <span className="est-no-print">{inv.hub_full_name || inv.hub_name}</span>
+                        <span className="est-print-show">{inv.hub_name}</span>
+                      </>
+                    )
+                  },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ display: 'flex' }}>
                     <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>{label}</span>
@@ -939,7 +953,7 @@ export default function CustomerInvoicesPage() {
   const showToast = useCallback((msg, type = 'success') => setToast({ msg, type }), []);
 
   useEffect(() => {
-    api('/api/hubs?limit=100')
+    api('/api/hubs?is_active=true&limit=100')
       .then(r => setHubs(r.items || []))
       .catch(() => { });
   }, []);
@@ -1039,7 +1053,7 @@ export default function CustomerInvoicesPage() {
                 onChange={e => { setHubFilter(e.target.value); setPage(1); }}
               >
                 <option value="">All hubs</option>
-                {hubs.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                {hubs.map(h => <option key={h.id} value={h.id}>{h.hub_name}</option>)}
               </select>
             )}
             <select
@@ -1112,7 +1126,7 @@ export default function CustomerInvoicesPage() {
                             </div>
                           </td>
                           <td style={{ fontSize: 13 }}>{inv.vehicle_number || '—'}</td>
-                          <td style={{ fontSize: 13 }}>{inv.hub_name || inv.hub?.name || '—'}</td>
+                          <td style={{ fontSize: 13 }}>{inv.hub_full_name || inv.hub_name || inv.hub?.name || '—'}</td>
                           <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmt(gt)}</td>
                           <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 600 }}>{fmt(pd)}</td>
                           <td style={{

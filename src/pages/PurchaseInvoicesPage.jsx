@@ -404,10 +404,16 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
             className="btn btn-ghost"
             onClick={() => {
               const o = document.title;
-              document.title = inv ? `PI-${String(inv.id).padStart(6, '0')}` : o;
+              if (inv) {
+                const invId = `PI-${String(inv.id).padStart(6, '0')}`;
+                const vNum = inv.vehicle_number || '';
+                const vModel = inv.model_name || '';
+                document.title = [invId, vNum, vModel].filter(Boolean).join('_');
+              }
               window.print();
               document.title = o;
             }}
+
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
             title="Print / Save as PDF"
           >
@@ -1146,7 +1152,7 @@ export default function PurchaseInvoicesPage() {
 
   // Load hubs for filter
   useEffect(() => {
-    api('/api/hubs?limit=100')
+    api('/api/hubs?is_active=true&limit=100')
       .then(r => setHubs(r.items || []))
       .catch(() => { });
   }, []);
@@ -1236,7 +1242,7 @@ export default function PurchaseInvoicesPage() {
                 onChange={e => { setHubFilter(e.target.value); setPage(1); }}
               >
                 <option value="">All hubs</option>
-                {hubs.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                {hubs.map(h => <option key={h.id} value={h.id}>{h.hub_name}</option>)}
               </select>
             )}
             <select

@@ -201,6 +201,7 @@
 }
 /* QR block inside print header — hidden on screen, shown when printing */
 .est-print-qr { display: none; }
+.est-print-show { display: none; }
 
 /* Screen-only bar: normal view, hidden when printing */
 .est-screen-only { display: flex; }
@@ -231,6 +232,7 @@
   /* Show QR code in print */
   .est-print-qr { display: flex !important; }
   .est-print-qr img { width: 72px !important; height: 72px !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .est-print-show { display: inline !important; }
 
   /* Hide all internal/action sections */
   .est-no-print, .btn, button { display: none !important; }

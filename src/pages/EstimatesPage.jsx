@@ -632,7 +632,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       try {
         const [apptRes, hubRes, svcRes, partRes] = await Promise.all([
           api(`/api/appointments?limit=200${isHubUser && userHubId ? `&hub_id=${userHubId}` : ''}`),
-          api('/api/hubs?limit=100'),
+          api('/api/hubs?is_active=true&limit=100'),
           api('/api/services/services'),
           api('/api/parts'),
         ]);
@@ -2065,7 +2065,13 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
               className="btn btn-ghost"
               onClick={() => {
                 const o = document.title;
-                document.title = estimate ? `EST-${String(estimate.id).padStart(6, '0')}` : o;
+                if (estimate) {
+                  const estId = `EST-${String(estimate.id).padStart(6, '0')}`;
+                  const vNum = estimate.vehicle_number || '';
+                  const vModel = estimate.model_name || '';
+                  // This creates an array of the parts, removes empty ones, and joins them with "_"
+                  document.title = [estId, vNum, vModel].filter(Boolean).join('_');
+                }
                 window.print();
                 document.title = o;
               }}
@@ -2145,7 +2151,15 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 {[
                   { label: 'Customer', value: estimate.customer_name },
                   { label: 'Mobile', value: estimate.mobile },
-                  { label: 'Hub', value: estimate.hub_name },
+                  {
+                    label: 'Hub',
+                    value: (
+                      <>
+                        <span className="est-no-print">{estimate.hub_full_name || estimate.hub_name}</span>
+                        <span className="est-print-show">{estimate.hub_name}</span>
+                      </>
+                    )
+                  },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ display: 'flex' }}>
                     <span className="est-info-label">{label}</span>
@@ -2697,7 +2711,7 @@ export default function EstimatesPage() {
 
   // Load hubs once for filter dropdown
   react.useEffect(() => {
-    api('/api/hubs?limit=100')
+    api('/api/hubs?is_active=true&limit=100')
       .then(r => { setHubs(r.items || []); setHubsLoaded(true); })
       .catch(() => setHubsLoaded(true));
   }, []);
@@ -2887,7 +2901,7 @@ export default function EstimatesPage() {
                             <span className="est-cust-arrow">→</span>
                           </div>
                         </td>
-                        <td style={{ fontSize: 13 }}>{est.hub_name || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                        <td style={{ fontSize: 13 }}>{est.hub_full_name || est.hub_name || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                         <td style={{ textAlign: 'right', fontSize: 13 }}>{est.item_count ?? (est.items?.length ?? '—')}</td>
                         <td style={{ textAlign: 'right', fontSize: 13, fontWeight: 700 }}>{fmt(est.grand_total)}</td>
                         <td><StatusBadge status={est.status} /></td>
