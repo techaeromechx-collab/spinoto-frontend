@@ -2217,8 +2217,24 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           </div>
 
           {estimate.notes && !['fully_approved', 'partially_approved', 'work_in_progress', 'work_completed'].includes(status) && (
-            <div className="est-no-print" style={{ background: 'var(--bg-soft)', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: 'var(--text)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Notes</div>
+            <div className="est-no-print" style={{ 
+              background: status === 'revision_requested' ? '#fff7ed' : 'var(--bg-soft)', 
+              border: status === 'revision_requested' ? '1px solid #ffedd5' : 'none',
+              borderRadius: 8, 
+              padding: '12px 14px', 
+              fontSize: 13, 
+              color: 'var(--text)' 
+            }}>
+              <div style={{ 
+                fontSize: 11, 
+                fontWeight: 800, 
+                color: status === 'revision_requested' ? '#9a3412' : 'var(--text-muted)', 
+                textTransform: 'uppercase', 
+                letterSpacing: '0.05em', 
+                marginBottom: 6 
+              }}>
+                {status === 'revision_requested' ? 'Revision Requested' : 'Notes'}
+              </div>
               {estimate.notes}
             </div>
           )}
@@ -2687,6 +2703,7 @@ export default function EstimatesPage() {
   const [searchInput, setSearchInput] = react.useState(''); // what the user types
   const [search, setSearch] = react.useState('');           // debounced value used for fetching
   const [statusFilter, setStatusFilter] = react.useState('');
+  const [vehicleTypeFilter, setVehicleTypeFilter] = react.useState('');
 
   // Debounce: wait 300ms after the last keystroke before hitting the API
   react.useEffect(() => {
@@ -2723,6 +2740,7 @@ export default function EstimatesPage() {
       if (search.trim()) q.set('search', search.trim());
       if (statusFilter) q.set('status', statusFilter);
       if (hubFilter) q.set('hub_id', hubFilter);
+      if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
       q.set('page', String(page));
       q.set('limit', String(pageSize));
       const res = await api(`/api/estimates?${q.toString()}`);
@@ -2733,7 +2751,7 @@ export default function EstimatesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, hubFilter, page, pageSize, showToast]);
+  }, [search, statusFilter, hubFilter, vehicleTypeFilter, page, pageSize, showToast]);
 
   react.useEffect(() => { fetchEstimates(); }, [fetchEstimates]);
 
@@ -2830,6 +2848,16 @@ export default function EstimatesPage() {
                 <option key={val} value={val}>{m.label}</option>
               ))}
             </select>
+            <select
+              className="form-input"
+              style={{ flex: '0 0 140px' }}
+              value={vehicleTypeFilter}
+              onChange={e => { setVehicleTypeFilter(e.target.value); setPage(1); }}
+            >
+              <option value="">All Vehicles</option>
+              <option value="2W">2W Only</option>
+              <option value="4W">4W Only</option>
+            </select>
             {!isHubUser && (
               <select
                 className="form-input"
@@ -2896,7 +2924,29 @@ export default function EstimatesPage() {
                           >
                             <div>
                               <div style={{ fontWeight: 600, fontSize: 13 }} className="est-cust-name">{est.customer_name || '—'}</div>
-                              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{est.vehicle_number || '—'}</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 11 }}>{est.vehicle_number || '—'}</span>
+                                  {est.vehicle_type_name && (
+                                    <span style={{
+                                      fontSize: 9,
+                                      fontWeight: 800,
+                                      padding: '1px 5px',
+                                      borderRadius: 4,
+                                      background: est.vehicle_type_name.toLowerCase().includes('2') ? '#dbeafe' : '#dcfce7',
+                                      color: est.vehicle_type_name.toLowerCase().includes('2') ? '#1e40af' : '#15803d',
+                                      border: `1px solid ${est.vehicle_type_name.toLowerCase().includes('2') ? '#bfdbfe' : '#bbf7d0'}`
+                                    }}>
+                                      {est.vehicle_type_name.toLowerCase().includes('2') ? '2W' : '4W'}
+                                    </span>
+                                  )}
+                                </div>
+                                {(est.make_name || est.model_name) && (
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                    {[est.make_name, est.model_name].filter(Boolean).join(' ')}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             <span className="est-cust-arrow">→</span>
                           </div>

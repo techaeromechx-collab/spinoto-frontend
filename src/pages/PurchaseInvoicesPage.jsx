@@ -1142,6 +1142,7 @@ export default function PurchaseInvoicesPage() {
   const [search, setSearch] = useState('');
   const [hubFilter, setHubFilter] = useState(() => user?.hub_id ? String(user.hub_id) : '');
   const [statusFilter, setStatusFilter] = useState('');
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('');
   const [hubs, setHubs] = useState([]);
 
   // Auto-open a specific invoice if navigated here from Estimates page
@@ -1164,6 +1165,7 @@ export default function PurchaseInvoicesPage() {
       if (search.trim()) q.set('search', search.trim());
       if (hubFilter) q.set('hub_id', hubFilter);
       if (statusFilter) q.set('status', statusFilter);
+      if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
       q.set('page', page);
       q.set('limit', pageSize);
       const res = await api(`/api/purchase-invoices?${q.toString()}`);
@@ -1174,7 +1176,7 @@ export default function PurchaseInvoicesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, hubFilter, statusFilter, page, pageSize, showToast]);
+  }, [search, hubFilter, statusFilter, vehicleTypeFilter, page, pageSize, showToast]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
@@ -1247,6 +1249,16 @@ export default function PurchaseInvoicesPage() {
             )}
             <select
               className="form-input"
+              style={{ flex: '0 0 140px' }}
+              value={vehicleTypeFilter}
+              onChange={e => { setVehicleTypeFilter(e.target.value); setPage(1); }}
+            >
+              <option value="">All Vehicles</option>
+              <option value="2W">2W Only</option>
+              <option value="4W">4W Only</option>
+            </select>
+            <select
+              className="form-input"
               style={{ flex: '0 0 180px' }}
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
@@ -1309,8 +1321,28 @@ export default function PurchaseInvoicesPage() {
                               <div style={{ fontWeight: 600, fontSize: 13 }} className="pi-cust-name">
                                 {inv.customer_name || inv.customer?.name || '—'}
                               </div>
-                              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                {inv.vehicle_number || [inv.make_name, inv.model_name].filter(Boolean).join(' ') || '—'}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 11 }}>{inv.vehicle_number || '—'}</span>
+                                  {inv.vehicle_type_name && (
+                                    <span style={{
+                                      fontSize: 9,
+                                      fontWeight: 800,
+                                      padding: '1px 5px',
+                                      borderRadius: 4,
+                                      background: inv.vehicle_type_name.toLowerCase().includes('2') ? '#dbeafe' : '#dcfce7',
+                                      color: inv.vehicle_type_name.toLowerCase().includes('2') ? '#1e40af' : '#15803d',
+                                      border: `1px solid ${inv.vehicle_type_name.toLowerCase().includes('2') ? '#bfdbfe' : '#bbf7d0'}`
+                                    }}>
+                                      {inv.vehicle_type_name.toLowerCase().includes('2') ? '2W' : '4W'}
+                                    </span>
+                                  )}
+                                </div>
+                                {(inv.make_name || inv.model_name) && (
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                    {[inv.make_name, inv.model_name].filter(Boolean).join(' ')}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <span className="pi-cust-arrow">→</span>

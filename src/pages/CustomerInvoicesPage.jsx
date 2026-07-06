@@ -943,6 +943,7 @@ export default function CustomerInvoicesPage() {
   const [search, setSearch] = useState('');
   const [hubFilter, setHubFilter] = useState(() => user?.hub_id ? String(user.hub_id) : '');
   const [statusFilter, setStatusFilter] = useState('');
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('');
   const [hubs, setHubs] = useState([]);
 
   // Auto-open a specific invoice if navigated here from Estimates page
@@ -965,6 +966,7 @@ export default function CustomerInvoicesPage() {
       if (search.trim()) q.set('search', search.trim());
       if (hubFilter) q.set('hub_id', hubFilter);
       if (statusFilter) q.set('status', statusFilter);
+      if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
       q.set('page', page);
       q.set('limit', pageSize);
       const res = await api(`/api/customer-invoices?${q.toString()}`);
@@ -975,7 +977,7 @@ export default function CustomerInvoicesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, hubFilter, statusFilter, page, pageSize, showToast]);
+  }, [search, hubFilter, statusFilter, vehicleTypeFilter, page, pageSize, showToast]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
@@ -1058,6 +1060,16 @@ export default function CustomerInvoicesPage() {
             )}
             <select
               className="form-input"
+              style={{ flex: '0 0 140px' }}
+              value={vehicleTypeFilter}
+              onChange={e => { setVehicleTypeFilter(e.target.value); setPage(1); }}
+            >
+              <option value="">All Vehicles</option>
+              <option value="2W">2W Only</option>
+              <option value="4W">4W Only</option>
+            </select>
+            <select
+              className="form-input"
               style={{ flex: '0 0 180px' }}
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
@@ -1125,7 +1137,31 @@ export default function CustomerInvoicesPage() {
                               <span className="ci-cust-arrow">→</span>
                             </div>
                           </td>
-                          <td style={{ fontSize: 13 }}>{inv.vehicle_number || '—'}</td>
+                          <td style={{ fontSize: 13 }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontWeight: 600 }}>{inv.vehicle_number || '—'}</span>
+                                {inv.vehicle_type_name && (
+                                  <span style={{
+                                    fontSize: 9,
+                                    fontWeight: 800,
+                                    padding: '1px 5px',
+                                    borderRadius: 4,
+                                    background: inv.vehicle_type_name.toLowerCase().includes('2') ? '#dbeafe' : '#dcfce7',
+                                    color: inv.vehicle_type_name.toLowerCase().includes('2') ? '#1e40af' : '#15803d',
+                                    border: `1px solid ${inv.vehicle_type_name.toLowerCase().includes('2') ? '#bfdbfe' : '#bbf7d0'}`
+                                  }}>
+                                    {inv.vehicle_type_name.toLowerCase().includes('2') ? '2W' : '4W'}
+                                  </span>
+                                )}
+                              </div>
+                              {(inv.make_name || inv.model_name) && (
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                                  {[inv.make_name, inv.model_name].filter(Boolean).join(' ')}
+                                </div>
+                              )}
+                            </div>
+                          </td>
                           <td style={{ fontSize: 13 }}>{inv.hub_full_name || inv.hub_name || inv.hub?.name || '—'}</td>
                           <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmt(gt)}</td>
                           <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 600 }}>{fmt(pd)}</td>
