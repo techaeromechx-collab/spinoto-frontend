@@ -73,11 +73,9 @@ function StatusBadge({ status }) {
 function MethodBadge({ method }) {
   const m = METHOD_META[method] || METHOD_META.other;
   return (
-    <span style={{
-      display: 'inline-block', padding: '2px 8px', borderRadius: 99,
-      fontSize: 11, fontWeight: 700, background: m.bg, color: m.color,
-      whiteSpace: 'nowrap', textTransform: 'capitalize',
-    }}>{method || 'other'}</span>
+    <span className="method-badge" style={{ background: m.bg, color: m.color }}>
+      {method || 'other'}
+    </span>
   );
 }
 
@@ -153,7 +151,25 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
 
   return (
     <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h5 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Add Payment</h5>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <h5 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Add Payment</h5>
+        <div className="quick-pay-btn-group">
+          <button
+            type="button"
+            className="quick-pay-chip quick-pay-chip-cash"
+            onClick={() => setForm(f => ({ ...f, amount: balance.toFixed(2), method: 'cash' }))}
+          >
+            Pay Full Cash (₹{balance.toFixed(2)})
+          </button>
+          <button
+            type="button"
+            className="quick-pay-chip quick-pay-chip-upi"
+            onClick={() => setForm(f => ({ ...f, amount: balance.toFixed(2), method: 'upi' }))}
+          >
+            Pay Full UPI (₹{balance.toFixed(2)})
+          </button>
+        </div>
+      </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ flex: '0 0 120px' }}>
           <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Amount *</label>
@@ -867,7 +883,14 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
                       <tr key={pay.id}>
                         <td style={{ fontSize: 12 }}>{fmtDate(pay.paid_at || pay.created_at)}</td>
                         <td><MethodBadge method={pay.method} /></td>
-                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{pay.reference_no || '—'}</td>
+                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          <div>{pay.reference_no || '—'}</div>
+                          {pay.notes && (
+                            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, fontStyle: 'italic' }}>
+                              Note: {pay.notes}
+                            </div>
+                          )}
+                        </td>
                         <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(pay.amount)}</td>
                         {canDeletePay && (
                           <td>

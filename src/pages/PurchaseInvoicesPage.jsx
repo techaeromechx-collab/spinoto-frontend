@@ -21,7 +21,7 @@ const METHOD_COLORS = {
 function MethodBadge({ method }) {
   const m = METHOD_COLORS[method] || METHOD_COLORS.other;
   return (
-    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 700, background: m.bg, color: m.color, textTransform: 'capitalize' }}>
+    <span className="method-badge" style={{ background: m.bg, color: m.color }}>
       {method?.replace('_', ' ')}
     </span>
   );
@@ -61,7 +61,25 @@ function HubPaymentForm({ invoiceId, balance, onSuccess }) {
 
   return (
     <form onSubmit={submit} style={{ background: 'var(--bg-soft)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Record Hub Payment</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 2 }}>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>Record Hub Payment</div>
+        <div className="quick-pay-btn-group">
+          <button
+            type="button"
+            className="quick-pay-chip quick-pay-chip-cash"
+            onClick={() => setForm(f => ({ ...f, amount: balance.toFixed(2), method: 'cash' }))}
+          >
+            Pay Full Cash (₹{balance.toFixed(2)})
+          </button>
+          <button
+            type="button"
+            className="quick-pay-chip quick-pay-chip-upi"
+            onClick={() => setForm(f => ({ ...f, amount: balance.toFixed(2), method: 'upi' }))}
+          >
+            Pay Full UPI (₹{balance.toFixed(2)})
+          </button>
+        </div>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <div className="form-field">
           <label style={{ fontSize: 12 }}>Amount (₹) *</label>
@@ -854,7 +872,12 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                           <MethodBadge method={pay.method} />
                         </td>
                         <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--text-muted)' }}>
-                          {pay.reference_no || '—'}
+                          <div>{pay.reference_no || '—'}</div>
+                          {pay.notes && (
+                            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, fontStyle: 'italic' }}>
+                              Note: {pay.notes}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 13 }}>
                           ₹{Number(pay.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}

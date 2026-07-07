@@ -631,3 +631,63 @@
   opacity: 1;
   transform: translateX(0);
 }
+
+/* Quick payment action buttons */
+.quick-pay-btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.quick-pay-chip {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  font-family: inherit;
+}
+
+.quick-pay-chip-cash {
+  background: #f0fdf4;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.quick-pay-chip-cash:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.quick-pay-chip-upi {
+  background: #f0fdfa;
+  color: #0f766e;
+  border-color: #99f6e4;
+}
+
+.quick-pay-chip-upi:hover {
+  background: #ccfbf1;
+  border-color: #5eead4;
+}
+
+/* Method badge with print media override */
+.method-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+@media print {
+  .method-badge {
+    background: none !important;
+    color: #111 !important;
+    font-weight: 400 !important;
+    font-size: 12px !important;
+    padding: 0 !important;
+  }
+}
