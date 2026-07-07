@@ -6,7 +6,7 @@ import {
   Wallet, RefreshCw, AlertCircle, CheckCircle2, Clock,
   X, ChevronRight, ChevronLeft, Search, CreditCard,
   MoreVertical, AlertTriangle, Trophy, Calendar, CalendarDays,
-  History, Receipt, Info,
+  History, Receipt, Info, Download,
 } from 'lucide-react';
 import '../styles/PayoutsPage.css';
 
@@ -182,7 +182,7 @@ function PIPaymentsModal({ pi, onClose }) {
 }
 
 // ── Hub Payments Table ────────────────────────────────────────────────────────
-function HubPaymentsTab({ hubName, hubId }) {
+function HubPaymentsTab({ hubName, hubId, onExport }) {
   const navigate = useNavigate();
   const [payments, setPayments] = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -271,6 +271,9 @@ function HubPaymentsTab({ hubName, hubId }) {
             Clear filters
           </button>
         )}
+        <button className="po-btn-ghost" style={{ fontSize:12, padding:'5px 12px', display:'flex', alignItems:'center', gap:6, marginLeft:'auto', whiteSpace:'nowrap' }} onClick={() => onExport({ type: 'history', search, hub_id: hubId, from: fromDate, to: toDate })}>
+          <Download size={13} /> Export CSV
+        </button>
       </div>
 
       {/* Summary bar */}
@@ -333,7 +336,7 @@ function HubPaymentsTab({ hubName, hubId }) {
 }
 
 // ── Global Payment History Tab ────────────────────────────────────────────────
-function GlobalPaymentHistory() {
+function GlobalPaymentHistory({ onExport }) {
   const navigate   = useNavigate();
   const [payments, setPayments] = useState([]);
   const [byHub, setByHub]       = useState([]);
@@ -434,6 +437,9 @@ function GlobalPaymentHistory() {
             Clear all
           </button>
         )}
+        <button className="po-btn-ghost" style={{ padding:'7px 14px', fontSize:13, display:'flex', alignItems:'center', gap:6, marginLeft:'auto' }} onClick={() => onExport({ type: 'history', search, hub_id: hubFilter, from: fromDate, to: toDate })}>
+          <Download size={14} /> Export CSV
+        </button>
       </div>
 
       {loading ? (
@@ -700,7 +706,7 @@ function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
 // ── Invoice Panel (with tabs) ─────────────────────────────────────────────────
 const PAGE_SIZES = [10, 25, 50];
 
-function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkSuccess }) {
+function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkSuccess, onExport }) {
   const navigate    = useNavigate();
   const [tab, setTab]           = useState('invoices');
   const [page, setPage]         = useState(1);
@@ -871,7 +877,7 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
       )}
 
       {/* Payments tab */}
-      {tab==='payments' && <HubPaymentsTab hubName={hubName} hubId={hubId}/>}
+      {tab==='payments' && <HubPaymentsTab hubName={hubName} hubId={hubId} onExport={onExport}/>}
 
       {/* Bulk payment modal */}
       {bulkModal && selectedInvoices.length > 0 && (
@@ -978,7 +984,7 @@ function MobileHubCard({ hub, invoices, onPay, onViewPayments }) {
 }
 
 // ── Mobile Payouts View ───────────────────────────────────────────────────────
-function MobilePayoutsView({ allInvoices, hubs, data, onPay, onViewPayments, loading }) {
+function MobilePayoutsView({ allInvoices, hubs, data, onPay, onViewPayments, loading, onExport }) {
   const [hubFilter, setHubFilter]     = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch]           = useState('');
@@ -1034,6 +1040,14 @@ function MobilePayoutsView({ allInvoices, hubs, data, onPay, onViewPayments, loa
             <option value="paid">Paid</option>
           </select>
         </div>
+        {(() => {
+          const selectedHubId = hubs.find(h=>h.name===hubFilter)?.id;
+          return (
+            <button className="po-btn-ghost" style={{ fontSize:12, padding:'8px', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }} onClick={() => onExport({ type: 'outstanding', search, status: statusFilter, hub_id: selectedHubId })}>
+              <Download size={14} /> Export CSV
+            </button>
+          );
+        })()}
       </div>
 
       {loading ? (
@@ -1096,6 +1110,36 @@ export default function PayoutsPage() {
   }, [showToast]);
 
   useEffect(()=>{ load(); }, [load]);
+
+  const handleExport = useCallback(async ({ type, search, status, hub_id, from, to }) => {
+    try {
+      const { getToken } = await import('../api/client.js');
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const params = new URLSearchParams({ type });
+      if (search) params.set('search', search);
+      if (status) params.set('status', status);
+      if (hub_id) params.set('hub_id', hub_id);
+      if (from)   params.set('from', from);
+      if (to)     params.set('to', to);
+
+      const res = await fetch(`${API_URL}/api/purchase-invoices/export-payouts?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) { showToast('Export failed. Check your permissions.', 'error'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payouts_${type}_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Payouts exported successfully.');
+    } catch {
+      showToast('Export failed. Please try again.', 'error');
+    }
+  }, [showToast]);
 
   async function handlePaySuccess() {
     setPayPi(null);
@@ -1222,6 +1266,9 @@ export default function PayoutsPage() {
                 <option value="paid">Paid</option>
               </select>
               {(search||statusFilter) && <button className="po-btn-ghost" style={{ padding:'7px 14px', fontSize:13 }} onClick={()=>{ setSearch(''); setStatusFilter(''); }}>Clear</button>}
+              <button className="po-btn-ghost" style={{ padding:'7px 14px', fontSize:13, display:'flex', alignItems:'center', gap:6, marginLeft:'auto' }} onClick={() => handleExport({ type: 'outstanding', search, status: statusFilter, hub_id: selectedHubId })}>
+                <Download size={14} /> Export CSV
+              </button>
             </div>
 
             {loading ? (
@@ -1245,6 +1292,7 @@ export default function PayoutsPage() {
                     onPay={setPayPi}
                     onViewPayments={setViewPaymentsPi}
                     onBulkSuccess={handleBulkPaySuccess}
+                    onExport={handleExport}
                   />
                 )}
               </div>
@@ -1260,13 +1308,14 @@ export default function PayoutsPage() {
               onPay={setPayPi}
               onViewPayments={setViewPaymentsPi}
               loading={loading}
+              onExport={handleExport}
             />
           </div>
         </>
       )}
 
       {/* Payment History tab */}
-      {mainTab==='history' && <GlobalPaymentHistory/>}
+      {mainTab==='history' && <GlobalPaymentHistory onExport={handleExport}/>}
 
       {payPi && <PayModal pi={payPi} onClose={()=>setPayPi(null)} onSuccess={handlePaySuccess}/>}
       {viewPaymentsPi && <PIPaymentsModal pi={viewPaymentsPi} onClose={()=>setViewPaymentsPi(null)}/>}
