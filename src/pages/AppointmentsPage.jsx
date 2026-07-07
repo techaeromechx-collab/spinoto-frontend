@@ -2843,10 +2843,6 @@ export default function AppointmentsPage() {
                     </td>
                     <td onClick={e => e.stopPropagation()}>
                       <div className="appt-actions">
-                        <button className="appt-icon-btn" title="View"
-                          onClick={() => setModal({ mode: 'view', appt: a })}>
-                          <Eye size={14} />
-                        </button>
                         {canEdit && statusCfg?.name !== 'Invoice Approved' && (
                           <button className="appt-icon-btn appt-icon-btn--edit" title="Edit"
                             onClick={async () => {
