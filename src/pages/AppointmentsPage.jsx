@@ -2517,6 +2517,7 @@ export default function AppointmentsPage() {
   const [error, setError] = useState('');
   const [statusList, setStatusList] = useState([]);
   const [hubs, setHubs] = useState([]);
+  const [usersList, setUsersList] = useState([]);
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -2524,6 +2525,7 @@ export default function AppointmentsPage() {
   const [filterHub, setFilterHub] = useState(() => user?.hub_id ? String(user.hub_id) : '');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [filterCreatedBy, setFilterCreatedBy] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -2534,15 +2536,17 @@ export default function AppointmentsPage() {
   const [toast, setToast] = useState(null);
   const searchTimer = useRef(null);
 
-  // Load statuses + hubs once
+  // Load statuses + hubs + users once
   useEffect(() => {
     Promise.all([
       api('/api/appointment-statuses'),
       api('/api/hubs?is_active=true&limit=200'),
+      api('/api/users/assignable'),
     ])
-      .then(([sr, hr]) => {
+      .then(([sr, hr, ur]) => {
         setStatusList(sr.items || []);
         setHubs(hr.items || []);
+        setUsersList(ur.items || []);
       })
       .catch(() => { });
   }, []);
@@ -2556,6 +2560,7 @@ export default function AppointmentsPage() {
       if (filterHub) qs.set('hub_id', filterHub);
       if (dateFrom) qs.set('date_from', dateFrom);
       if (dateTo) qs.set('date_to', dateTo);
+      if (filterCreatedBy) qs.set('created_by_id', filterCreatedBy);
       const r = await api(`/api/appointments?${qs}`);
       setAppts(r.items || []);
       setTotal(r.total || 0);
@@ -2564,7 +2569,7 @@ export default function AppointmentsPage() {
       setStatusCounts(counts);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [search, filterStatus, filterHub, dateFrom, dateTo, page, pageSize]);
+  }, [search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -2658,6 +2663,11 @@ export default function AppointmentsPage() {
               {hubs.map(h => <option key={h.id} value={h.id}>{h.hub_name}</option>)}
             </select>
           )}
+          <select className="appt-filter-sel" value={filterCreatedBy}
+            onChange={e => { setFilterCreatedBy(e.target.value); setPage(1); }}>
+            <option value="">All Created By</option>
+            {usersList.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
           <div className="appt-date-range">
             <input type="date" className="appt-filter-sel" value={dateFrom}
               onChange={e => { setDateFrom(e.target.value); setPage(1); }}
@@ -2725,7 +2735,7 @@ export default function AppointmentsPage() {
                       <Calendar size={36} style={{ opacity: .2, marginBottom: 10 }} />
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>No appointments found</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {search || filterStatus || filterHub || dateFrom || dateTo
+                        {search || filterStatus || filterHub || dateFrom || dateTo || filterCreatedBy
                           ? 'Try adjusting your filters.'
                           : 'Appointments appear here when leads are converted.'}
                       </div>
@@ -2767,6 +2777,11 @@ export default function AppointmentsPage() {
                     </td>
                     <td>
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{a.hub_name || '—'}</div>
+                      {a.created_by_name && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          By: {a.created_by_name}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtDate(a.scheduled_date)}</div>
