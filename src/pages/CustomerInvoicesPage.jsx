@@ -56,6 +56,7 @@ const METHOD_META = {
   upi: { bg: '#dbeafe', color: '#1e40af' },
   card: { bg: '#f3e8ff', color: '#7e22ce' },
   bank_transfer: { bg: '#dcfce7', color: '#166534' },
+  app_payment: { bg: '#fff7ed', color: '#c2410c' },
   other: { bg: '#f3f4f6', color: '#374151' },
 };
 
@@ -188,6 +189,7 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
             <option value="upi">UPI</option>
             <option value="card">Card</option>
             <option value="bank_transfer">Bank Transfer</option>
+            <option value="app_payment">In-App Payment</option>
             <option value="other">Other</option>
           </select>
         </div>

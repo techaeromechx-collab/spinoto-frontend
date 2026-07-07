@@ -16,6 +16,7 @@ const METHOD_COLORS = {
   upi: { bg: '#dbeafe', color: '#1e40af' },
   card: { bg: '#ede9fe', color: '#5b21b6' },
   bank_transfer: { bg: '#dcfce7', color: '#166534' },
+  app_payment: { bg: '#fff7ed', color: '#c2410c' },
   other: { bg: '#f3f4f6', color: '#6b7280' },
 };
 function MethodBadge({ method }) {
@@ -92,6 +93,7 @@ function HubPaymentForm({ invoiceId, balance, onSuccess }) {
             <option value="upi">UPI</option>
             <option value="cash">Cash</option>
             <option value="card">Card</option>
+            <option value="app_payment">In-App Payment</option>
             <option value="other">Other</option>
           </select>
         </div>

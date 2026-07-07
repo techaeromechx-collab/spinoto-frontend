@@ -25,7 +25,7 @@ const PayBadge = ({ status }) => {
   return <span style={{ display:'inline-block', padding:'3px 10px', borderRadius:99, fontSize:11, fontWeight:700, background:m.bg, color:m.color }}>{m.label}</span>;
 };
 
-const METHOD_LABELS = { bank_transfer:'Bank Transfer', upi:'UPI', cash:'Cash', card:'Card', other:'Other' };
+const METHOD_LABELS = { bank_transfer:'Bank Transfer', upi:'UPI', cash:'Cash', card:'Card', app_payment:'In-App Payment', other:'Other' };
 const MethodBadge = ({ method }) => (
   <span style={{ display:'inline-block', padding:'2px 8px', borderRadius:6, fontSize:11, fontWeight:600, background:'var(--bg-soft)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>
     {METHOD_LABELS[method] || method || '—'}
@@ -642,6 +642,7 @@ function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
                 <option value="upi">UPI</option>
                 <option value="cash">Cash</option>
                 <option value="card">Card</option>
+                <option value="app_payment">In-App Payment</option>
                 <option value="other">Other</option>
               </select>
             </div>

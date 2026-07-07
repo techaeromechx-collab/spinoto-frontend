@@ -27,6 +27,7 @@ const METHOD_META = {
   cash:  { label: 'Cash',  Icon: Banknote,    color: '#16a34a', bg: '#dcfce7' },
   upi:   { label: 'UPI',   Icon: Smartphone,  color: '#7c3aed', bg: '#ede9fe' },
   card:  { label: 'Card',  Icon: CreditCard,  color: '#0891b2', bg: '#cffafe' },
+  app_payment: { label: 'In-App Payment', Icon: Smartphone, color: '#c2410c', bg: '#fff7ed' },
   other: { label: 'Other', Icon: Circle,      color: '#6b7280', bg: '#f3f4f6' },
 };
 
@@ -320,6 +321,7 @@ function PaymentModal({ inv, onClose, onUpdated }) {
                     <option value="cash">Cash</option>
                     <option value="upi">UPI</option>
                     <option value="card">Card</option>
+                    <option value="app_payment">In-App Payment</option>
                     <option value="other">Other</option>
                   </select>
                 </div>
@@ -1556,6 +1558,7 @@ function BulkPaymentModal({ invoices, onClose, onDone }) {
                   <option value="cash">Cash</option>
                   <option value="upi">UPI</option>
                   <option value="card">Card</option>
+                  <option value="app_payment">In-App Payment</option>
                   <option value="other">Other</option>
                 </select>
               </div>
