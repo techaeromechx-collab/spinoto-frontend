@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { api } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
+import { getRoundingFunction } from '../lib/math.js';
 import {
   Receipt, Search, RefreshCw, X, Eye, Trash2,
   AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Car,
@@ -409,7 +410,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
   const items = inv?.items || [];
   const payments = inv?.payments || [];
 
-  const r2 = (n) => Math.round(n * 100) / 100;
+  const r2 = getRoundingFunction(inv?.created_at);
   function computeDiscount(it) {
     const exRate = parseFloat(it.customer_rate ?? it.rate ?? 0);
     const qty = parseFloat(it.quantity ?? 1);
@@ -463,10 +464,13 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
     const gstAmt = parseFloat(it.gst_amount ?? 0);
     if (pct > 0 && gstAmt > 0) {
       const key = pct.toString();
-      if (!gstSlabMap[key]) gstSlabMap[key] = { pct, cgst: 0, sgst: 0 };
-      gstSlabMap[key].cgst += gstAmt / 2;
-      gstSlabMap[key].sgst += gstAmt / 2;
+      if (!gstSlabMap[key]) gstSlabMap[key] = { pct, gstTotal: 0 };
+      gstSlabMap[key].gstTotal += gstAmt;
     }
+  });
+  Object.values(gstSlabMap).forEach(slab => {
+    slab.cgst = r2(Math.ceil(slab.gstTotal * 100 / 2) / 100);
+    slab.sgst = r2(slab.gstTotal - slab.cgst);
   });
   const gstSlabs = Object.values(gstSlabMap).sort((a, b) => b.pct - a.pct);
   const paid = inv?.amount_paid ?? payments.reduce((s, p) => s + parseFloat(p.amount ?? 0), 0);

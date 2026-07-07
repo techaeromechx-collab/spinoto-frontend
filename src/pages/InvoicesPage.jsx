@@ -8,6 +8,7 @@ import {
   CreditCard, Banknote, Smartphone, Circle, User, Phone, Car,
 } from 'lucide-react';
 import '../styles/InvoicesPage.css';
+import { getRoundingFunction } from '../lib/math.js';
 // Fix #30: Car is now imported from lucide-react; the local Car SVG shim below is removed
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ function InvStatusSelect({ invId, current, statusList, onChange }) {
 
 // ── Print Invoice (browser print) ─────────────────────────────────────────────
 function printInvoice(inv) {
+  const roundFn = getRoundingFunction(inv.created_at);
   const lines = (inv.services || []).map(s => `
     <tr>
       <td>${s.service_name || s.description || '—'}${s.category_name ? `<br/><small>${s.category_name}</small>` : ''}</td>
@@ -160,7 +162,7 @@ function printInvoice(inv) {
   <tbody>
     <tr class="sub"><td colspan="3" style="text-align:right;border-top:1px solid #e5e7eb;padding-top:10px">Subtotal</td><td style="text-align:right;border-top:1px solid #e5e7eb;padding-top:10px">${fmtINR(inv.subtotal)}</td></tr>
     ${Number(inv.discount) > 0 ? `<tr class="disc"><td colspan="3" style="text-align:right">Discount${inv.discount_type === 'percent' ? ` (${parseFloat((Number(inv.discount)/Number(inv.subtotal)*100).toFixed(2))}%)` : ''}</td><td style="text-align:right">- ${fmtINR(inv.discount)}</td></tr>` : ''}
-    ${Number(inv.gst_rate) > 0 ? `<tr class="gst"><td colspan="3" style="text-align:right">GST (${Number(inv.gst_rate)}%)</td><td style="text-align:right">+ ${fmtINR(Math.round((Math.max(0,Number(inv.subtotal)-Number(inv.discount))*Number(inv.gst_rate)/100)*100)/100)}</td></tr>` : ''}
+    ${Number(inv.gst_rate) > 0 ? `<tr class="gst"><td colspan="3" style="text-align:right">GST (${Number(inv.gst_rate)}%)</td><td style="text-align:right">+ ${fmtINR(roundFn(Math.max(0,Number(inv.subtotal)-Number(inv.discount))*Number(inv.gst_rate)/100))}</td></tr>` : ''}
     <tr class="grand"><td colspan="3" style="text-align:right">Total</td><td style="text-align:right">${fmtINR(inv.total)}</td></tr>
     <tr class="paid-row"><td colspan="3" style="text-align:right">Amount Paid</td><td style="text-align:right">${fmtINR(inv.amount_paid)}</td></tr>
     ${Number(inv.outstanding) > 0 ? `<tr class="outstanding-row"><td colspan="3" style="text-align:right">Outstanding</td><td style="text-align:right">${fmtINR(inv.outstanding)}</td></tr>` : ''}
@@ -178,6 +180,7 @@ function printInvoice(inv) {
 
 // ── WhatsApp share ────────────────────────────────────────────────────────────
 function whatsappShare(inv) {
+  const roundFn = getRoundingFunction(inv.created_at);
   const outstanding = Number(inv.outstanding || 0);
   const paid        = Number(inv.amount_paid || 0);
   const lines = (inv.services || [])
@@ -198,7 +201,7 @@ function whatsappShare(inv) {
     Number(inv.discount) > 0 ? `💰 Subtotal: ${fmtINR(inv.subtotal)}` : null,
     // Fix #25: show precise percent by computing from stored amounts
     Number(inv.discount) > 0 ? `🏷️ Discount${inv.discount_type === 'percent' ? ` (${parseFloat((Number(inv.discount)/Number(inv.subtotal)*100).toFixed(2))}%)` : ''}: - ${fmtINR(inv.discount)}` : null,
-    Number(inv.gst_rate) > 0 ? `🧾 GST (${Number(inv.gst_rate)}%): + ${fmtINR(Math.round((Math.max(0,Number(inv.subtotal)-Number(inv.discount))*Number(inv.gst_rate)/100)*100)/100)}` : null,
+    Number(inv.gst_rate) > 0 ? `🧾 GST (${Number(inv.gst_rate)}%): + ${fmtINR(roundFn(Math.max(0,Number(inv.subtotal)-Number(inv.discount))*Number(inv.gst_rate)/100))}` : null,
     `✅ *Total: ${fmtINR(inv.total)}*`,
     paid > 0 ? `💳 Paid: ${fmtINR(paid)}` : null,
     outstanding > 0 ? `⚠️ *Outstanding: ${fmtINR(outstanding)}*` : `✅ Fully Paid`,
@@ -389,6 +392,7 @@ function PaymentModal({ inv, onClose, onUpdated }) {
 // ── View Modal ────────────────────────────────────────────────────────────────
 function InvoiceViewModal({ inv, statusList, onClose, onUpdated, onOpenPayments }) {
   const status = statusList.find(s => s.id === inv.status_id);
+  const roundFn = getRoundingFunction(inv.created_at);
   const outstanding = Number(inv.outstanding || 0);
   const paid        = Number(inv.amount_paid  || 0);
 
@@ -453,7 +457,7 @@ function InvoiceViewModal({ inv, statusList, onClose, onUpdated, onOpenPayments 
               {Number(inv.gst_rate) > 0 && (
                 <div className="invv-gst-row">
                   <span>GST ({Number(inv.gst_rate)}%)</span>
-                  <span>+ {fmtINR(Math.round((Math.max(0, Number(inv.subtotal) - Number(inv.discount)) * Number(inv.gst_rate) / 100) * 100) / 100)}</span>
+                  <span>+ {fmtINR(roundFn(Math.max(0, Number(inv.subtotal) - Number(inv.discount)) * Number(inv.gst_rate) / 100))}</span>
                 </div>
               )}
               <div className="invv-total-row"><span>Total</span><span>{fmtINR(inv.total)}</span></div>
@@ -1196,11 +1200,12 @@ function ManualInvoiceModal({ statusList, hubs, onClose, onCreated }) {
   function removeLine(i) { setLines(ls => ls.filter((_, idx) => idx !== i)); }
 
   const subtotal    = lines.reduce((s, l) => s + (Number(l.unit_price) || 0) * (Number(l.qty) || 1), 0);
+  const r2          = getRoundingFunction(form?.created_at || new Date());
   const discountAmt = form.discount_type === 'percent'
-    ? Math.round(subtotal * (Number(form.discount) || 0) / 100 * 100) / 100
+    ? r2(subtotal * (Number(form.discount) || 0) / 100)
     : Number(form.discount) || 0;
   const afterDisc   = Math.max(0, subtotal - discountAmt);
-  const gstAmt      = Math.round(afterDisc * (Number(form.gst_rate) || 0) / 100 * 100) / 100;
+  const gstAmt      = r2(afterDisc * (Number(form.gst_rate) || 0) / 100);
   const total       = afterDisc + gstAmt;
 
   async function handleSubmit(e) {

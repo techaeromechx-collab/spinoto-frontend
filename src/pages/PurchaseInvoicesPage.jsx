@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { api } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
+import { getRoundingFunction } from '../lib/math.js';
 import {
   ReceiptText, Search, RefreshCw, X, Eye,
   AlertCircle, CheckCircle2, Clock, Trash2, ChevronLeft, Printer, FileText, MoreVertical,
@@ -332,6 +333,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
   }
 
   const items = inv?.items || [];
+  const r2 = getRoundingFunction(inv?.created_at);
   const commPct = parseFloat(inv?.commission_percent ?? 0);
 
   // Totals + dynamic GST slab grouping
@@ -347,10 +349,13 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
     const gstAmt = parseFloat(it.gst_amount ?? 0);
     if (pct > 0 && gstAmt > 0) {
       const key = pct.toString();
-      if (!gstSlabMap[key]) gstSlabMap[key] = { pct, cgst: 0, sgst: 0 };
-      gstSlabMap[key].cgst += gstAmt / 2;
-      gstSlabMap[key].sgst += gstAmt / 2;
+      if (!gstSlabMap[key]) gstSlabMap[key] = { pct, gstTotal: 0 };
+      gstSlabMap[key].gstTotal += gstAmt;
     }
+  });
+  Object.values(gstSlabMap).forEach(slab => {
+    slab.cgst = r2(Math.ceil(slab.gstTotal * 100 / 2) / 100);
+    slab.sgst = r2(slab.gstTotal - slab.cgst);
   });
   const gstSlabs = Object.values(gstSlabMap).sort((a, b) => b.pct - a.pct);
 
@@ -570,7 +575,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                     const gstPct = parseFloat(it.gst_percent ?? 0);
                     const halfPct = gstPct / 2;
                     const appliedRate = parseFloat(it.commission_percent ?? 0); // holds tech rate % or commission %
-                    const discountAmt = parseFloat(((custRate - hubRate) * qty).toFixed(2)); // tech deduction amount
+                    const discountAmt = r2((custRate - hubRate) * qty); // tech deduction amount
                     const isService = it.item_type === 'service';
                     return (
                       <tr key={i}>
@@ -923,11 +928,11 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 const qty = parseFloat(it.quantity ?? 1);
                 const gstPct = parseFloat(it.gst_percent ?? 0);
                 const takeRate = parseFloat(editItemRates[it.id] ?? it.commission_percent ?? 0);
-                const discount = parseFloat((custRate * (takeRate / 100)).toFixed(4));
-                const hubRate = parseFloat((custRate - discount).toFixed(4));
-                const hubAmount = parseFloat((hubRate * qty).toFixed(2));
-                const gstAmt = parseFloat((hubAmount * gstPct / 100).toFixed(2));
-                const total = parseFloat((hubAmount + gstAmt).toFixed(2));
+                const discount = r2(custRate * (takeRate / 100), 4);
+                const hubRate = r2(custRate - discount, 4);
+                const hubAmount = r2(hubRate * qty);
+                const gstAmt = r2(hubAmount * gstPct / 100);
+                const total = r2(hubAmount + gstAmt);
                 previewGrandTotal += total;
                 return { it, custRate, qty, takeRate, discount, hubRate, total };
               });
@@ -1020,11 +1025,11 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 const qty = parseFloat(it.quantity ?? 1);
                 const gstPct = parseFloat(it.gst_percent ?? 0);
                 const takeRate = parseFloat(approvalItemRates[it.id] ?? it.commission_percent ?? 0);
-                const discount = parseFloat((custRate * (takeRate / 100)).toFixed(4));
-                const hubRate = parseFloat((custRate - discount).toFixed(4));
-                const hubAmount = parseFloat((hubRate * qty).toFixed(2));
-                const gstAmt = parseFloat((hubAmount * gstPct / 100).toFixed(2));
-                const total = parseFloat((hubAmount + gstAmt).toFixed(2));
+                const discount = r2(custRate * (takeRate / 100), 4);
+                const hubRate = r2(custRate - discount, 4);
+                const hubAmount = r2(hubRate * qty);
+                const gstAmt = r2(hubAmount * gstPct / 100);
+                const total = r2(hubAmount + gstAmt);
                 previewGrandTotal += total;
                 return { it, custRate, qty, takeRate, discount, hubRate, hubAmount, gstAmt, total };
               });
