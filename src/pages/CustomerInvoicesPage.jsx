@@ -1111,11 +1111,11 @@ export default function CustomerInvoicesPage() {
                       <th>Customer</th>
                       <th>Vehicle</th>
                       <th>Hub</th>
+                      <th>Date</th>
                       <th style={{ textAlign: 'right' }}>Grand Total</th>
                       <th style={{ textAlign: 'right' }}>Paid</th>
                       <th style={{ textAlign: 'right' }}>Balance</th>
                       <th>Status</th>
-                      <th style={{ width: 48 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1130,8 +1130,8 @@ export default function CustomerInvoicesPage() {
                             <div
                               className="ci-cust-link"
                               onClick={(e) => {
-                                e.stopPropagation();
-                                navigate('/customers', { state: { openMobile: inv.mobile } });
+                                  e.stopPropagation();
+                                  navigate('/customers', { state: { openMobile: inv.mobile } });
                               }}
                             >
                               <div>
@@ -1167,6 +1167,7 @@ export default function CustomerInvoicesPage() {
                             </div>
                           </td>
                           <td style={{ fontSize: 13 }}>{inv.hub_full_name || inv.hub_name || inv.hub?.name || '—'}</td>
+                          <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{fmtDate(inv.created_at)}</td>
                           <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmt(gt)}</td>
                           <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 600 }}>{fmt(pd)}</td>
                           <td style={{
@@ -1174,11 +1175,6 @@ export default function CustomerInvoicesPage() {
                             color: bal > 0.001 ? '#dc2626' : '#6b7280',
                           }}>{fmt(bal)}</td>
                           <td><StatusBadge status={inv.status} /></td>
-                          <td onClick={e => { e.stopPropagation(); setSelectedId(inv.id); }}>
-                            <button className="icon-action" title="View">
-                              <Eye size={15} />
-                            </button>
-                          </td>
                         </tr>
                       );
                     })}
