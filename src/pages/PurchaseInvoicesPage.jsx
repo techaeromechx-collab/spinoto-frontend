@@ -1321,6 +1321,20 @@ export default function PurchaseInvoicesPage() {
                       boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
                       overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
                     }}>
+                      {hubFilter.length > 0 && (
+                        <button
+                          type="button"
+                          style={{
+                            width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                            color: 'var(--text-danger, #dc2626)', background: 'none', border: 'none',
+                            textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                            paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4
+                          }}
+                          onClick={() => { setHubFilter([]); setPage(1); }}
+                        >
+                          <X size={12} /> Clear Selection
+                        </button>
+                      )}
                       {hubs.map(h => {
                         const isChecked = hubFilter.includes(String(h.id));
                         return (
@@ -1433,7 +1447,7 @@ export default function PurchaseInvoicesPage() {
                                       fontWeight: 800,
                                       padding: '1px 5px',
                                       borderRadius: 4,
-                                      background: inv.vehicle_type_name.toLowerCase().includes('2') ? '#dbeafe' : '#dcfce7',
+                                      background: 'transparent',
                                       color: inv.vehicle_type_name.toLowerCase().includes('2') ? '#1e40af' : '#15803d',
                                       border: `1px solid ${inv.vehicle_type_name.toLowerCase().includes('2') ? '#bfdbfe' : '#bbf7d0'}`
                                     }}>

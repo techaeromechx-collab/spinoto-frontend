@@ -672,17 +672,17 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
                     const exRate = parseFloat(it.customer_rate ?? it.rate ?? 0);
                     const qty = parseFloat(it.quantity ?? 1);
                     const gstPct = parseFloat(it.gst_percent ?? 0);
-                    
+
                     // Trust the database-stored fields directly
                     const total = parseFloat(it.total_inc_gst ?? 0);
                     const gstAmt = parseFloat(it.gst_amount ?? 0);
                     const taxable = r2(total - gstAmt);
-                    
+
                     const halfPct = gstPct / 2;
                     const discAmt = parseFloat(it.discount_amount ?? 0);
                     const dType = it.discount_type;
                     const dValue = parseFloat(it.discount_value) || 0;
-                    
+
                     // Display rate including GST (original standard price before discount)
                     const incRate = qty > 0 ? r2((total + discAmt) / qty) : 0;
                     return (
@@ -1072,13 +1072,13 @@ export default function CustomerInvoicesPage() {
                   onClick={() => setShowHubDropdown(p => !p)}
                 >
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {hubFilter.length === 0 
-                      ? 'All Hubs' 
+                    {hubFilter.length === 0
+                      ? 'All Hubs'
                       : `${hubFilter.length} Hubs Selected`}
                   </span>
                   <ChevronDown size={14} style={{ opacity: 0.5 }} />
                 </button>
-                
+
                 {showHubDropdown && (
                   <>
                     <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowHubDropdown(false)} />
@@ -1088,11 +1088,25 @@ export default function CustomerInvoicesPage() {
                       boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
                       overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
                     }}>
+                      {hubFilter.length > 0 && (
+                        <button
+                          type="button"
+                          style={{
+                            width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                            color: 'var(--text-danger, #dc2626)', background: 'none', border: 'none',
+                            textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                            paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4
+                          }}
+                          onClick={() => { setHubFilter([]); setPage(1); }}
+                        >
+                          <X size={12} /> Clear Selection
+                        </button>
+                      )}
                       {hubs.map(h => {
                         const isChecked = hubFilter.includes(String(h.id));
                         return (
-                          <label 
-                            key={h.id} 
+                          <label
+                            key={h.id}
                             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', cursor: 'pointer', borderRadius: 4, userSelect: 'none' }}
                             onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
                             onMouseLeave={e => e.currentTarget.style.background = 'none'}
@@ -1185,8 +1199,8 @@ export default function CustomerInvoicesPage() {
                             <div
                               className="ci-cust-link"
                               onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate('/customers', { state: { openMobile: inv.mobile } });
+                                e.stopPropagation();
+                                navigate('/customers', { state: { openMobile: inv.mobile } });
                               }}
                             >
                               <div>
@@ -1206,7 +1220,7 @@ export default function CustomerInvoicesPage() {
                                     fontWeight: 800,
                                     padding: '1px 5px',
                                     borderRadius: 4,
-                                    background: inv.vehicle_type_name.toLowerCase().includes('2') ? '#dbeafe' : '#dcfce7',
+                                    background: 'transparent',
                                     color: inv.vehicle_type_name.toLowerCase().includes('2') ? '#1e40af' : '#15803d',
                                     border: `1px solid ${inv.vehicle_type_name.toLowerCase().includes('2') ? '#bfdbfe' : '#bbf7d0'}`
                                   }}>
@@ -1221,12 +1235,12 @@ export default function CustomerInvoicesPage() {
                               )}
                             </div>
                           </td>
-                          <td style={{ fontSize: 13 }}>{inv.hub_full_name || inv.hub_name || inv.hub?.name || '—'}</td>
+                          <td style={{ fontSize: 12 }}>{inv.hub_full_name || inv.hub_name || inv.hub?.name || '—'}</td>
                           <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{fmtDate(inv.created_at)}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmt(gt)}</td>
-                          <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 600 }}>{fmt(pd)}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 350, fontSize: 13 }}>{fmt(gt)}</td>
+                          <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 300 }}>{fmt(pd)}</td>
                           <td style={{
-                            textAlign: 'right', fontWeight: 700, fontSize: 13,
+                            textAlign: 'right', fontWeight: 350, fontSize: 13,
                             color: bal > 0.001 ? '#dc2626' : '#6b7280',
                           }}>{fmt(bal)}</td>
                           <td><StatusBadge status={inv.status} /></td>
