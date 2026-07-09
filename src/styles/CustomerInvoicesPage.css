@@ -248,6 +248,10 @@
     display: none !important;
   }
 
+  .est-no-print {
+    display: none !important;
+  }
+
   /* All tables */
   .ci-table {
     font-size: 9px !important;

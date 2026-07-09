@@ -4,9 +4,10 @@ import { api } from '../api/client.js';
 import {
   Users, Search, X, ChevronLeft, ChevronRight, ChevronDown,
   Phone, Calendar, Eye, Pencil, Mail, StickyNote, Check,
-  Car, Network, MessageCircle, Plus, Trash2, FileText,
+  Car, Network, MessageCircle, Plus, Trash2, FileText, Building2,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
+import { isValidGSTIN } from '../lib/gst.js';
 import '../styles/CustomersPage.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -513,9 +514,13 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
   const [deleting,    setDeleting]   = useState(null);
 
   const [editing,     setEditing]    = useState(startEditing);
-  const [editForm,    setEditForm]   = useState({ display_name: '', whatsapp: '', email: '', notes: '' });
+  const [editForm,    setEditForm]   = useState({
+    display_name: '', whatsapp: '', email: '', notes: '',
+    is_b2b: false, b2b_company_name: '', b2b_gst_number: '', b2b_address: '',
+  });
   const [editSaving,  setEditSaving] = useState(false);
   const [editErr,     setEditErr]    = useState('');
+  const [showB2bConfirm, setShowB2bConfirm] = useState(false);
 
   const [delConfirm, setDelConfirm]  = useState(false);
   const [delBusy,    setDelBusy]     = useState(false);
@@ -531,6 +536,10 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
           whatsapp:     r.item.whatsapp      || '',
           email:        r.item.email         || '',
           notes:        r.item.profile_notes || '',
+          is_b2b:            !!r.item.default_is_b2b,
+          b2b_company_name:  r.item.default_b2b_company_name || '',
+          b2b_gst_number:    r.item.default_b2b_gst_number   || '',
+          b2b_address:       r.item.default_b2b_address      || '',
         });
       })
       .catch(e => { setErr(e.message); setLoading(false); });
@@ -555,7 +564,27 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
     if (tab === 'timeline') loadTimeline();
   }, [tab, mobile]);
 
-  async function handleEditSave() {
+  // Validates, then — if B2B details are involved (being set, changed, or
+  // cleared) — shows a confirmation popup with the current saved details
+  // before actually saving. Non-B2B edits (name/whatsapp/email/notes only)
+  // save immediately with no extra step.
+  function handleEditSave() {
+    if (editForm.is_b2b) {
+      if (!editForm.b2b_company_name.trim()) { setEditErr('Please enter the company name for the B2B invoice.'); return; }
+      if (!editForm.b2b_address.trim())      { setEditErr('Please enter the billing address for the B2B invoice.'); return; }
+      if (!isValidGSTIN(editForm.b2b_gst_number)) { setEditErr('Please enter a valid 15-character GSTIN.'); return; }
+    }
+    setEditErr('');
+    const b2bRelevant = editForm.is_b2b || data?.default_is_b2b;
+    if (b2bRelevant) {
+      setShowB2bConfirm(true);
+    } else {
+      doSaveEdit();
+    }
+  }
+
+  async function doSaveEdit() {
+    setShowB2bConfirm(false);
     setEditSaving(true); setEditErr('');
     try {
       await api(`/api/customers/${encodeURIComponent(mobile)}`, {
@@ -703,6 +732,53 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
                     value={editForm.notes}
                     onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}/>
                 </div>
+
+                <div className="cust-edit-field cust-edit-field--full" style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 2 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editForm.is_b2b}
+                      onChange={e => {
+                        const checked = e.target.checked;
+                        setEditForm(f => ({
+                          ...f, is_b2b: checked,
+                          ...(checked ? {} : { b2b_company_name: '', b2b_gst_number: '', b2b_address: '' }),
+                        }));
+                      }}
+                      style={{ width: 15, height: 15 }}
+                    />
+                    <Building2 size={13} style={{ color: 'var(--primary)' }} />
+                    <span style={{ fontWeight: 700 }}>B2B Customer (GST Registered)</span>
+                  </label>
+                </div>
+
+                {editForm.is_b2b && (
+                  <>
+                    <div className="cust-edit-field">
+                      <label>Company Name</label>
+                      <input className="cust-edit-input" placeholder="GST-registered company name"
+                        value={editForm.b2b_company_name}
+                        onChange={e => setEditForm(f => ({ ...f, b2b_company_name: e.target.value }))}/>
+                    </div>
+                    <div className="cust-edit-field">
+                      <label>GST Number</label>
+                      <input className="cust-edit-input" placeholder="15-character GSTIN" maxLength={15}
+                        value={editForm.b2b_gst_number}
+                        onChange={e => setEditForm(f => ({ ...f, b2b_gst_number: e.target.value.toUpperCase() }))}
+                        style={editForm.b2b_gst_number && !isValidGSTIN(editForm.b2b_gst_number) ? { borderColor: '#dc2626' } : undefined}/>
+                      {editForm.b2b_gst_number && !isValidGSTIN(editForm.b2b_gst_number) && (
+                        <p style={{ margin: '4px 0 0', fontSize: 11, color: '#dc2626' }}>Enter a valid 15-character GSTIN.</p>
+                      )}
+                    </div>
+                    <div className="cust-edit-field cust-edit-field--full">
+                      <label>Billing Address</label>
+                      <textarea className="cust-edit-input cust-edit-textarea"
+                        placeholder="Registered billing address" rows={2}
+                        value={editForm.b2b_address}
+                        onChange={e => setEditForm(f => ({ ...f, b2b_address: e.target.value }))}/>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ) : (
@@ -840,6 +916,92 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
             )}
           </div>
 
+          {/* ── B2B / GST Details ── */}
+          <div className="cust-section">
+            <div className="cust-section-title">
+              <Building2 size={11}/> B2B / GST Details
+              <button className="cust-add-veh-btn" onClick={() => { setEditing(true); setEditErr(''); setDelConfirm(false); }}>
+                <Pencil size={11}/> Edit
+              </button>
+            </div>
+            {data.default_is_b2b ? (
+              <div className="cust-vehicles-wrap">
+                <div className="cust-vehicle-card">
+                  <div className="cust-veh-left">
+                    <div className="cust-veh-plate">{data.default_b2b_company_name || '—'}</div>
+                    <div className="cust-veh-makemodel">GSTIN: {data.default_b2b_gst_number || '—'}</div>
+                    {data.default_b2b_address && (
+                      <div className="cust-veh-notes">{data.default_b2b_address}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="cust-vehicles-wrap">
+                <div className="cust-veh-empty">
+                  No B2B billing details saved. Click <strong>Edit</strong> to add a GST-registered company profile — it'll auto-fill on this customer's future estimates.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {showB2bConfirm && (
+            <div className="aveh-backdrop" onClick={() => setShowB2bConfirm(false)}>
+              <div className="aveh-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+                <div className="aveh-hdr">
+                  <span className="aveh-title"><Building2 size={14}/> Confirm B2B Details Update</span>
+                  <button className="cust-icon-btn" onClick={() => setShowB2bConfirm(false)}><X size={15}/></button>
+                </div>
+                <div className="aveh-body">
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                    Currently Saved
+                  </div>
+                  <div style={{ fontSize: 13, background: 'var(--bg-soft)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+                    {data?.default_is_b2b ? (
+                      <>
+                        <div><strong>{data.default_b2b_company_name || '—'}</strong></div>
+                        <div style={{ color: 'var(--text-muted)' }}>GSTIN: {data.default_b2b_gst_number || '—'}</div>
+                        {data.default_b2b_address && <div style={{ color: 'var(--text-muted)' }}>{data.default_b2b_address}</div>}
+                      </>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>No B2B details currently saved.</span>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                    Will Be Updated To
+                  </div>
+                  <div style={{ fontSize: 13, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+                    {editForm.is_b2b ? (
+                      <>
+                        <div><strong>{editForm.b2b_company_name || '—'}</strong></div>
+                        <div style={{ color: 'var(--text-muted)' }}>GSTIN: {editForm.b2b_gst_number || '—'}</div>
+                        {editForm.b2b_address && <div style={{ color: 'var(--text-muted)' }}>{editForm.b2b_address}</div>}
+                      </>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>B2B will be turned off — details cleared.</span>
+                    )}
+                  </div>
+
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 16px' }}>
+                    This only updates this customer's saved default. Estimates and invoices already created won't change.
+                  </p>
+
+                  {editErr && <div className="aveh-err">{editErr}</div>}
+
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button className="cust-hdr-btn cust-hdr-btn--cancel" onClick={() => setShowB2bConfirm(false)} disabled={editSaving}>
+                      <X size={13}/> <span>Cancel</span>
+                    </button>
+                    <button className="cust-hdr-btn cust-hdr-btn--save" onClick={doSaveEdit} disabled={editSaving}>
+                      <Check size={13}/> <span>{editSaving ? 'Updating…' : 'Update'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {addVehOpen && (
             <AddVehicleModal
               mobile={mobile}
@@ -931,6 +1093,14 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
                       <div key={inv.id} className="cust-history-card">
                         <div className="cust-hc-top">
                           <span className="cust-hc-id cust-hc-id--inv">CI #{inv.id}</span>
+                          {inv.is_b2b && (
+                            <span title={inv.b2b_company_name || 'B2B Invoice'} style={{
+                              fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 4,
+                              background: 'transparent', color: '#7c3aed', border: '1px solid #ddd6fe',
+                            }}>
+                              B2B
+                            </span>
+                          )}
                           {inv.status && (
                             <span className="cust-hc-badge" style={{ background: stStyle.bg, color: stStyle.color }}>
                               {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
@@ -942,6 +1112,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
                           <span><Calendar size={10}/> {fmtDate(inv.created_at)}</span>
                           {inv.hub_name       && <span><Network size={10}/> {inv.hub_name}</span>}
                           {inv.vehicle_number && <span>🚗 {inv.vehicle_number}</span>}
+                          {inv.is_b2b && inv.b2b_gst_number && <span>GSTIN: {inv.b2b_gst_number}</span>}
                         </div>
                         {inv.services?.length > 0 && (
                           <div className="cust-hc-services">

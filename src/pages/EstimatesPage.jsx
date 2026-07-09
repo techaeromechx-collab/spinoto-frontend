@@ -3,11 +3,15 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import PaginationBar from '../components/PaginationBar.jsx';
+import { isValidGSTIN } from '../lib/gst.js';
+import { CreateAppointmentModal } from './AppointmentsPage.jsx';
 import {
   FileText, Plus, Search, RefreshCw, X, ChevronRight,
-  CheckCircle2, XCircle, Clock, AlertCircle, Eye, Minus, ReceiptText, Printer, Check, MoreVertical, ChevronDown,
+  CheckCircle2, XCircle, Clock, AlertCircle, Eye, Minus, ReceiptText, Printer, Check, MoreVertical, ChevronDown, Building2,
+  User, Car, Pencil,
 } from 'lucide-react';
 import '../styles/EstimatesPage.css';
+import '../styles/AppointmentsPage.css'; // styles CreateAppointmentModal, reused here for direct estimate creation
 
 // ── Status config ─────────────────────────────────────────────────────────────
 const STATUS_META = {
@@ -551,8 +555,51 @@ function RevisionModal({ estimateId, onClose, onDone }) {
 // ═════════════════════════════════════════════════════════════════════════════
 // Create / Edit Modal
 // ═════════════════════════════════════════════════════════════════════════════
-function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, userHubId = '', initialAppointmentId = '' }) {
+function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, userHubId = '', initialAppointmentId = '', initialStandaloneContext = null }) {
   const isEdit = !!editEstimate?.id;
+
+  // ── Standalone mode (no appointment) ──────────────────────────────────────
+  // 'appointment' = the original flow (pick an existing appointment).
+  // 'standalone'  = customer + vehicle were picked directly (no appointment
+  // row exists at all) — either via initialStandaloneContext (new estimate,
+  // "New Customer" flow) or because the estimate being edited has no
+  // appointment_id (built from the estimate's own columns).
+  const [mode] = react.useState(() => {
+    if (isEdit) return editEstimate?.appointment_id ? 'appointment' : 'standalone';
+    return initialStandaloneContext ? 'standalone' : 'appointment';
+  });
+  const [standaloneCtx, setStandaloneCtx] = react.useState(() => {
+    if (initialStandaloneContext) return initialStandaloneContext;
+    if (isEdit && !editEstimate?.appointment_id) {
+      return {
+        customer: {
+          customer_name: editEstimate?.customer_name || '',
+          mobile: editEstimate?.mobile || '',
+          whatsapp: editEstimate?.whatsapp || '',
+        },
+        vehicle: {
+          vehicle_number:   editEstimate?.vehicle_number || '',
+          vehicle_type_id:  editEstimate?.vehicle_type_id || null,
+          vehicle_type_name: editEstimate?.vehicle_type_name || '',
+          make_id:          editEstimate?.make_id || null,
+          make_name:        editEstimate?.make_name || '',
+          model_id:         editEstimate?.model_id || null,
+          model_name:       editEstimate?.model_name || '',
+          body_type_id:     editEstimate?.body_type_id || null,
+          body_type_name:   editEstimate?.body_type_name || '',
+          cc_category_id:   editEstimate?.cc_category_id || null,
+          cc_category_name: editEstimate?.cc_category_name || '',
+          segment_ids:      Array.isArray(editEstimate?.segment_ids) ? editEstimate.segment_ids : [],
+          segment_names:    editEstimate?.segment_names || '',
+        },
+      };
+    }
+    return null;
+  });
+  // Lets the user re-open the customer/vehicle picker before the estimate is
+  // saved (new standalone estimates only — editing customer/vehicle after
+  // creation isn't supported, same as appointment-linked estimates).
+  const [showStandalonePicker, setShowStandalonePicker] = react.useState(false);
 
   // Master data
   const [appointments, setAppointments] = react.useState([]);
@@ -622,6 +669,14 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   const [showDiscountSettings, setShowDiscountSettings] = react.useState(false);
   const [discountPopupKey, setDiscountPopupKey] = react.useState(null); // _key of item being edited
 
+  // B2B invoicing — GST-registered customer billing details
+  const [isB2b, setIsB2b] = react.useState(!!editEstimate?.is_b2b);
+  const [b2bCompanyName, setB2bCompanyName] = react.useState(editEstimate?.b2b_company_name || '');
+  const [b2bGstNumber, setB2bGstNumber] = react.useState(editEstimate?.b2b_gst_number || '');
+  const [b2bAddress, setB2bAddress] = react.useState(editEstimate?.b2b_address || '');
+  const [saveB2bToProfile, setSaveB2bToProfile] = react.useState(true);
+  const gstValid = b2bGstNumber ? isValidGSTIN(b2bGstNumber) : false;
+
   // Service / part search dropdowns
   const [serviceSearch, setServiceSearch] = react.useState('');
   const [partSearch, setPartSearch] = react.useState('');
@@ -642,7 +697,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
         setParts(partRes.items || []);
 
         // In edit mode: restore vehicle context from the pre-filled appointment
-        if (editEstimate?.appointment_id) {
+        if (mode === 'appointment' && editEstimate?.appointment_id) {
           const appt = (apptRes.items || []).find(a => String(a.id) === String(editEstimate.appointment_id));
           if (appt) {
             setVehicleCtx({
@@ -654,6 +709,35 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
               segment_id: Array.isArray(appt.segment_ids) && appt.segment_ids.length > 0
                 ? appt.segment_ids[0] : null,
             });
+          }
+        }
+
+        // Standalone mode — vehicle context comes from the picked/edited
+        // vehicle directly, not an appointment lookup.
+        if (mode === 'standalone' && standaloneCtx?.vehicle) {
+          const v = standaloneCtx.vehicle;
+          setVehicleCtx({
+            vehicle_type_id: v.vehicle_type_id || null,
+            make_id: v.make_id || null,
+            model_id: v.model_id || null,
+            body_type_id: v.body_type_id || null,
+            cc_category_id: v.cc_category_id || null,
+            segment_id: Array.isArray(v.segment_ids) && v.segment_ids.length > 0 ? v.segment_ids[0] : null,
+          });
+
+          // Auto-fill B2B billing details from this customer's saved profile
+          // (new standalone estimates only — same as the appointment flow).
+          if (!isEdit && standaloneCtx.customer?.mobile) {
+            try {
+              const custRes = await api(`/api/customers/${encodeURIComponent(standaloneCtx.customer.mobile)}`);
+              const custItem = custRes?.item || custRes;
+              if (custItem?.default_is_b2b) {
+                setIsB2b(true);
+                setB2bCompanyName(custItem.default_b2b_company_name || '');
+                setB2bGstNumber(custItem.default_b2b_gst_number || '');
+                setB2bAddress(custItem.default_b2b_address || '');
+              }
+            } catch { /* no saved profile / no permission — ignore */ }
           }
         }
       } catch {
@@ -701,6 +785,23 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
         : null,
     } : null;
     setVehicleCtx(ctx);
+
+    // Auto-fill B2B billing details from this customer's saved profile, if
+    // any (new estimates only — edit mode already has its own saved values).
+    // Silently ignored if the user lacks customer-view permission or no
+    // profile exists yet.
+    if (!isEdit && appt?.mobile) {
+      try {
+        const custRes = await api(`/api/customers/${encodeURIComponent(appt.mobile)}`);
+        const custItem = custRes?.item || custRes;
+        if (custItem?.default_is_b2b) {
+          setIsB2b(true);
+          setB2bCompanyName(custItem.default_b2b_company_name || '');
+          setB2bGstNumber(custItem.default_b2b_gst_number || '');
+          setB2bAddress(custItem.default_b2b_address || '');
+        }
+      } catch { /* no saved profile / no permission — ignore */ }
+    }
 
     // Fetch full appointment detail to get its fixed services
     try {
@@ -957,9 +1058,15 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
   async function submit(e) {
     e.preventDefault();
-    if (!form.appointment_id) { setError('Please select an appointment.'); return; }
+    if (mode === 'appointment' && !form.appointment_id) { setError('Please select an appointment.'); return; }
+    if (mode === 'standalone' && !standaloneCtx?.customer?.mobile) { setError('Please pick a customer and vehicle.'); return; }
     if (!form.hub_id) { setError('Please select a hub.'); return; }
-    if (!isEdit) {
+    if (isB2b) {
+      if (!b2bCompanyName.trim()) { setError('Please enter the company name for the B2B invoice.'); return; }
+      if (!b2bAddress.trim())     { setError('Please enter the billing address for the B2B invoice.'); return; }
+      if (!isValidGSTIN(b2bGstNumber)) { setError('Please enter a valid 15-character GSTIN.'); return; }
+    }
+    if (!isEdit && mode === 'appointment') {
       const sel = appointments.find(a => String(a.id) === String(form.appointment_id));
       if (sel?.has_estimate) {
         setError(`This appointment already has estimate #${sel.estimate_id} (${sel.estimate_status}). Open that estimate and edit it instead.`);
@@ -970,12 +1077,16 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     try {
       const forceZero = discountMode !== 'line_item';
       const payload = {
-        appointment_id: Number(form.appointment_id),
         hub_id: Number(form.hub_id),
         notes: form.notes.trim() || null,
         discount_mode: discountMode,
         transaction_discount_type: discountMode === 'transaction' ? txDiscountType : null,
         transaction_discount_value: discountMode === 'transaction' ? txDiscountValue : 0,
+        is_b2b: isB2b,
+        b2b_company_name: isB2b ? b2bCompanyName.trim() : null,
+        b2b_gst_number: isB2b ? b2bGstNumber.trim().toUpperCase() : null,
+        b2b_address: isB2b ? b2bAddress.trim() : null,
+        save_b2b_to_profile: isB2b ? saveB2bToProfile : false,
         items: items.map(it => {
           const itemForCalc = forceZero ? { ...it, discount_type: null, discount_value: 0 } : it;
           const { discountAmount } = computeItem(itemForCalc);
@@ -993,6 +1104,28 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
           };
         }),
       };
+
+      // Customer/vehicle context — only sent on create. Updating it after
+      // creation isn't supported (mirrors the appointment-linked flow, where
+      // the appointment also can't be swapped after the estimate exists).
+      if (!isEdit) {
+        if (mode === 'appointment') {
+          payload.appointment_id = Number(form.appointment_id);
+        } else {
+          const { customer, vehicle } = standaloneCtx || {};
+          payload.customer_name   = customer?.customer_name?.trim() || null;
+          payload.mobile          = customer?.mobile || null;
+          payload.whatsapp        = customer?.whatsapp || null;
+          payload.vehicle_number  = vehicle?.vehicle_number || null;
+          payload.vehicle_type_id = vehicle?.vehicle_type_id || null;
+          payload.make_id         = vehicle?.make_id || null;
+          payload.model_id        = vehicle?.model_id || null;
+          payload.body_type_id    = vehicle?.body_type_id || null;
+          payload.segment_ids     = Array.isArray(vehicle?.segment_ids) ? vehicle.segment_ids : [];
+          payload.cc_category_id  = vehicle?.cc_category_id || null;
+        }
+      }
+
       const res = isEdit
         ? await api(`/api/estimates/${editEstimate.id}`, { method: 'PATCH', body: payload })
         : await api('/api/estimates', { method: 'POST', body: payload });
@@ -1017,15 +1150,18 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   });
 
   // ── Vehicle info for display ──────────────────────────────────────────────
+  // Works off either the selected appointment, or (standalone mode) the
+  // picked/edited vehicle directly — both carry the same *_name fields.
   const selectedAppt = appointments.find(a => String(a.id) === String(form.appointment_id));
-  const isTwo = selectedAppt?.vehicle_type_name?.toLowerCase().includes('2') || false;
-  const vehicleBadge = selectedAppt
+  const activeVehicleInfo = mode === 'standalone' ? standaloneCtx?.vehicle : selectedAppt;
+  const isTwo = activeVehicleInfo?.vehicle_type_name?.toLowerCase().includes('2') || false;
+  const vehicleBadge = activeVehicleInfo
     ? (isTwo ? '2W services' : '4W services')
     : null;
-  const vehicleInfoStr = selectedAppt
+  const vehicleInfoStr = activeVehicleInfo
     ? isTwo
-      ? [selectedAppt.make_name, selectedAppt.model_name, selectedAppt.cc_category_name].filter(Boolean).join(' · ')
-      : [selectedAppt.make_name, selectedAppt.model_name, selectedAppt.body_type_name, Array.isArray(selectedAppt.segment_names) ? selectedAppt.segment_names.join('/') : selectedAppt.segment_names].filter(Boolean).join(' · ')
+      ? [activeVehicleInfo.make_name, activeVehicleInfo.model_name, activeVehicleInfo.cc_category_name].filter(Boolean).join(' · ')
+      : [activeVehicleInfo.make_name, activeVehicleInfo.model_name, activeVehicleInfo.body_type_name, Array.isArray(activeVehicleInfo.segment_names) ? activeVehicleInfo.segment_names.join('/') : (activeVehicleInfo.segment_names || activeVehicleInfo.segment_name)].filter(Boolean).join(' · ')
     : null;
 
   // ── Picker: services in selected category, filtered by search + vehicle type ─
@@ -1109,39 +1245,83 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
           );
         })()}
 
+        {showStandalonePicker && (
+          <CreateAppointmentModal
+            hubs={hubs}
+            statusList={[]}
+            standaloneMode
+            title="Change Customer / Vehicle"
+            onClose={() => setShowStandalonePicker(false)}
+            onComplete={(ctx) => {
+              setStandaloneCtx(ctx);
+              setShowStandalonePicker(false);
+            }}
+          />
+        )}
+
         {masterLoading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
         ) : (
           <form onSubmit={submit} style={{ flex: 1, overflow: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-            {/* Appointment + Hub row */}
+            {/* Appointment/Customer + Hub row */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div className="form-field">
-                <label>Appointment <span style={{ color: '#dc2626' }}>*</span></label>
-                <SearchableSelect
-                  value={form.appointment_id}
-                  onChange={val => onAppointmentChange(val)}
-                  placeholder="Select appointment…"
-                  searchPlaceholder="Search appointment…"
-                  options={appointments
-                    // Hide appointments that already have an estimate — creating
-                    // one would always fail. Keep the currently selected one so
-                    // edit mode / deep links still display correctly.
-                    .filter(a => !a.has_estimate || String(a.id) === String(form.appointment_id))
-                    .map(a => ({
-                      value: a.id,
-                      label: `#${a.id} · ${a.customer_name || 'Unknown'} · ${a.vehicle_number || '—'}`,
-                    }))}
-                />
-                {!isEdit && (() => {
-                  const sel = appointments.find(a => String(a.id) === String(form.appointment_id));
-                  return sel?.has_estimate ? (
-                    <p style={{ margin: '6px 0 0', fontSize: 12, color: '#dc2626' }}>
-                      This appointment already has estimate #{sel.estimate_id} ({sel.estimate_status}). Open that estimate instead.
-                    </p>
-                  ) : null;
-                })()}
-              </div>
+              {mode === 'standalone' ? (
+                <div className="form-field">
+                  <label>Customer & Vehicle <span style={{ color: '#dc2626' }}>*</span></label>
+                  <div style={{
+                    border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px',
+                    display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--bg-soft)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
+                        <User size={13} style={{ color: 'var(--primary)' }} />
+                        {standaloneCtx?.customer?.customer_name || 'Unknown'} · {standaloneCtx?.customer?.mobile || '—'}
+                      </div>
+                      {!isEdit && (
+                        <button
+                          type="button"
+                          onClick={() => setShowStandalonePicker(true)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 600, padding: 0 }}
+                        >
+                          <Pencil size={12} /> Change
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                      <Car size={12} />
+                      {[standaloneCtx?.vehicle?.vehicle_number, standaloneCtx?.vehicle?.make_name, standaloneCtx?.vehicle?.model_name].filter(Boolean).join(' · ') || 'No vehicle details'}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="form-field">
+                  <label>Appointment <span style={{ color: '#dc2626' }}>*</span></label>
+                  <SearchableSelect
+                    value={form.appointment_id}
+                    onChange={val => onAppointmentChange(val)}
+                    placeholder="Select appointment…"
+                    searchPlaceholder="Search appointment…"
+                    options={appointments
+                      // Hide appointments that already have an estimate — creating
+                      // one would always fail. Keep the currently selected one so
+                      // edit mode / deep links still display correctly.
+                      .filter(a => !a.has_estimate || String(a.id) === String(form.appointment_id))
+                      .map(a => ({
+                        value: a.id,
+                        label: `#${a.id} · ${a.customer_name || 'Unknown'} · ${a.vehicle_number || '—'}`,
+                      }))}
+                  />
+                  {!isEdit && (() => {
+                    const sel = appointments.find(a => String(a.id) === String(form.appointment_id));
+                    return sel?.has_estimate ? (
+                      <p style={{ margin: '6px 0 0', fontSize: 12, color: '#dc2626' }}>
+                        This appointment already has estimate #{sel.estimate_id} ({sel.estimate_status}). Open that estimate instead.
+                      </p>
+                    ) : null;
+                  })()}
+                </div>
+              )}
               <div className="form-field">
                 <label>Hub <span style={{ color: '#dc2626' }}>*</span></label>
                 {isHubUser ? (
@@ -1176,6 +1356,75 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                 onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                 placeholder="Any notes for this estimate…"
               />
+            </div>
+
+            {/* B2B Invoice */}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', background: isB2b ? 'var(--primary-light, #eff6ff)' : 'var(--bg-soft)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={isB2b}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    setIsB2b(checked);
+                    if (!checked) {
+                      setB2bCompanyName('');
+                      setB2bGstNumber('');
+                      setB2bAddress('');
+                    }
+                  }}
+                  style={{ width: 16, height: 16 }}
+                />
+                <Building2 size={15} style={{ color: 'var(--primary)' }} />
+                <span style={{ fontWeight: 700, fontSize: 13 }}>B2B Invoice (GST Registered Customer)</span>
+              </label>
+
+              {isB2b && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
+                  <div className="form-field">
+                    <label>Company Name <span style={{ color: '#dc2626' }}>*</span></label>
+                    <input
+                      className="form-input"
+                      value={b2bCompanyName}
+                      onChange={e => setB2bCompanyName(e.target.value)}
+                      placeholder="GST-registered company name"
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>GST Number <span style={{ color: '#dc2626' }}>*</span></label>
+                    <input
+                      className="form-input"
+                      value={b2bGstNumber}
+                      onChange={e => setB2bGstNumber(e.target.value.toUpperCase())}
+                      placeholder="15-character GSTIN"
+                      maxLength={15}
+                      style={b2bGstNumber && !gstValid ? { borderColor: '#dc2626' } : undefined}
+                    />
+                    {b2bGstNumber && !gstValid && (
+                      <p style={{ margin: '4px 0 0', fontSize: 11, color: '#dc2626' }}>Enter a valid 15-character GSTIN.</p>
+                    )}
+                  </div>
+                  <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                    <label>Billing Address <span style={{ color: '#dc2626' }}>*</span></label>
+                    <textarea
+                      className="form-input"
+                      style={{ minHeight: 60, resize: 'vertical' }}
+                      value={b2bAddress}
+                      onChange={e => setB2bAddress(e.target.value)}
+                      placeholder="Registered billing address"
+                    />
+                  </div>
+                  <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+                    <input
+                      type="checkbox"
+                      checked={saveB2bToProfile}
+                      onChange={e => setSaveB2bToProfile(e.target.checked)}
+                      style={{ width: 14, height: 14 }}
+                    />
+                    Save these details to this customer's profile for future estimates
+                  </label>
+                </div>
+              )}
             </div>
 
             {/* Line Items */}
@@ -1351,7 +1600,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                   </div>
                 </div>
 
-                {!form.appointment_id ? (
+                {mode === 'appointment' && !form.appointment_id ? (
                   <div style={{ padding: '20px', textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
                     ← Select an appointment first
                   </div>
@@ -1823,6 +2072,10 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   // Company settings for print header
   const [company, setCompany] = react.useState(null);
 
+  // Whether to include B2B billing details (Company Name/GST/Address) when
+  // printing — on-screen these always show regardless of this toggle.
+  const [includeB2bPrint, setIncludeB2bPrint] = react.useState(true);
+
   // Sub-modal states
   const [showApproval, setShowApproval] = react.useState(false);
   const [showRevision, setShowRevision] = react.useState(false);
@@ -2061,6 +2314,17 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             <StatusBadge status={status} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {estimate.is_b2b && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={includeB2bPrint}
+                  onChange={e => setIncludeB2bPrint(e.target.checked)}
+                  style={{ width: 13, height: 13 }}
+                />
+                Include B2B details in print
+              </label>
+            )}
             <button
               className="btn btn-ghost"
               onClick={() => {
@@ -2149,8 +2413,15 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Bill To</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 {[
+                  ...(estimate.is_b2b ? [
+                    { label: 'Company Name', value: estimate.b2b_company_name, b2b: true },
+                    { label: 'GST No', value: estimate.b2b_gst_number, b2b: true },
+                  ] : []),
                   { label: 'Customer', value: estimate.customer_name },
                   { label: 'Mobile', value: estimate.mobile },
+                  ...(estimate.is_b2b ? [
+                    { label: 'Address', value: estimate.b2b_address, b2b: true },
+                  ] : []),
                   {
                     label: 'Hub',
                     value: (
@@ -2160,8 +2431,8 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                       </>
                     )
                   },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ display: 'flex' }}>
+                ].map(({ label, value, b2b }) => (
+                  <div key={label} className={b2b && !includeB2bPrint ? 'est-no-print' : ''} style={{ display: 'flex' }}>
                     <span className="est-info-label">{label}</span>
                     <span className="est-info-value">{value || '—'}</span>
                   </div>
@@ -2720,6 +2991,12 @@ export default function EstimatesPage() {
   const [selectedId, setSelectedId] = react.useState(() => location.state?.openId ?? null);
   const [showCreate, setShowCreate] = react.useState(() => !!location.state?.createForAppointmentId);
   const [createApptId, setCreateApptId] = react.useState(() => location.state?.createForAppointmentId ?? null);
+  // "New Customer" — direct, standalone estimate creation: no appointment
+  // row is ever created. Reuses the customer + vehicle picker (steps 1 & 2
+  // of the appointment wizard, in standaloneMode) then chains straight into
+  // EstimateModal with the picked customer/vehicle as initialStandaloneContext.
+  const [showCreateAppt, setShowCreateAppt] = react.useState(false);
+  const [standaloneCreateCtx, setStandaloneCreateCtx] = react.useState(null);
   const [toast, setToast] = react.useState(null);
 
   const showToast = react.useCallback((msg, type = 'success') => setToast({ msg, type }), []);
@@ -2809,11 +3086,31 @@ export default function EstimatesPage() {
         )}
 
         {!selectedId && (
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> New Estimate
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost" onClick={() => setShowCreateAppt(true)} title="Create a new customer + vehicle, then go straight into the estimate — no appointment is created">
+              <Plus size={16} /> New Customer
+            </button>
+            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+              <Plus size={16} /> New Estimate
+            </button>
+          </div>
         )}
       </div>
+
+      {showCreateAppt && (
+        <CreateAppointmentModal
+          hubs={hubs}
+          statusList={[]}
+          standaloneMode
+          title="New Customer & Vehicle"
+          onClose={() => setShowCreateAppt(false)}
+          onComplete={(ctx) => {
+            setShowCreateAppt(false);
+            setStandaloneCreateCtx(ctx);
+            setShowCreate(true);
+          }}
+        />
+      )}
 
       {selectedId ? (
         /* ── Full-page Detail View ── */
@@ -2980,7 +3277,17 @@ export default function EstimatesPage() {
                             }}
                           >
                             <div>
-                              <div style={{ fontWeight: 600, fontSize: 13 }} className="est-cust-name">{est.customer_name || '—'}</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontWeight: 600, fontSize: 13 }} className="est-cust-name">{est.customer_name || '—'}</span>
+                                {est.is_b2b && (
+                                  <span title={est.b2b_company_name || 'B2B Invoice'} style={{
+                                    fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 4,
+                                    background: 'transparent', color: '#7c3aed', border: '1px solid #ddd6fe',
+                                  }}>
+                                    B2B
+                                  </span>
+                                )}
+                              </div>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                   <span style={{ fontSize: 11 }}>{est.vehicle_number || '—'}</span>
@@ -3036,8 +3343,9 @@ export default function EstimatesPage() {
         <EstimateModal
           editEstimate={null}
           initialAppointmentId={createApptId || ''}
-          onClose={() => { setShowCreate(false); setCreateApptId(null); }}
-          onSaved={onCreated}
+          initialStandaloneContext={standaloneCreateCtx}
+          onClose={() => { setShowCreate(false); setCreateApptId(null); setStandaloneCreateCtx(null); }}
+          onSaved={(item) => { onCreated(item); setStandaloneCreateCtx(null); }}
           isHubUser={isHubUser}
           userHubId={user?.hub_id ? String(user.hub_id) : ''}
         />

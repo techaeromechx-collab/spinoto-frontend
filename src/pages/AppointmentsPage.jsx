@@ -1595,7 +1595,13 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
 // ═════════════════════════════════════════════════════════════════════════════
 // Create Appointment Wizard  (3-step modal)
 // ═════════════════════════════════════════════════════════════════════════════
-function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
+// standaloneMode: used when this wizard is reused to pick a customer +
+// vehicle WITHOUT creating a real appointment row (e.g. standalone estimate
+// creation from EstimatesPage). In that mode, step 3 (schedule/hub/services,
+// which is appointment-specific) is skipped entirely — as soon as a vehicle
+// is picked/saved in step 2, onComplete({ customer, vehicle }) fires instead
+// of advancing to step 3 or POSTing to /api/appointments.
+export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, standaloneMode = false, onComplete, title = 'New Appointment' }) {
   // ── Step tracker ──────────────────────────────────────────────────────────
   const [step, setStep] = useState(1); // 1 customer · 2 vehicle · 3 details
 
@@ -1823,19 +1829,31 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
     return vt ? (vt.name?.toLowerCase().includes('two') || vt.name?.toLowerCase().includes('2')) : false;
   })();
 
-  // ── Select existing vehicle → go step 3 ──────────────────────────────────
+  // After a vehicle is picked/saved: normal mode advances to step 3
+  // (schedule/hub/services); standaloneMode instead hands the picked
+  // customer + vehicle straight back to the caller — no appointment row.
+  function proceedAfterVehicle(vehObj) {
+    if (standaloneMode) {
+      onComplete && onComplete({ customer: selectedCust, vehicle: vehObj });
+      return;
+    }
+    setStep(3);
+  }
+
+  // ── Select existing vehicle → go step 3 (or complete, in standaloneMode) ──
   function pickVehicle(veh) {
     // API returns segment_id (scalar) — normalize to segment_ids array for appointment creation
-    setSelectedVeh({
+    const normalized = {
       ...veh,
       segment_ids: veh.segment_ids?.length ? veh.segment_ids
         : veh.segment_id ? [veh.segment_id]
           : [],
-    });
-    setStep(3);
+    };
+    setSelectedVeh(normalized);
+    proceedAfterVehicle(normalized);
   }
 
-  // ── Save new vehicle → go step 3 ─────────────────────────────────────────
+  // ── Save new vehicle → go step 3 (or complete, in standaloneMode) ────────
   async function saveNewVehicle() {
     if (!newVeh.vehicle_number.trim()) { setError('Vehicle number is required'); return; }
     if (!newVeh.make_id) { setError('Make is required'); return; }
@@ -1856,12 +1874,16 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
           cc_category_id: newVeh.cc_category_id || null,
         },
       });
-      setSelectedVeh(r.item);
-      setStep(3);
+      // The vehicles endpoint returns a single `segment_id` — carry forward
+      // the full `segment_ids` array from the local form (already known
+      // client-side) rather than losing it.
+      const savedVeh = { ...r.item, segment_ids: newVeh.segment_ids };
+      setSelectedVeh(savedVeh);
+      proceedAfterVehicle(savedVeh);
     } catch (e) {
       // If vehicle already registered (409), still pick the vehicle data from the form
       if (e.message?.includes('already registered')) {
-        setSelectedVeh({
+        const vehObj = {
           vehicle_number: newVeh.vehicle_number.trim().toUpperCase(),
           vehicle_type_id: newVeh.vehicle_type_id || null,
           vehicle_type_name: vTypes.find(t => String(t.id) === String(newVeh.vehicle_type_id))?.name,
@@ -1872,8 +1894,9 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
           body_type_id: newVeh.body_type_id || null,
           segment_ids: newVeh.segment_ids,
           cc_category_id: newVeh.cc_category_id || null,
-        });
-        setStep(3);
+        };
+        setSelectedVeh(vehObj);
+        proceedAfterVehicle(vehObj);
       } else { setError(e.message); }
     }
   }
@@ -2009,7 +2032,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
     selectedVeh?.vehicle_type_name?.toLowerCase().includes('2') || false;
 
   // ── Step labels ───────────────────────────────────────────────────────────
-  const STEPS = ['Customer', 'Vehicle', 'Details'];
+  const STEPS = standaloneMode ? ['Customer', 'Vehicle'] : ['Customer', 'Vehicle', 'Details'];
 
   return (
     <div className="appt-backdrop" onClick={onClose}>
@@ -2018,9 +2041,9 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
         {/* Header */}
         <div className="ca-hdr">
           <div>
-            <div style={{ fontWeight: 800, fontSize: 16 }}>New Appointment</div>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>{title}</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              Step {step} of 3 — {STEPS[step - 1]}
+              Step {step} of {STEPS.length} — {STEPS[step - 1]}
             </div>
           </div>
           <button className="appt-icon-btn" onClick={onClose}><X size={16} /></button>

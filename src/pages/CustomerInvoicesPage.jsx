@@ -378,6 +378,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
   // generatingPI removed — PI is now created BEFORE CI in the new flow
   const [company, setCompany] = useState(null);
 
+  // Whether to include B2B billing details (Company Name/GST/Address) when
+  // printing — on-screen these always show regardless of this toggle.
+  const [includeB2bPrint, setIncludeB2bPrint] = useState(true);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -534,25 +538,38 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
           <span style={{ fontWeight: 700, fontSize: 16 }}>Customer Invoice {inv ? `#${inv.id}` : ''}</span>
           {inv && <StatusBadge status={inv.status} />}
         </div>
-        <button
-          className="btn btn-ghost"
-          onClick={() => {
-            const o = document.title;
-            if (inv) {
-              const invId = `CI-${String(inv.id).padStart(6, '0')}`;
-              const vNum = inv.vehicle_number || '';
-              const vModel = inv.model_name || '';
-              document.title = [invId, vNum, vModel].filter(Boolean).join('_');
-            }
-            window.print();
-            document.title = o;
-          }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {inv?.is_b2b && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={includeB2bPrint}
+                onChange={e => setIncludeB2bPrint(e.target.checked)}
+                style={{ width: 13, height: 13 }}
+              />
+              Include B2B details in print
+            </label>
+          )}
+          <button
+            className="btn btn-ghost"
+            onClick={() => {
+              const o = document.title;
+              if (inv) {
+                const invId = `CI-${String(inv.id).padStart(6, '0')}`;
+                const vNum = inv.vehicle_number || '';
+                const vModel = inv.model_name || '';
+                document.title = [invId, vNum, vModel].filter(Boolean).join('_');
+              }
+              window.print();
+              document.title = o;
+            }}
 
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-          title="Print / Save as PDF"
-        >
-          <Printer size={15} /> Print / PDF
-        </button>
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
+            title="Print / Save as PDF"
+          >
+            <Printer size={15} /> Print / PDF
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -573,8 +590,15 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Bill To</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 {[
+                  ...(inv.is_b2b ? [
+                    { label: 'Company Name', value: inv.b2b_company_name, b2b: true },
+                    { label: 'GST No', value: inv.b2b_gst_number, b2b: true },
+                  ] : []),
                   { label: 'Customer', value: inv.customer_name },
                   { label: 'Mobile', value: inv.mobile },
+                  ...(inv.is_b2b ? [
+                    { label: 'Address', value: inv.b2b_address, b2b: true },
+                  ] : []),
                   {
                     label: 'Hub / Branch',
                     value: (
@@ -584,8 +608,8 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
                       </>
                     )
                   },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ display: 'flex' }}>
+                ].map(({ label, value, b2b }) => (
+                  <div key={label} className={b2b && !includeB2bPrint ? 'est-no-print' : ''} style={{ display: 'flex' }}>
                     <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>{label}</span>
                     <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{value || '—'}</span>
                   </div>
@@ -1204,8 +1228,32 @@ export default function CustomerInvoicesPage() {
                               }}
                             >
                               <div>
-                                <div style={{ fontWeight: 600, fontSize: 13 }} className="ci-cust-name">{inv.customer_name || '—'}</div>
-                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inv.mobile || ''}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontWeight: 600, fontSize: 13 }} className="ci-cust-name">
+                                    {inv.is_b2b ? (inv.b2b_company_name || inv.customer_name || '—') : (inv.customer_name || '—')}
+                                  </span>
+                                  {inv.is_b2b && (
+                                    <span title="B2B Invoice" style={{
+                                      fontSize: 9,
+                                      fontWeight: 800,
+                                      padding: '1px 5px',
+                                      borderRadius: 4,
+                                      background: 'transparent',
+                                      color: '#7c3aed',
+                                      border: '1px solid #ddd6fe',
+                                    }}>
+                                      B2B
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                  {inv.is_b2b ? (inv.b2b_gst_number || '—') : (inv.mobile || '')}
+                                </div>
+                                {inv.is_b2b && (
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.7, marginTop: 1 }}>
+                                    {[inv.customer_name, inv.mobile].filter(Boolean).join(' · ')}
+                                  </div>
+                                )}
                               </div>
                               <span className="ci-cust-arrow">→</span>
                             </div>

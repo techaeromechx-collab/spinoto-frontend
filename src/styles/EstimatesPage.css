@@ -341,8 +341,17 @@
     letter-spacing: 0.05em !important;
     color: #6b7280 !important;
   }
-  .est-info-label { font-size: 9px !important; width: 72px !important; color: #6b7280 !important; font-weight: 500 !important; }
-  .est-info-value { font-size: 9px !important; font-weight: 600 !important; }
+  .est-info-grid > div > div[style*="display: flex"] { align-items: flex-start !important; }
+  .est-info-label {
+    font-size: 9px !important;
+    width: 92px !important;
+    min-width: 92px !important;
+    flex-shrink: 0 !important;
+    color: #6b7280 !important;
+    font-weight: 500 !important;
+    padding-right: 6px !important;
+  }
+  .est-info-value { font-size: 9px !important; font-weight: 600 !important; flex: 1 !important; }
 
   /* Item name font size in table */
   .est-items-table td:nth-child(2) div:first-child { font-size: 8px !important; font-weight: 700 !important; }
