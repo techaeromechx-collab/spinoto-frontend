@@ -452,28 +452,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
   const totalDiscount = ciDiscountMode === 'transaction' ? ciTxDiscountAmount : lineItemDiscount;
   const hasDiscount = totalDiscount > 0;
 
-  // Recompute all totals from post-discount per-item values (don't trust stored grand_total)
-  const { subtotal, totalGst, grandTotal: itemsGrandTotal } = items.reduce((acc, it) => {
-    const exRate = parseFloat(it.customer_rate ?? it.rate ?? 0);
-    const qty = parseFloat(it.quantity ?? 1);
-    const gstPct = parseFloat(it.gst_percent ?? 0);
-    const incRate = r2(exRate * (1 + gstPct / 100));
-    const totalBefore = r2(qty * incRate);
-    const discAmt = ciDiscountMode === 'line_item' ? computeDiscount(it) : 0;
-    const total = r2(Math.max(0, totalBefore - discAmt));
-    const taxable = r2(total / (1 + gstPct / 100));
-    const gstAmt = r2(total - taxable);
-    return {
-      subtotal: r2(acc.subtotal + taxable),
-      totalGst: r2(acc.totalGst + gstAmt),
-      grandTotal: r2(acc.grandTotal + total),
-    };
-  }, { subtotal: 0, totalGst: 0, grandTotal: 0 });
-
-  // Apply transaction discount on top of items total if applicable
-  const grandTotal = ciDiscountMode === 'transaction'
-    ? r2(itemsGrandTotal - ciTxDiscountAmount)
-    : itemsGrandTotal;
+  // Trust the database-stored header values directly to ensure 100% alignment
+  const subtotal = parseFloat(inv?.subtotal_ex_gst ?? 0);
+  const totalGst = parseFloat(inv?.total_gst ?? 0);
+  const grandTotal = parseFloat(inv?.grand_total ?? 0);
 
   // Dynamic GST slab grouping
   const gstSlabMap = {};
@@ -687,18 +669,22 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
                   {items.length === 0 ? (
                     <tr><td colSpan={hasDiscount ? 11 : 10} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
                   ) : items.map((it, i) => {
-                    const exRate = parseFloat(it.rate ?? it.customer_rate ?? 0);
+                    const exRate = parseFloat(it.customer_rate ?? it.rate ?? 0);
                     const qty = parseFloat(it.quantity ?? 1);
                     const gstPct = parseFloat(it.gst_percent ?? 0);
-                    const incRate = r2(exRate * (1 + gstPct / 100));
+                    
+                    // Trust the database-stored fields directly
+                    const total = parseFloat(it.total_inc_gst ?? 0);
+                    const gstAmt = parseFloat(it.gst_amount ?? 0);
+                    const taxable = r2(total - gstAmt);
+                    
                     const halfPct = gstPct / 2;
-                    const discAmt = computeDiscount(it);
+                    const discAmt = parseFloat(it.discount_amount ?? 0);
                     const dType = it.discount_type;
                     const dValue = parseFloat(it.discount_value) || 0;
-                    const totalBefore = r2(qty * incRate);
-                    const total = r2(Math.max(0, totalBefore - discAmt));
-                    const taxable = r2(total / (1 + gstPct / 100));
-                    const gstAmt = r2(total - taxable);
+                    
+                    // Display rate including GST (original standard price before discount)
+                    const incRate = qty > 0 ? r2((total + discAmt) / qty) : 0;
                     return (
                       <tr key={i}>
                         <td style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{i + 1}</td>
