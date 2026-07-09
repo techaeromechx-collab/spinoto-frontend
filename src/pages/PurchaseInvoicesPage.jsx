@@ -5,7 +5,7 @@ import { api } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
 import { getRoundingFunction } from '../lib/math.js';
 import {
-  ReceiptText, Search, RefreshCw, X, Eye,
+  ReceiptText, Search, RefreshCw, X, Eye, XCircle,
   AlertCircle, CheckCircle2, Clock, Trash2, ChevronLeft, Printer, FileText, MoreVertical,
 } from 'lucide-react';
 import '../styles/PurchaseInvoicesPage.css';
@@ -237,6 +237,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
   const [editItemRates, setEditItemRates] = useState({});
   const [editBusy, setEditBusy] = useState(false);
   const [showKebab, setShowKebab] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -329,6 +330,25 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
       showToast(err.message || 'Approval failed.', 'error');
     } finally {
       setApproving(false);
+    }
+  }
+
+  async function handleRejectApproval() {
+    if (!window.confirm('Are you sure you want to reject the approval of this purchase invoice? This will reset the invoice status to pending and clear any payment schedules.')) {
+      return;
+    }
+    setRejecting(true);
+    try {
+      const res = await api(`/api/purchase-invoices/${invoiceId}/reject-approval`, {
+        method: 'POST',
+      });
+      showToast('Purchase invoice approval rejected. Status reverted to pending.');
+      setInv(res.item);
+      onRefreshList();
+    } catch (err) {
+      showToast(err.message || 'Failed to reject purchase invoice approval.', 'error');
+    } finally {
+      setRejecting(false);
     }
   }
 
@@ -472,6 +492,15 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                     onClick={() => { setShowKebab(false); openEditModal(); }}
                   >
                     <FileText size={14} /> Edit Rates
+                  </button>
+                  <button
+                    style={{ width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-danger, #dc2626)', display: 'flex', alignItems: 'center', gap: 8, opacity: rejecting ? 0.6 : 1 }}
+                    disabled={rejecting}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                    onClick={() => { setShowKebab(false); handleRejectApproval(); }}
+                  >
+                    <XCircle size={14} /> {rejecting ? 'Rejecting…' : 'Reject Approval'}
                   </button>
                 </div>
               )}

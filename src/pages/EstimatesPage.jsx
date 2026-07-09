@@ -2504,7 +2504,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
               </>
             )}
 
-            {status === 'sent_to_customer' && (
+            {['sent_to_customer', 'partially_approved', 'fully_approved', 'work_in_progress'].includes(status) && (
               <button className="btn btn-primary" disabled={actionBusy}
                 onClick={() => setShowApproval(true)}>
                 Mark Customer Approval

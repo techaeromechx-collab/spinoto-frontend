@@ -28,6 +28,19 @@ function fmtTime(v) {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+function getScheduleTag(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date();
+  const target = new Date(dateStr);
+  const d1 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const d2 = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+  const diffTime = d2.getTime() - d1.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return { text: 'Today', bg: '#ecfdf4', color: '#166534' };
+  if (diffDays === 1) return { text: 'Tomorrow', bg: '#eff6ff', color: '#1e40af' };
+  return null;
+}
+
 function StatusBadge({ name, color, bg }) {
   return (
     <span style={{
@@ -709,7 +722,14 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
             <div className="apptv-row apptv-row--border" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 10 }}>
               {appt.pickup_required && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
-                  <span className="apptv-pickup-badge"><MapPin size={10} /> Pickup Required</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span className="apptv-pickup-badge"><MapPin size={10} /> Pickup Required</span>
+                    {appt.pickup_scheduled_date && (
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+                        Scheduled: {fmtDate(appt.pickup_scheduled_date)}{appt.pickup_scheduled_time ? ` at ${fmtTime(appt.pickup_scheduled_time)}` : ''}
+                      </span>
+                    )}
+                  </div>
                   {(appt.pickup_address_line1 || appt.pickup_city) && (
                     <p className="apptv-notes" style={{ margin: 0 }}>
                       {[appt.pickup_address_line1, appt.pickup_address_line2, appt.pickup_city, appt.pickup_pincode].filter(Boolean).join(', ')}
@@ -951,6 +971,8 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
     pickup_city: appt.pickup_city || '',
     pickup_pincode: appt.pickup_pincode || '',
     pickup_maps_link: appt.pickup_maps_link || '',
+    pickup_scheduled_date: appt.pickup_scheduled_date || '',
+    pickup_scheduled_time: appt.pickup_scheduled_time?.slice(0, 5) || '',
     drop_required: appt.drop_required || false,
     drop_address_line1: appt.drop_address_line1 || '',
     drop_address_line2: appt.drop_address_line2 || '',
@@ -1255,6 +1277,8 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
           pickup_city: form.pickup_required ? (form.pickup_city.trim() || null) : null,
           pickup_pincode: form.pickup_required ? (form.pickup_pincode.trim() || null) : null,
           pickup_maps_link: form.pickup_required ? (form.pickup_maps_link.trim() || null) : null,
+          pickup_scheduled_date: form.pickup_required ? (form.pickup_scheduled_date || null) : null,
+          pickup_scheduled_time: form.pickup_required ? (form.pickup_scheduled_time || null) : null,
           drop_required: form.drop_required,
           drop_address_line1: form.drop_required ? (form.drop_address_line1.trim() || null) : null,
           drop_address_line2: form.drop_required ? (form.drop_address_line2.trim() || null) : null,
@@ -1441,7 +1465,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.pickup_required ? 10 : 0 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: !form.pickup_required ? 'var(--text)' : 'var(--text-muted)' }}>Visit</span>
               <button type="button"
-                onClick={() => setForm(p => ({ ...p, pickup_required: !p.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '' }))}
+                onClick={() => setForm(p => ({ ...p, pickup_required: !p.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '', pickup_scheduled_date: '', pickup_scheduled_time: '' }))}
                 className={`ea-toggle${form.pickup_required ? ' ea-toggle--on' : ''}`}>
                 <span className="ea-toggle-knob" />
               </button>
@@ -1449,6 +1473,14 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
             </div>
             {form.pickup_required && (
               <div className="ea-grid" style={{ marginBottom: 14 }}>
+                <div className="ea-field">
+                  <label>Pickup Date</label>
+                  <input type="date" className="ea-input" value={form.pickup_scheduled_date} onChange={f('pickup_scheduled_date')} />
+                </div>
+                <div className="ea-field">
+                  <label>Pickup Time</label>
+                  <input type="time" className="ea-input" value={form.pickup_scheduled_time} onChange={f('pickup_scheduled_time')} />
+                </div>
                 <div className="ea-field ea-full">
                   <label>Address Line 1 *</label>
                   <input className="ea-input" placeholder="Flat / Building / Street" value={form.pickup_address_line1} onChange={f('pickup_address_line1')} />
@@ -1606,6 +1638,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
     hub_id: '', scheduled_date: '', scheduled_time: '',
     notes: '',
     pickup_required: false, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '',
+    pickup_scheduled_date: '', pickup_scheduled_time: '',
     drop_required: false, drop_address_line1: '', drop_address_line2: '', drop_city: '', drop_pincode: '', drop_maps_link: '',
   });
   const [hubCategories, setHubCategories] = useState([]);
@@ -1951,6 +1984,8 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
         pickup_city: apptForm.pickup_required ? (apptForm.pickup_city.trim() || null) : null,
         pickup_pincode: apptForm.pickup_required ? (apptForm.pickup_pincode.trim() || null) : null,
         pickup_maps_link: apptForm.pickup_required ? (apptForm.pickup_maps_link.trim() || null) : null,
+        pickup_scheduled_date: apptForm.pickup_required ? (apptForm.pickup_scheduled_date || null) : null,
+        pickup_scheduled_time: apptForm.pickup_required ? (apptForm.pickup_scheduled_time || null) : null,
         drop_required: apptForm.drop_required,
         drop_address_line1: apptForm.drop_required ? apptForm.drop_address_line1.trim() : null,
         drop_address_line2: apptForm.drop_required ? (apptForm.drop_address_line2.trim() || null) : null,
@@ -2351,7 +2386,7 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: !apptForm.pickup_required ? 'var(--text)' : 'var(--text-muted)' }}>Visit</span>
                   <button type="button"
-                    onClick={() => setApptForm(f => ({ ...f, pickup_required: !f.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '' }))}
+                    onClick={() => setApptForm(f => ({ ...f, pickup_required: !f.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '', pickup_scheduled_date: '', pickup_scheduled_time: '' }))}
                     className={`ea-toggle${apptForm.pickup_required ? ' ea-toggle--on' : ''}`}>
                     <span className="ea-toggle-knob" />
                   </button>
@@ -2360,6 +2395,20 @@ function CreateAppointmentModal({ hubs, statusList, onClose, onCreated }) {
 
                 {apptForm.pickup_required && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 4 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div>
+                        <label className="ca-lbl">Pickup Date</label>
+                        <input type="date" className="ca-input"
+                          value={apptForm.pickup_scheduled_date}
+                          onChange={e => setApptForm(f => ({ ...f, pickup_scheduled_date: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="ca-lbl">Pickup Time</label>
+                        <input type="time" className="ca-input"
+                          value={apptForm.pickup_scheduled_time}
+                          onChange={e => setApptForm(f => ({ ...f, pickup_scheduled_time: e.target.value }))} />
+                      </div>
+                    </div>
                     <div>
                       <label className="ca-lbl">Address Line 1 <span style={{ color: '#dc2626' }}>*</span></label>
                       <input className="ca-input" placeholder="Flat / Building / Street"
@@ -2763,6 +2812,18 @@ export default function AppointmentsPage() {
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 13 }} className="appt-cust-name">{a.customer_name || '—'}</div>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{a.mobile}</div>
+                          {(() => {
+                            const tag = getScheduleTag(a.scheduled_date);
+                            return tag ? (
+                              <div style={{ marginTop: 4 }}>
+                                <span style={{
+                                  fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
+                                  background: tag.bg, color: tag.color, textTransform: 'uppercase',
+                                  lineHeight: 1, display: 'inline-block'
+                                }}>{tag.text}</span>
+                              </div>
+                            ) : null;
+                          })()}
                         </div>
                         <span className="appt-cust-arrow">→</span>
                       </div>
@@ -2889,6 +2950,16 @@ export default function AppointmentsPage() {
             return (
               <div key={a.id} className="appt-card" onClick={() => setModal({ mode: 'view', appt: a })}>
                 <div className="appt-card-left">
+                  {(() => {
+                    const tag = getScheduleTag(a.scheduled_date);
+                    return tag ? (
+                      <span style={{
+                        fontSize: 8, fontWeight: 850, padding: '2px 4px', borderRadius: 4,
+                        background: tag.bg, color: tag.color, textTransform: 'uppercase',
+                        lineHeight: 1, display: 'inline-block', marginBottom: 2
+                      }}>{tag.text}</span>
+                    ) : null;
+                  })()}
                   <span className="appt-id-badge">#{a.id}</span>
                   <span className="appt-card-created">{created}</span>
                 </div>
