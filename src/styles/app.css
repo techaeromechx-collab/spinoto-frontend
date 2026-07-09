@@ -36,13 +36,16 @@
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: var(--bg);
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
@@ -339,7 +342,7 @@ a:hover {
 }
 
 .data-table td {
-  padding: 16px 24px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1160,6 +1163,7 @@ a:hover {
   align-items: center;
   gap: 6px;
 }
+
 .up-role-source-label::after {
   content: '';
   flex: 1;
@@ -2425,6 +2429,7 @@ a {
   .up-fg-body {
     flex-direction: column;
   }
+
   .up-fg-sidebar {
     width: 100%;
     flex-direction: row;
@@ -2435,7 +2440,11 @@ a {
     scrollbar-width: none;
     flex-shrink: 0;
   }
-  .up-fg-sidebar::-webkit-scrollbar { display: none; }
+
+  .up-fg-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
   .up-fg-cat {
     border-left: none;
     border-bottom: 2px solid transparent;
@@ -2443,10 +2452,12 @@ a {
     flex-shrink: 0;
     padding: 8px 12px;
   }
+
   .up-fg-cat--active {
     border-left-color: transparent;
     border-bottom-color: var(--primary);
   }
+
   .up-fg-perm-list {
     flex-direction: column;
     max-height: 260px;
@@ -2454,19 +2465,30 @@ a {
   }
 
   /* Data table global: ensure overflow on .card wrapping a table */
-  .card { overflow-x: visible; }
+  .card {
+    overflow-x: visible;
+  }
 
   /* Page header: already handled but ensure flex-wrap */
-  .page-header { flex-wrap: wrap; }
+  .page-header {
+    flex-wrap: wrap;
+  }
 }
 
 /* ── Topbar: hide text on small screens ─────────────────────── */
 @media (max-width: 480px) {
-  .topbar-brand-mobile { font-size: 14px; }
-  .content { padding: 8px; }
+  .topbar-brand-mobile {
+    font-size: 14px;
+  }
+
+  .content {
+    padding: 8px;
+  }
 
   /* Card padding reduction */
-  .card { border-radius: 10px; }
+  .card {
+    border-radius: 10px;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2493,11 +2515,14 @@ body {
 
 /* Prevent overscroll bounce only in standalone PWA mode */
 @media (display-mode: standalone) {
-  body { overscroll-behavior: none; }
+  body {
+    overscroll-behavior: none;
+  }
 }
 
 /* When running as standalone installed app */
 @media (display-mode: standalone) {
+
   /* Push content below the iOS status bar / notch */
   body {
     padding-top: env(safe-area-inset-top);
@@ -2507,8 +2532,11 @@ body {
   }
 
   /* Ensure root fills the full safe viewport height */
-  html, body, #root {
-    height: 100dvh; /* dynamic viewport height — respects keyboard */
+  html,
+  body,
+  #root {
+    height: 100dvh;
+    /* dynamic viewport height — respects keyboard */
   }
 
   /* Prevent address-bar-like bounce on iOS */
@@ -2532,6 +2560,7 @@ body {
 
 /* ── Smooth scrollable pages in standalone mode ──────────────── */
 @media (display-mode: standalone) {
+
   .content,
   .page,
   main {
@@ -2563,8 +2592,15 @@ body {
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 .pwa-install-banner__icon {
@@ -2622,6 +2658,7 @@ body {
    provides the tap area. Applying min-size directly to the input
    makes them render as giant boxes on mobile. */
 @media (pointer: coarse) {
+
   button,
   [role="button"],
   select {
