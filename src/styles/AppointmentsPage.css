@@ -613,9 +613,6 @@
   display: inline-block;
   font-size: 11px;
   font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: rgba(22,185,148,0.12);
   color: var(--primary);
 }
 
@@ -658,7 +655,6 @@
 }
 
 .appt-row-clickable:hover .appt-id-badge {
-  background: #bfdbfe;
   color: #1d4ed8;
 }
 
@@ -1994,4 +1990,20 @@
 .appt-cust-link:hover .appt-cust-arrow {
   opacity: 1;
   transform: translateX(0);
+}
+
+.appt-row-action-hover {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, background-color 0.2s ease;
+  z-index: 10;
+}
+
+.appt-row-clickable:hover .appt-row-action-hover {
+  opacity: 1;
+  pointer-events: auto;
 }

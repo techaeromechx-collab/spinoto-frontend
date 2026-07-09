@@ -111,13 +111,13 @@ function ApptStatusSelect({
   pickupTimestamp, estimateStatus, invoiceStatus, invoiceId,
   showToast,
 }) {
-  const canEdit  = useCan('EDIT_APPOINTMENT');
+  const canEdit = useCan('EDIT_APPOINTMENT');
   const navigate = useNavigate();
-  const [open, setOpen]               = useState(false);
-  const [busy, setBusy]               = useState(false);
-  const [pos,  setPos]                = useState({ top: 0, left: 0, width: 0 });
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const [pendingStatus, setPendingStatus] = useState(null);
-  const [blockMsg, setBlockMsg]       = useState('');   // inline error message
+  const [blockMsg, setBlockMsg] = useState('');   // inline error message
   const btnRef = useRef(null);
   const dropRef = useRef(null);
 
@@ -144,18 +144,18 @@ function ApptStatusSelect({
   function openDrop() {
     const r = btnRef.current?.getBoundingClientRect();
     if (r) {
-      const itemCount   = statusList.filter(s => !['vehicle-picked','at-workshop'].includes(s.slug) || pickupRequired).length;
-      const dropHeight  = itemCount * 36 + 12; // approx height
-      const spaceBelow  = window.innerHeight - r.bottom;
-      const openUpward  = spaceBelow < dropHeight + 8 && r.top > dropHeight;
-      const width       = Math.max(r.width, 220);
+      const itemCount = statusList.filter(s => !['vehicle-picked', 'at-workshop'].includes(s.slug) || pickupRequired).length;
+      const dropHeight = itemCount * 36 + 12; // approx height
+      const spaceBelow = window.innerHeight - r.bottom;
+      const openUpward = spaceBelow < dropHeight + 8 && r.top > dropHeight;
+      const width = Math.max(r.width, 220);
       // Clamp so the panel never overflows the right/left edge of the screen
       // (on mobile the status button sits near the right edge of the card).
-      const left        = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
       setPos({
         left,
         width,
-        top:    openUpward ? undefined : r.bottom + 4,
+        top: openUpward ? undefined : r.bottom + 4,
         bottom: openUpward ? window.innerHeight - r.top + 4 : undefined,
       });
     }
@@ -167,13 +167,13 @@ function ApptStatusSelect({
   // Returns: { ok: true } | { ok: false, message } | { ok: false, redirect, state }
   function checkPrerequisite(slug) {
     // estimate helper flags
-    const estExists   = !!estimateStatus;
+    const estExists = !!estimateStatus;
     const estSubmitted = estExists && ['pending_company_review', 'approved', 'customer_approved', 'revision_requested', 'work_in_progress', 'work_completed'].includes(estimateStatus);
-    const estApproved  = estExists && ['approved', 'customer_approved', 'work_in_progress', 'work_completed'].includes(estimateStatus);
+    const estApproved = estExists && ['approved', 'customer_approved', 'work_in_progress', 'work_completed'].includes(estimateStatus);
     // invoice helper flags
-    const invExists   = !!invoiceId;
+    const invExists = !!invoiceId;
     const invApproved = invExists && ['approved', 'partially_paid', 'paid'].includes(invoiceStatus);
-    const invPaid     = invExists && ['paid'].includes(invoiceStatus);
+    const invPaid = invExists && ['paid'].includes(invoiceStatus);
 
     switch (slug) {
       // ── Pickup flow ──
@@ -502,10 +502,10 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
       const r = await api(`/api/appointments/${appt.id}`, {
         method: 'PATCH',
         body: {
-          scheduled_date:    formData.scheduled_date,
-          scheduled_time:    formData.scheduled_time || null,
+          scheduled_date: formData.scheduled_date,
+          scheduled_time: formData.scheduled_time || null,
           reschedule_reason: formData.reschedule_reason,
-          reschedule_notes:  formData.reschedule_notes || null,
+          reschedule_notes: formData.reschedule_notes || null,
         },
       });
       setAppt(r.item);
@@ -1226,10 +1226,10 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
       // ── Detect vehicle field changes ──────────────────────────────────────
       const vehicleChanged = !locked && (
         String(form.vehicle_type_id || '') !== String(appt.vehicle_type_id || '') ||
-        String(form.make_id          || '') !== String(appt.make_id          || '') ||
-        String(form.model_id         || '') !== String(appt.model_id         || '') ||
-        String(form.body_type_id     || '') !== String(appt.body_type_id     || '') ||
-        String(form.cc_category_id   || '') !== String(appt.cc_category_id   || '') ||
+        String(form.make_id || '') !== String(appt.make_id || '') ||
+        String(form.model_id || '') !== String(appt.model_id || '') ||
+        String(form.body_type_id || '') !== String(appt.body_type_id || '') ||
+        String(form.cc_category_id || '') !== String(appt.cc_category_id || '') ||
         JSON.stringify(form.segment_ids || []) !== JSON.stringify(appt.segment_ids || [])
       );
 
@@ -2765,21 +2765,20 @@ export default function AppointmentsPage() {
                 <th>Schedule</th>
                 <th>Totals</th>
                 <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 8 }).map((_, j) => (
+                    {Array.from({ length: 7 }).map((_, j) => (
                       <td key={j}><div className="appt-skel" /></td>
                     ))}
                   </tr>
                 ))
               ) : appts.length === 0 ? (
                 <tr>
-                  <td colSpan="8">
+                  <td colSpan="7">
                     <div className="appt-empty">
                       <Calendar size={36} style={{ opacity: .2, marginBottom: 10 }} />
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>No appointments found</div>
@@ -2797,7 +2796,7 @@ export default function AppointmentsPage() {
                   <tr key={a.id} className="appt-row-clickable"
                     onClick={() => setModal({ mode: 'view', appt: a })}>
                     <td>
-                      <span className="appt-id-badge">#{a.id}</span>
+                      <span className="appt-id-badge">{a.id}</span>
                       {a.lead_id && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Lead #{a.lead_id}</div>}
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{fmtDate(a.created_at)}</div>
                     </td>
@@ -2837,7 +2836,7 @@ export default function AppointmentsPage() {
                       </div>
                     </td>
                     <td>
-                      <div style={{ fontSize: 13, fontWeight: 500 }}>{a.hub_name || '—'}</div>
+                      <div style={{ fontSize: 13, fontWeight: 400 }}>{a.hub_name || '—'}</div>
                       {a.created_by_name && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                           By: {a.created_by_name}
@@ -2860,7 +2859,7 @@ export default function AppointmentsPage() {
                         </div>
                         {a.estimate_id && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                            <span 
+                            <span
                               style={{ color: '#4f46e5', cursor: 'pointer', textDecoration: 'underline' }}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2874,7 +2873,7 @@ export default function AppointmentsPage() {
                         )}
                         {a.invoice_id && (
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                            <span 
+                            <span
                               style={{ color: '#0f766e', cursor: 'pointer', textDecoration: 'underline' }}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2888,7 +2887,7 @@ export default function AppointmentsPage() {
                         )}
                       </div>
                     </td>
-                    <td onClick={e => e.stopPropagation()}>
+                    <td onClick={e => e.stopPropagation()} style={{ position: 'relative', paddingRight: 36 }}>
                       <ApptStatusSelect
                         apptId={a.id}
                         current={statusCfg}
@@ -2901,24 +2900,22 @@ export default function AppointmentsPage() {
                         invoiceStatus={a.invoice_status}
                         showToast={showToast}
                       />
+                      {canEdit && statusCfg?.name !== 'Invoice Approved' && (
+                        <button className="appt-icon-btn appt-icon-btn--edit appt-row-action-hover" title="Edit"
+                          onClick={async () => {
+                            try {
+                              const r = await api(`/api/appointments/${a.id}`);
+                              setEditAppt(r.item);
+                            } catch {
+                              setEditAppt(a);
+                            }
+                          }}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      )}
                     </td>
-                    <td onClick={e => e.stopPropagation()}>
-                      <div className="appt-actions">
-                        {canEdit && statusCfg?.name !== 'Invoice Approved' && (
-                          <button className="appt-icon-btn appt-icon-btn--edit" title="Edit"
-                            onClick={async () => {
-                              try {
-                                const r = await api(`/api/appointments/${a.id}`);
-                                setEditAppt(r.item);
-                              } catch {
-                                setEditAppt(a);
-                              }
-                            }}>
-                            <Pencil size={13} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
+
                   </tr>
                 );
               })}
@@ -2960,7 +2957,7 @@ export default function AppointmentsPage() {
                       }}>{tag.text}</span>
                     ) : null;
                   })()}
-                  <span className="appt-id-badge">#{a.id}</span>
+                  <span className="appt-id-badge">{a.id}</span>
                   <span className="appt-card-created">{created}</span>
                 </div>
                 <div className="appt-card-main">
