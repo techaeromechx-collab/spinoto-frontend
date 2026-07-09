@@ -6,7 +6,7 @@ import PaginationBar from '../components/PaginationBar.jsx';
 import { getRoundingFunction } from '../lib/math.js';
 import {
   Receipt, Search, RefreshCw, X, Eye, Trash2,
-  AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Car,
+  AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Car, ChevronDown,
 } from 'lucide-react';
 import '../styles/CustomerInvoicesPage.css';
 
@@ -956,7 +956,8 @@ export default function CustomerInvoicesPage() {
   const [pageSize, setPageSize] = useState(10);
 
   const [search, setSearch] = useState('');
-  const [hubFilter, setHubFilter] = useState(() => user?.hub_id ? String(user.hub_id) : '');
+  const [hubFilter, setHubFilter] = useState(() => user?.hub_id ? [String(user.hub_id)] : []);
+  const [showHubDropdown, setShowHubDropdown] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState('');
   const [hubs, setHubs] = useState([]);
@@ -979,7 +980,7 @@ export default function CustomerInvoicesPage() {
     try {
       const q = new URLSearchParams();
       if (search.trim()) q.set('search', search.trim());
-      if (hubFilter) q.set('hub_id', hubFilter);
+      if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
       if (statusFilter) q.set('status', statusFilter);
       if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
       q.set('page', page);
@@ -1051,7 +1052,7 @@ export default function CustomerInvoicesPage() {
       ) : (
         <>
           {/* Filters */}
-          <div className="card" style={{ padding: '14px 18px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="card" style={{ padding: '14px 18px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', overflow: 'visible' }}>
             <div style={{ position: 'relative', flex: '1 1 220px' }}>
               <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
@@ -1063,15 +1064,58 @@ export default function CustomerInvoicesPage() {
               />
             </div>
             {!isHubUser && (
-              <select
-                className="form-input"
-                style={{ flex: '0 0 180px' }}
-                value={hubFilter}
-                onChange={e => { setHubFilter(e.target.value); setPage(1); }}
-              >
-                <option value="">All hubs</option>
-                {hubs.map(h => <option key={h.id} value={h.id}>{h.hub_name}</option>)}
-              </select>
+              <div style={{ position: 'relative', flex: '0 0 180px' }}>
+                <button
+                  type="button"
+                  className="form-input"
+                  style={{ width: '100%', textAlign: 'left', background: 'var(--bg)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  onClick={() => setShowHubDropdown(p => !p)}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {hubFilter.length === 0 
+                      ? 'All Hubs' 
+                      : `${hubFilter.length} Hubs Selected`}
+                  </span>
+                  <ChevronDown size={14} style={{ opacity: 0.5 }} />
+                </button>
+                
+                {showHubDropdown && (
+                  <>
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowHubDropdown(false)} />
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+                      background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8,
+                      boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxH: 220,
+                      overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
+                    }}>
+                      {hubs.map(h => {
+                        const isChecked = hubFilter.includes(String(h.id));
+                        return (
+                          <label 
+                            key={h.id} 
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', cursor: 'pointer', borderRadius: 4, userSelect: 'none' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                const newIds = isChecked
+                                  ? hubFilter.filter(id => id !== String(h.id))
+                                  : [...hubFilter, String(h.id)];
+                                setHubFilter(newIds);
+                                setPage(1);
+                              }}
+                            />
+                            <span style={{ fontSize: 13, color: 'var(--text)' }}>{h.hub_name || h.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
             <select
               className="form-input"
