@@ -585,7 +585,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
                   const vehicleText = match ? match[1] : 'this vehicle';
                   return (
                     <div className="lp-vm-master-warn">
-                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
+                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
                       <span>
                         <strong>"{vehicleText}"</strong> is not in the Vehicle Master.
                         Please add this make &amp; model to the Vehicle Master so correct pricing and services can be matched.
@@ -597,7 +597,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
                 {/* ── Vehicle Master warning — body type missing (4W only) ── */}
                 {lead.vehicle_in_master === false && (
                   <div className="lp-vm-master-warn">
-                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
+                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
                     <span>
                       <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — body type is missing.
                       Please update the Vehicle Master so pricing and services can be matched correctly.
@@ -608,7 +608,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
                 {/* ── Vehicle Master warning — CC category missing (2W only) ── */}
                 {lead.cc_missing === true && (
                   <div className="lp-vm-master-warn">
-                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
+                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
                     <span>
                       <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — engine CC category is missing.
                       Please update the Vehicle Master so the correct service pricing can be applied.
@@ -619,7 +619,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
                 {/* ── Segment missing warning (4W only) ── */}
                 {lead.make_id && !is2WType(lead.vehicle_type_name || '') && (!lead.segment_ids || lead.segment_ids.length === 0) && (
                   <div className="lp-vm-master-warn">
-                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }}/>
+                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
                     <span>
                       <strong>Segment not set</strong> for this vehicle. Please add the segment (e.g. Petrol, Diesel, CNG) so the correct service pricing can be applied.
                     </span>
@@ -675,44 +675,44 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
                   <div className="lp-vm-empty-row">No follow-ups scheduled.</div>
                 ) : (
                   <div className="lp-fu-detail-wrap">
-                  <div className="lp-fu-detail-list">
-                    {followUps.map(fu => {
-                      const d       = new Date(fu.due_date);
-                      const today   = new Date(); today.setHours(0,0,0,0);
-                      const diff    = Math.round((d - today) / 86400000);
-                      const isOverdue  = !fu.is_done && !isLeadLocked && diff < 0;
-                      const isToday    = !fu.is_done && !isLeadLocked && diff === 0;
-                      const dateLabel  = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-                      const timeLabel  = fu.due_at
-                        ? new Date(fu.due_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-                        : null;
-                      return (
-                        <div key={fu.id} className={`lp-fu-detail-row${fu.is_done ? ' lp-fu-detail-row--done' : isOverdue ? ' lp-fu-detail-row--overdue' : ''}`}>
-                          <div className="lp-fu-detail-dot" style={{
-                            background: fu.is_done ? '#16a34a' : isOverdue ? '#dc2626' : isToday ? '#d97706' : '#2563eb'
-                          }} />
-                          <div className="lp-fu-detail-body">
-                            <div className="lp-fu-detail-date">
-                              {dateLabel}{timeLabel && ` · ${timeLabel}`}
-                              {fu.is_done && <span className="lp-fu-detail-done-tag">✓ Done</span>}
-                              {isOverdue  && <span className="lp-fu-detail-overdue-tag">⚠ Overdue</span>}
-                              {isToday    && <span className="lp-fu-detail-today-tag">Today</span>}
+                    <div className="lp-fu-detail-list">
+                      {followUps.map(fu => {
+                        const d = new Date(fu.due_date);
+                        const today = new Date(); today.setHours(0, 0, 0, 0);
+                        const diff = Math.round((d - today) / 86400000);
+                        const isOverdue = !fu.is_done && !isLeadLocked && diff < 0;
+                        const isToday = !fu.is_done && !isLeadLocked && diff === 0;
+                        const dateLabel = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                        const timeLabel = fu.due_at
+                          ? new Date(fu.due_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                          : null;
+                        return (
+                          <div key={fu.id} className={`lp-fu-detail-row${fu.is_done ? ' lp-fu-detail-row--done' : isOverdue ? ' lp-fu-detail-row--overdue' : ''}`}>
+                            <div className="lp-fu-detail-dot" style={{
+                              background: fu.is_done ? '#16a34a' : isOverdue ? '#dc2626' : isToday ? '#d97706' : '#2563eb'
+                            }} />
+                            <div className="lp-fu-detail-body">
+                              <div className="lp-fu-detail-date">
+                                {dateLabel}{timeLabel && ` · ${timeLabel}`}
+                                {fu.is_done && <span className="lp-fu-detail-done-tag">✓ Done</span>}
+                                {isOverdue && <span className="lp-fu-detail-overdue-tag">⚠ Overdue</span>}
+                                {isToday && <span className="lp-fu-detail-today-tag">Today</span>}
+                              </div>
+                              {fu.note && <div className="lp-fu-detail-note">{fu.note}</div>}
+                              <div className="lp-fu-detail-meta">Status: <strong>{fu.status_name || '—'}</strong></div>
+                              {!fu.is_done && !isLeadLocked && (
+                                <button
+                                  style={{ marginTop: 6, fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}
+                                  onClick={() => setRescheduleId(fu.id)}
+                                >
+                                  Reschedule
+                                </button>
+                              )}
                             </div>
-                            {fu.note && <div className="lp-fu-detail-note">{fu.note}</div>}
-                            <div className="lp-fu-detail-meta">Status: <strong>{fu.status_name || '—'}</strong></div>
-                            {!fu.is_done && !isLeadLocked && (
-                              <button
-                                style={{ marginTop: 6, fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}
-                                onClick={() => setRescheduleId(fu.id)}
-                              >
-                                Reschedule
-                              </button>
-                            )}
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1294,9 +1294,9 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
       // ── Detect vehicle field changes ──────────────────────────────────────
       const vehicleChanged =
         String(vForm.vehicle_type_id || '') !== String(lead.vehicle_type_id || '') ||
-        String(vForm.make_id          || '') !== String(lead.make_id          || '') ||
-        String(vForm.model_id         || '') !== String(lead.model_id         || '') ||
-        String(vForm.body_type_id     || '') !== String(lead.body_type_id     || '') ||
+        String(vForm.make_id || '') !== String(lead.make_id || '') ||
+        String(vForm.model_id || '') !== String(lead.model_id || '') ||
+        String(vForm.body_type_id || '') !== String(lead.body_type_id || '') ||
         (ccCategoryId || null) !== (lead.cc_category_id || null) ||
         JSON.stringify(vForm.segment_ids || []) !== JSON.stringify(lead.segment_ids || []);
 
@@ -1306,11 +1306,11 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
       if (vehicleChanged && selectedServices.length > 0) {
         const dims = {
           vehicle_type_id: Number(vForm.vehicle_type_id) || null,
-          make_id:         Number(vForm.make_id)         || null,
-          model_id:        Number(vForm.model_id)        || null,
-          body_type_id:    vehicleClass === '4W' ? (Number(vForm.body_type_id) || null) : null,
-          cc_category_id:  vehicleClass === '2W' ? (ccCategoryId || null) : null,
-          segment_id:      vForm.segment_ids?.length ? Number(vForm.segment_ids[0]) : null,
+          make_id: Number(vForm.make_id) || null,
+          model_id: Number(vForm.model_id) || null,
+          body_type_id: vehicleClass === '4W' ? (Number(vForm.body_type_id) || null) : null,
+          cc_category_id: vehicleClass === '2W' ? (ccCategoryId || null) : null,
+          segment_id: vForm.segment_ids?.length ? Number(vForm.segment_ids[0]) : null,
         };
 
         const recalculated = await Promise.all(
@@ -1839,13 +1839,13 @@ function DeleteModal({ lead, onClose, onConfirm }) {
 // Both can be true → both sections shown in one modal
 function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onConfirm, onCancel }) {
   useBodyLock();
-  const [outcome,   setOutcome]   = useState('');
+  const [outcome, setOutcome] = useState('');
   const [callNotes, setCallNotes] = useState('');
-  const [date,      setDate]      = useState('');
-  const [time,      setTime]      = useState('09:00');
-  const [note,      setNote]      = useState('');
-  const [error,     setError]     = useState('');
-  const [outcomes,  setOutcomes]  = useState([]);
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('09:00');
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+  const [outcomes, setOutcomes] = useState([]);
 
   // Outcome colors cycle — purely visual
   const OUTCOME_COLORS = [
@@ -1865,14 +1865,14 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
         setOutcomes(list);
         if (list.length > 0) setOutcome(list[0].name);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [logsCall]);
 
   function handleConfirm() {
     if (needsFollowUp && !date) { setError('Please select a follow-up date.'); return; }
     onConfirm({
-      ...(logsCall     ? { call_outcome: outcome, call_notes: callNotes || null } : {}),
-      ...(needsFollowUp ? { follow_up_date: date, follow_up_time: time, note }    : {}),
+      ...(logsCall ? { call_outcome: outcome, call_notes: callNotes || null } : {}),
+      ...(needsFollowUp ? { follow_up_date: date, follow_up_time: time, note } : {}),
     });
   }
 
@@ -1880,8 +1880,8 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
   const labelStyle = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 };
 
   const title = logsCall && needsFollowUp ? 'Log Call & Schedule Follow-up'
-              : logsCall                  ? 'Log Call'
-              :                             'Schedule Follow-up';
+    : logsCall ? 'Log Call'
+      : 'Schedule Follow-up';
 
   return (
     <div className="lr-backdrop" onClick={onCancel}>
@@ -1979,8 +1979,8 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
           <button className="lr-btn-cancel" onClick={onCancel}>Cancel</button>
           <button className="lr-btn-confirm" onClick={handleConfirm}>
             {logsCall && needsFollowUp ? 'Save & Update Status'
-             : logsCall                ? 'Log Call & Update Status'
-             :                           'Save Follow-up'}
+              : logsCall ? 'Log Call & Update Status'
+                : 'Save Follow-up'}
           </button>
         </div>
       </div>
@@ -1991,11 +1991,11 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
 // ── Reschedule Follow-up Modal ────────────────────────────────────────────────
 function RescheduleFollowUpModal({ onConfirm, onCancel }) {
   useBodyLock();
-  const [date,  setDate]  = useState('');
-  const [time,  setTime]  = useState('10:00');
-  const [note,  setNote]  = useState('');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('10:00');
+  const [note, setNote] = useState('');
   const [error, setError] = useState('');
-  const [saving,setSaving]= useState(false);
+  const [saving, setSaving] = useState(false);
 
   const fieldStyle = { width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box', outline: 'none' };
   const labelStyle = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 };
@@ -2049,20 +2049,20 @@ function RescheduleFollowUpModal({ onConfirm, onCancel }) {
 
 // ── Appointment Searchable Select ─────────────────────────────────────────────
 function ApptSelect({ value, onChange, options, placeholder = 'Select…', disabled = false, loading = false, searchPlaceholder = 'Search…', error = false }) {
-  const [open, setOpen]               = useState(false);
-  const [query, setQuery]             = useState('');
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(-1);
-  const [dropPos, setDropPos]         = useState({ top: 0, left: 0, width: 0 });
-  const triggerRef                     = useRef(null);
-  const dropRef                        = useRef(null);
-  const inputRef                       = useRef(null);
-  const listRef                        = useRef(null);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const triggerRef = useRef(null);
+  const dropRef = useRef(null);
+  const inputRef = useRef(null);
+  const listRef = useRef(null);
 
   // Close on outside click
   useEffect(() => {
     function handler(e) {
       const inTrigger = triggerRef.current && triggerRef.current.contains(e.target);
-      const inDrop    = dropRef.current    && dropRef.current.contains(e.target);
+      const inDrop = dropRef.current && dropRef.current.contains(e.target);
       if (!inTrigger && !inDrop) { setOpen(false); setFocusedIndex(-1); }
     }
     document.addEventListener('mousedown', handler);
@@ -2156,7 +2156,7 @@ function ApptSelect({ value, onChange, options, placeholder = 'Select…', disab
               onKeyDown={handleInputKeyDown}
               aria-autocomplete="list"
             />
-            {query && <button className="ss-search-clear" onClick={() => setQuery('')}><X size={11}/></button>}
+            {query && <button className="ss-search-clear" onClick={() => setQuery('')}><X size={11} /></button>}
           </div>
           <div className="ss-list" ref={listRef} role="listbox">
             {filtered.length === 0
@@ -2178,7 +2178,7 @@ function ApptSelect({ value, onChange, options, placeholder = 'Select…', disab
             }
           </div>
         </div>
-      , document.body)}
+        , document.body)}
     </div>
   );
 }
@@ -2188,26 +2188,26 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
   useBodyLock();
 
   // ── Lead data ──
-  const [lead,        setLead]        = useState(null);
+  const [lead, setLead] = useState(null);
   const [loadingLead, setLoadingLead] = useState(true);
 
   // ── Hubs ──
   const [hubs, setHubs] = useState([]);
 
   // ── Vehicle masters ──
-  const [vehicleTypes,  setVehicleTypes]  = useState([]);
-  const [makes,         setMakes]         = useState([]);
-  const [models,        setModels]        = useState([]);
-  const [ccCategories,  setCcCategories]  = useState([]);
-  const [segments,      setSegments]      = useState([]);
-  const [makesLoading,  setMakesLoading]  = useState(false);
+  const [vehicleTypes, setVehicleTypes] = useState([]);
+  const [makes, setMakes] = useState([]);
+  const [models, setModels] = useState([]);
+  const [ccCategories, setCcCategories] = useState([]);
+  const [segments, setSegments] = useState([]);
+  const [makesLoading, setMakesLoading] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [ccPreview,     setCcPreview]     = useState('');
-  const [engineCcDisp, setEngineCcDisp]  = useState(null); // raw engine CC from model (e.g. 125)
-  const [noCcData,     setNoCcData]      = useState(false); // true when model has no engine_cc (e.g. EV)
+  const [ccPreview, setCcPreview] = useState('');
+  const [engineCcDisp, setEngineCcDisp] = useState(null); // raw engine CC from model (e.g. 125)
+  const [noCcData, setNoCcData] = useState(false); // true when model has no engine_cc (e.g. EV)
 
   // ── Search for make/model dropdowns ──
-  const [makeSearch,  setMakeSearch]  = useState('');
+  const [makeSearch, setMakeSearch] = useState('');
   const [modelSearch, setModelSearch] = useState('');
 
   // ── Selected model name (separate from model_id, to handle deduplication) ──
@@ -2216,9 +2216,9 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
   // ── Services (two-panel picker) ──
   const [allCategories, setAllCategories] = useState([]);
   const [selectedCatId, setSelectedCatId] = useState(null);
-  const [svcSearch,     setSvcSearch]     = useState('');
-  const [svcLoading,    setSvcLoading]    = useState(false);
-  const [selectedSvcs,  setSelectedSvcs]  = useState([]);
+  const [svcSearch, setSvcSearch] = useState('');
+  const [svcLoading, setSvcLoading] = useState(false);
+  const [selectedSvcs, setSelectedSvcs] = useState([]);
 
   // ── Customer form ──
   const [cust, setCust] = useState({ name: '', mobile: '', whatsapp: '' });
@@ -2226,32 +2226,32 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
   // ── Vehicle form ──
   const [veh, setVeh] = useState({
     vehicle_type_id: '',
-    make_id:         '',
-    model_id:        '',
-    cc_category_id:  '',
-    segment_ids:     [],
-    body_type_id:    '',
+    make_id: '',
+    model_id: '',
+    cc_category_id: '',
+    segment_ids: [],
+    body_type_id: '',
   });
 
   // ── Appointment form ──
   const [form, setForm] = useState({
-    vehicle_number:  '',
-    hub_id:          '',
-    scheduled_date:  '',
-    scheduled_time:  '10:00',
-    notes:           '',
-    pickup_required:      false,
+    vehicle_number: '',
+    hub_id: '',
+    scheduled_date: '',
+    scheduled_time: '10:00',
+    notes: '',
+    pickup_required: false,
     pickup_address_line1: '',
     pickup_address_line2: '',
-    pickup_city:          '',
-    pickup_pincode:       '',
-    pickup_maps_link:     '',
-    drop_required:        false,
-    drop_address_line1:   '',
-    drop_address_line2:   '',
-    drop_city:            '',
-    drop_pincode:         '',
-    drop_maps_link:       '',
+    pickup_city: '',
+    pickup_pincode: '',
+    pickup_maps_link: '',
+    drop_required: false,
+    drop_address_line1: '',
+    drop_address_line2: '',
+    drop_city: '',
+    drop_pincode: '',
+    drop_maps_link: '',
   });
 
   const [errors, setErrors] = useState({});
@@ -2287,18 +2287,18 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
 
         // Pre-fill customer
         setCust({
-          name:      l.name     || '',
-          mobile:    l.mobile   || '',
-          whatsapp:  l.whatsapp || l.mobile || '',
+          name: l.name || '',
+          mobile: l.mobile || '',
+          whatsapp: l.whatsapp || l.mobile || '',
         });
         // Pre-fill vehicle
         setVeh({
           vehicle_type_id: l.vehicle_type_id ? String(l.vehicle_type_id) : '',
-          make_id:         l.make_id         ? String(l.make_id)         : '',
-          model_id:        l.model_id        ? String(l.model_id)        : '',
-          cc_category_id:  l.cc_category_id  ? String(l.cc_category_id)  : '',
-          segment_ids:     l.segment_ids     || [],
-          body_type_id:    l.body_type_id    ? String(l.body_type_id)    : '',
+          make_id: l.make_id ? String(l.make_id) : '',
+          model_id: l.model_id ? String(l.model_id) : '',
+          cc_category_id: l.cc_category_id ? String(l.cc_category_id) : '',
+          segment_ids: l.segment_ids || [],
+          body_type_id: l.body_type_id ? String(l.body_type_id) : '',
         });
         if (l.cc_category_name) setCcPreview(l.cc_category_name);
       } catch (e) { setApiErr(e.message); }
@@ -2351,7 +2351,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
             setVeh(v => ({ ...v, cc_category_id: String(r.item.id) }));
             setCcPreview(`${r.item.name} (${r.item.min_cc}–${r.item.max_cc} cc)`);
           }
-        }).catch(() => {});
+        }).catch(() => { });
     } else {
       // No engine CC (e.g. electric vehicle) — let user pick manually
       setEngineCcDisp(null); setNoCcData(true);
@@ -2377,7 +2377,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
             services: c.services.filter(s => {
               if (!s.service_mapped) return false;
               if (s.vehicle_class === 'both') return true;
-              if (is2W  && s.vehicle_class === '2W') return true;
+              if (is2W && s.vehicle_class === '2W') return true;
               if (!is2W && s.vehicle_class === '4W') return true;
               return false;
             }),
@@ -2387,7 +2387,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
           // Bug 2 fix: service_categories now use '2W'/'4W' consistently
           .filter(c => {
             if (c.vehicle_class === 'both') return true;
-            if (is2W  && c.vehicle_class === '2W') return true;
+            if (is2W && c.vehicle_class === '2W') return true;
             if (!is2W && c.vehicle_class === '4W') return true;
             return false;
           });
@@ -2462,7 +2462,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
   function setF(field, val) { setForm(f => ({ ...f, [field]: val })); setErrors(e => ({ ...e, [field]: '' })); }
 
   // Current category's services
-  const activeCat  = allCategories.find(c => c.id === selectedCatId);
+  const activeCat = allCategories.find(c => c.id === selectedCatId);
   const displaySvcs = svcSearch
     ? (activeCat?.services || []).filter(s => s.name.toLowerCase().includes(svcSearch.toLowerCase()))
     : (activeCat?.services || []);
@@ -2489,7 +2489,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
   const filteredHubs = hubs.filter(h => {
     if (!veh.vehicle_type_id) return true;
     if (h.vehicle_class === 'both') return true;
-    if (is2W  && h.vehicle_class === '2W') return true;
+    if (is2W && h.vehicle_class === '2W') return true;
     if (!is2W && h.vehicle_class === '4W') return true;
     return false;
   });
@@ -2502,22 +2502,22 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
       const r = await api('/api/leads/price-lookup', {
         method: 'POST',
         body: {
-          service_id:      svc.service_id,
+          service_id: svc.service_id,
           vehicle_type_id: veh.vehicle_type_id || null,
-          make_id:         veh.make_id         || null,
-          model_id:        veh.model_id        || null,
-          body_type_id:    veh.body_type_id    || null,
-          segment_id:      veh.segment_ids?.[0] || null,
-          cc_category_id:  veh.cc_category_id  || null,
+          make_id: veh.make_id || null,
+          model_id: veh.model_id || null,
+          body_type_id: veh.body_type_id || null,
+          segment_id: veh.segment_ids?.[0] || null,
+          cc_category_id: veh.cc_category_id || null,
         },
       });
       const cat = allCategories.find(c => c.id === catId);
       setSelectedSvcs(prev => [...prev, {
-        service_id:  svc.service_id,
-        name:        svc.name,
-        category:    cat?.name || '',
-        category_id: cat?.id   || null,
-        price:       r.price   || 0,
+        service_id: svc.service_id,
+        name: svc.name,
+        category: cat?.name || '',
+        category_id: cat?.id || null,
+        price: r.price || 0,
       }]);
       setErrors(e => ({ ...e, services: '' }));
     } catch (e) { setApiErr(e.message); }
@@ -2531,7 +2531,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
   function validateVehicleNumber(val) {
     const clean = val.replace(/[\s-]/g, '').toUpperCase();
     if (!clean) return 'Vehicle number is required';
-    const bhPattern  = /^\d{2}BH\d{4}[A-Z]{2}$/;
+    const bhPattern = /^\d{2}BH\d{4}[A-Z]{2}$/;
     const stdPattern = /^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{1,4}$/;
     if (!stdPattern.test(clean) && !bhPattern.test(clean))
       return 'Enter a valid vehicle number (e.g. GJ01AB1234)';
@@ -2541,53 +2541,53 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
   // ── Submit ──
   async function handleSubmit() {
     const errs = {};
-    if (!cust.name.trim())    errs.name   = 'Customer name is required';
-    if (!cust.mobile.trim())  errs.mobile = 'Mobile number is required';
+    if (!cust.name.trim()) errs.name = 'Customer name is required';
+    if (!cust.mobile.trim()) errs.mobile = 'Mobile number is required';
     const vnErr = validateVehicleNumber(form.vehicle_number);
     if (vnErr) errs.vehicle_number = vnErr;
-    if (!form.hub_id)               errs.hub_id         = 'Hub is required';
-    if (!form.scheduled_date)       errs.scheduled_date = 'Date is required';
-    if (selectedSvcs.length === 0)  errs.services       = 'Select at least one service';
+    if (!form.hub_id) errs.hub_id = 'Hub is required';
+    if (!form.scheduled_date) errs.scheduled_date = 'Date is required';
+    if (selectedSvcs.length === 0) errs.services = 'Select at least one service';
     if (form.pickup_required && !form.pickup_address_line1.trim()) errs.pickup_address_line1 = 'Pickup address (line 1) is required';
-    if (form.drop_required   && !form.drop_address_line1.trim())   errs.drop_address_line1   = 'Drop address (line 1) is required';
-    if (Object.keys(errs).length)   { setErrors(errs); return; }
+    if (form.drop_required && !form.drop_address_line1.trim()) errs.drop_address_line1 = 'Drop address (line 1) is required';
+    if (Object.keys(errs).length) { setErrors(errs); return; }
     setSaving(true); setApiErr('');
     try {
       await api('/api/appointments', {
         method: 'POST',
         body: {
-          lead_id:         lead?.id || leadId,
-          assigned_to:     lead?.assigned_to || null,
-          customer_name:   cust.name.trim()    || null,
-          mobile:          cust.mobile.trim()  || '',
-          whatsapp:        cust.whatsapp.trim() || null,
-          vehicle_number:  form.vehicle_number.trim(),
+          lead_id: lead?.id || leadId,
+          assigned_to: lead?.assigned_to || null,
+          customer_name: cust.name.trim() || null,
+          mobile: cust.mobile.trim() || '',
+          whatsapp: cust.whatsapp.trim() || null,
+          vehicle_number: form.vehicle_number.trim(),
           vehicle_type_id: veh.vehicle_type_id || null,
-          make_id:         veh.make_id         || null,
-          model_id:        veh.model_id        || null,
-          body_type_id:    veh.body_type_id    || null,
-          segment_ids:     veh.segment_ids     || [],
-          cc_category_id:  veh.cc_category_id  || null,
-          hub_id:          Number(form.hub_id),
-          scheduled_date:  form.scheduled_date,
-          scheduled_time:  form.scheduled_time || null,
-          notes:           form.notes.trim()   || null,
-          pickup_required:      form.pickup_required,
+          make_id: veh.make_id || null,
+          model_id: veh.model_id || null,
+          body_type_id: veh.body_type_id || null,
+          segment_ids: veh.segment_ids || [],
+          cc_category_id: veh.cc_category_id || null,
+          hub_id: Number(form.hub_id),
+          scheduled_date: form.scheduled_date,
+          scheduled_time: form.scheduled_time || null,
+          notes: form.notes.trim() || null,
+          pickup_required: form.pickup_required,
           pickup_address_line1: form.pickup_required ? (form.pickup_address_line1.trim() || null) : null,
           pickup_address_line2: form.pickup_required ? (form.pickup_address_line2.trim() || null) : null,
-          pickup_city:          form.pickup_required ? (form.pickup_city.trim()          || null) : null,
-          pickup_pincode:       form.pickup_required ? (form.pickup_pincode.trim()       || null) : null,
-          pickup_maps_link:     form.pickup_required ? (form.pickup_maps_link.trim()     || null) : null,
-          drop_required:        form.drop_required,
-          drop_address_line1:   form.drop_required   ? (form.drop_address_line1.trim()   || null) : null,
-          drop_address_line2:   form.drop_required   ? (form.drop_address_line2.trim()   || null) : null,
-          drop_city:            form.drop_required   ? (form.drop_city.trim()            || null) : null,
-          drop_pincode:         form.drop_required   ? (form.drop_pincode.trim()         || null) : null,
-          drop_maps_link:       form.drop_required   ? (form.drop_maps_link.trim()       || null) : null,
+          pickup_city: form.pickup_required ? (form.pickup_city.trim() || null) : null,
+          pickup_pincode: form.pickup_required ? (form.pickup_pincode.trim() || null) : null,
+          pickup_maps_link: form.pickup_required ? (form.pickup_maps_link.trim() || null) : null,
+          drop_required: form.drop_required,
+          drop_address_line1: form.drop_required ? (form.drop_address_line1.trim() || null) : null,
+          drop_address_line2: form.drop_required ? (form.drop_address_line2.trim() || null) : null,
+          drop_city: form.drop_required ? (form.drop_city.trim() || null) : null,
+          drop_pincode: form.drop_required ? (form.drop_pincode.trim() || null) : null,
+          drop_maps_link: form.drop_required ? (form.drop_maps_link.trim() || null) : null,
           services: selectedSvcs.map(s => ({
-            service_id:  s.service_id,
+            service_id: s.service_id,
             category_id: s.category_id,
-            price:       s.price,
+            price: s.price,
           })),
         },
       });
@@ -2601,54 +2601,54 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
 
         {/* ── Header ── */}
         <div className="ca-hdr">
-          <div className="ca-hdr-icon"><Calendar size={17}/></div>
+          <div className="ca-hdr-icon"><Calendar size={17} /></div>
           <div className="ca-hdr-text">
             <div className="ca-hdr-title">Convert to Appointment</div>
             <div className="ca-hdr-sub">Fill in details to book a service appointment</div>
           </div>
           <span className="ca-status-pill">{statusName}</span>
-          <button className="ca-close" onClick={onCancel}><X size={16}/></button>
+          <button className="ca-close" onClick={onCancel}><X size={16} /></button>
         </div>
 
         {loadingLead ? (
           <div className="ca-body ca-loading">Loading lead details…</div>
         ) : (
           <div className="ca-body">
-            {apiErr && <div className="ca-api-err"><AlertCircle size={13}/> {apiErr}</div>}
+            {apiErr && <div className="ca-api-err"><AlertCircle size={13} /> {apiErr}</div>}
 
             {/* ── Customer Details ── */}
             <div className="ca-section-block">
-            <div className="ca-section-title"><User size={12}/> Customer Details</div>
-            <div className="ca-row-3">
-              <div className="ca-field">
-                <label className="ca-lbl">Name <span className="ca-req">*</span></label>
-                <input className={`ca-input${errors.name ? ' ca-input--err' : ''}`}
-                  placeholder="Customer name"
-                  value={cust.name}
-                  onChange={e => setC('name', e.target.value)} />
-                {errors.name && <span className="ca-field-err"><AlertCircle size={10}/> {errors.name}</span>}
+              <div className="ca-section-title"><User size={12} /> Customer Details</div>
+              <div className="ca-row-3">
+                <div className="ca-field">
+                  <label className="ca-lbl">Name <span className="ca-req">*</span></label>
+                  <input className={`ca-input${errors.name ? ' ca-input--err' : ''}`}
+                    placeholder="Customer name"
+                    value={cust.name}
+                    onChange={e => setC('name', e.target.value)} />
+                  {errors.name && <span className="ca-field-err"><AlertCircle size={10} /> {errors.name}</span>}
+                </div>
+                <div className="ca-field">
+                  <label className="ca-lbl">Mobile <span className="ca-req">*</span></label>
+                  <input className={`ca-input${errors.mobile ? ' ca-input--err' : ''}`}
+                    placeholder="Mobile number"
+                    value={cust.mobile}
+                    onChange={e => setC('mobile', e.target.value.replace(/\D/g, '').slice(0, 10))} />
+                  {errors.mobile && <span className="ca-field-err"><AlertCircle size={10} /> {errors.mobile}</span>}
+                </div>
+                <div className="ca-field">
+                  <label className="ca-lbl">WhatsApp</label>
+                  <input className="ca-input"
+                    placeholder="WhatsApp number"
+                    value={cust.whatsapp}
+                    onChange={e => setC('whatsapp', e.target.value.replace(/\D/g, '').slice(0, 10))} />
+                </div>
               </div>
-              <div className="ca-field">
-                <label className="ca-lbl">Mobile <span className="ca-req">*</span></label>
-                <input className={`ca-input${errors.mobile ? ' ca-input--err' : ''}`}
-                  placeholder="Mobile number"
-                  value={cust.mobile}
-                  onChange={e => setC('mobile', e.target.value.replace(/\D/g, '').slice(0, 10))} />
-                {errors.mobile && <span className="ca-field-err"><AlertCircle size={10}/> {errors.mobile}</span>}
-              </div>
-              <div className="ca-field">
-                <label className="ca-lbl">WhatsApp</label>
-                <input className="ca-input"
-                  placeholder="WhatsApp number"
-                  value={cust.whatsapp}
-                  onChange={e => setC('whatsapp', e.target.value.replace(/\D/g, '').slice(0, 10))} />
-              </div>
-            </div>
             </div>
 
             {/* ── Vehicle Details ── */}
             <div className="ca-section-block">
-              <div className="ca-section-title"><Car size={12}/> Vehicle Details</div>
+              <div className="ca-section-title"><Car size={12} /> Vehicle Details</div>
               <div className="ca-row-3">
                 <div className="ca-field">
                   <label className="ca-lbl">Vehicle Type</label>
@@ -2692,7 +2692,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                     <label className="ca-lbl">
                       CC Category
                       {ccPreview && <span className="ca-cc-auto-tag">auto-filled</span>}
-                      {noCcData && <span className="ca-cc-auto-tag" style={{ background:'#fef3c7', color:'#92400e' }}>select manually</span>}
+                      {noCcData && <span className="ca-cc-auto-tag" style={{ background: '#fef3c7', color: '#92400e' }}>select manually</span>}
                     </label>
                     <ApptSelect
                       value={veh.cc_category_id}
@@ -2738,7 +2738,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
 
             {/* ── Vehicle Number + Hub ── */}
             <div className="ca-section-block">
-              <div className="ca-section-title"><Info size={12}/> Appointment Info</div>
+              <div className="ca-section-title"><Info size={12} /> Appointment Info</div>
               <div className="ca-row-2">
                 <div className="ca-field">
                   <label className="ca-lbl">Vehicle Number <span className="ca-req">*</span></label>
@@ -2751,10 +2751,10 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                     maxLength={12}
                   />
                   {errors.vehicle_number
-                    ? <span className="ca-field-err"><AlertCircle size={10}/> {errors.vehicle_number}</span>
+                    ? <span className="ca-field-err"><AlertCircle size={10} /> {errors.vehicle_number}</span>
                     : form.vehicle_number && !validateVehicleNumber(form.vehicle_number) && (
-                        <span className="ca-field-ok"><CheckCircle2 size={10}/> Valid format</span>
-                      )
+                      <span className="ca-field-ok"><CheckCircle2 size={10} /> Valid format</span>
+                    )
                   }
                 </div>
                 <div className="ca-field">
@@ -2767,24 +2767,24 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                     searchPlaceholder="Search hub…"
                     error={!!errors.hub_id}
                   />
-                  {errors.hub_id && <span className="ca-field-err"><AlertCircle size={10}/> {errors.hub_id}</span>}
+                  {errors.hub_id && <span className="ca-field-err"><AlertCircle size={10} /> {errors.hub_id}</span>}
                 </div>
               </div>
             </div>
 
             {/* ── Pickup ── */}
             <div className="ca-section-block">
-              <div className="ca-section-title"><MapPin size={12}/> Pickup</div>
+              <div className="ca-section-title"><MapPin size={12} /> Pickup</div>
 
               {/* Pickup toggle — Visit ◯ Pickup Required */}
-              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: form.pickup_required ? 12 : 0 }}>
-                <span style={{ fontSize:13, fontWeight:600, color:'var(--text-muted,#64748b)' }}>Visit</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: form.pickup_required ? 12 : 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted,#64748b)' }}>Visit</span>
                 <button type="button"
-                  onClick={() => setForm(f => ({ ...f, pickup_required: !f.pickup_required, pickup_address_line1:'', pickup_address_line2:'', pickup_city:'', pickup_pincode:'', pickup_maps_link:'' }))}
+                  onClick={() => setForm(f => ({ ...f, pickup_required: !f.pickup_required, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '' }))}
                   className={`ca-toggle${form.pickup_required ? ' ca-toggle--on' : ''}`}>
-                  <span className="ca-toggle-knob"/>
+                  <span className="ca-toggle-knob" />
                 </button>
-                <span style={{ fontSize:13, fontWeight:700, color:'var(--text,#1e293b)' }}>Pickup Required</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text,#1e293b)' }}>Pickup Required</span>
               </div>
               {form.pickup_required && (
                 <div className="ca-pd-fields">
@@ -2794,15 +2794,15 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                       placeholder="Flat / Building / Street"
                       autoComplete="address-line1"
                       value={form.pickup_address_line1}
-                      onChange={e => setF('pickup_address_line1', e.target.value)}/>
-                    {errors.pickup_address_line1 && <span className="ca-field-err"><AlertCircle size={10}/> {errors.pickup_address_line1}</span>}
+                      onChange={e => setF('pickup_address_line1', e.target.value)} />
+                    {errors.pickup_address_line1 && <span className="ca-field-err"><AlertCircle size={10} /> {errors.pickup_address_line1}</span>}
                   </div>
                   <div className="ca-field">
                     <label className="ca-lbl">Address Line 2</label>
                     <input className="ca-input" placeholder="Landmark / Area (optional)"
                       autoComplete="address-line2"
                       value={form.pickup_address_line2}
-                      onChange={e => setF('pickup_address_line2', e.target.value)}/>
+                      onChange={e => setF('pickup_address_line2', e.target.value)} />
                   </div>
                   <div className="ca-pd-row2">
                     <div className="ca-field">
@@ -2810,14 +2810,14 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                       <input className="ca-input" placeholder="City"
                         autoComplete="address-level2"
                         value={form.pickup_city}
-                        onChange={e => setF('pickup_city', e.target.value)}/>
+                        onChange={e => setF('pickup_city', e.target.value)} />
                     </div>
                     <div className="ca-field">
                       <label className="ca-lbl">Pincode</label>
                       <input className="ca-input" placeholder="6-digit pincode" maxLength={6}
                         autoComplete="postal-code"
                         value={form.pickup_pincode}
-                        onChange={e => setF('pickup_pincode', e.target.value.replace(/\D/g,''))}/>
+                        onChange={e => setF('pickup_pincode', e.target.value.replace(/\D/g, ''))} />
                     </div>
                   </div>
                   <div className="ca-field">
@@ -2825,7 +2825,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                     <input className="ca-input" placeholder="https://maps.google.com/..."
                       autoComplete="off"
                       value={form.pickup_maps_link}
-                      onChange={e => setF('pickup_maps_link', e.target.value)}/>
+                      onChange={e => setF('pickup_maps_link', e.target.value)} />
                   </div>
                 </div>
               )}
@@ -2834,7 +2834,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
 
             {/* ── Schedule ── */}
             <div className="ca-section-block">
-              <div className="ca-section-title"><Clock size={12}/> Schedule</div>
+              <div className="ca-section-title"><Clock size={12} /> Schedule</div>
               <div className="ca-row-2">
                 <div className="ca-field">
                   <label className="ca-lbl">Date <span className="ca-req">*</span></label>
@@ -2842,7 +2842,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                     value={form.scheduled_date}
                     min={new Date().toISOString().split('T')[0]}
                     onChange={e => setF('scheduled_date', e.target.value)} />
-                  {errors.scheduled_date && <span className="ca-field-err"><AlertCircle size={10}/> {errors.scheduled_date}</span>}
+                  {errors.scheduled_date && <span className="ca-field-err"><AlertCircle size={10} /> {errors.scheduled_date}</span>}
                 </div>
                 <div className="ca-field">
                   <label className="ca-lbl">Time</label>
@@ -2857,7 +2857,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
             <div className="ca-section-block">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                 <div className="ca-section-title" style={{ margin: 0 }}>
-                  <Wrench size={12}/> Services <span className="ca-req">*</span>
+                  <Wrench size={12} /> Services <span className="ca-req">*</span>
                 </div>
                 {form.hub_id && (
                   <span className="ca-vc-badge">{vehicleTypeLabel} services</span>
@@ -2867,7 +2867,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
               {/* Pricing accuracy warning — shown when hub is selected but vehicle details are incomplete */}
               {form.hub_id && (!veh.make_id || !veh.model_id || (!is2W && !veh.segment_ids?.length) || (is2W && !veh.cc_category_id)) && (
                 <div className="ca-price-warn">
-                  <AlertCircle size={13} style={{ flexShrink: 0 }}/>
+                  <AlertCircle size={13} style={{ flexShrink: 0 }} />
                   <span>
                     <strong>Pricing may be inaccurate</strong> — add{' '}
                     {!veh.make_id ? 'make' : !veh.model_id ? 'model' : is2W ? 'CC category' : 'fuel / segment'}{' '}
@@ -2900,7 +2900,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                   {/* Right: services grid */}
                   <div className="ca-svc-right">
                     <div className="ca-svc-search-bar">
-                      <Search size={13} className="ca-svc-si"/>
+                      <Search size={13} className="ca-svc-si" />
                       <input
                         className="ca-svc-search-inp"
                         placeholder="Search services…"
@@ -2932,7 +2932,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                   </div>
                 </div>
               )}
-              {errors.services && <span className="ca-field-err" style={{ marginTop: 8, display:'flex' }}><AlertCircle size={10}/> {errors.services}</span>}
+              {errors.services && <span className="ca-field-err" style={{ marginTop: 8, display: 'flex' }}><AlertCircle size={10} /> {errors.services}</span>}
 
               {/* Selected services summary */}
               {selectedSvcs.length > 0 && (
@@ -2946,7 +2946,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <span className="ca-sel-svc-price">₹{s.price.toLocaleString('en-IN')}</span>
                         <button className="ca-sel-svc-rm" onClick={() => removeService(s.service_id)}>
-                          <X size={11}/>
+                          <X size={11} />
                         </button>
                       </div>
                     </div>
@@ -2961,7 +2961,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
 
             {/* ── Notes ── */}
             <div className="ca-section-block" style={{ borderBottom: 'none' }}>
-              <div className="ca-section-title"><FileText size={12}/> Notes</div>
+              <div className="ca-section-title"><FileText size={12} /> Notes</div>
               <div className="ca-field">
                 <textarea className="ca-input ca-textarea" rows={2}
                   placeholder="Any details for the appointment…"
@@ -2980,7 +2980,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
         </div>
       </div>
     </div>
-  , document.body);
+    , document.body);
 }
 
 // ── Inline status select (EDIT_LEAD only) ─────────────────────────────────────
@@ -3053,8 +3053,8 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
     if (statusObj?.logs_call || statusObj?.needs_follow_up) {
       setOpen(false);
       setActionModal({
-        statusName:    name,
-        logsCall:      !!statusObj.logs_call,
+        statusName: name,
+        logsCall: !!statusObj.logs_call,
         needsFollowUp: !!statusObj.needs_follow_up,
       });
       return;
@@ -3079,9 +3079,9 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
       }
       const body = { status };
       if (lostReason) body.lost_reason = lostReason;
-      if (meta.follow_up_date)  body.follow_up_date  = meta.follow_up_date;
-      if (meta.follow_up_time)  body.follow_up_time  = meta.follow_up_time;
-      if (meta.note)            body.follow_up_note  = meta.note;
+      if (meta.follow_up_date) body.follow_up_date = meta.follow_up_date;
+      if (meta.follow_up_time) body.follow_up_time = meta.follow_up_time;
+      if (meta.note) body.follow_up_note = meta.note;
       const r = await api(`/api/leads/${leadId}`, { method: 'PATCH', body });
       onChange(r.item);
     } catch (err) {
@@ -3090,9 +3090,9 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
     finally { setBusy(false); }
   }
 
-  const cfg            = current ? getStatusCfg(current, statusList) : { color: '#0369a1', bg: '#e0f2fe' };
-  const currentStatus  = statusList.find(s => s.name === current);
-  const isLocked       = !!currentStatus?.is_locked;
+  const cfg = current ? getStatusCfg(current, statusList) : { color: '#0369a1', bg: '#e0f2fe' };
+  const currentStatus = statusList.find(s => s.name === current);
+  const isLocked = !!currentStatus?.is_locked;
 
   return (
     <>
@@ -3132,26 +3132,26 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
           <Lock size={10} style={{ flexShrink: 0, opacity: 0.7 }} />
         </span>
       ) : (
-      <button
-        ref={btnRef}
-        type="button"
-        disabled={busy}
-        onClick={toggle}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4,
-          padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-          letterSpacing: 0.3, cursor: busy ? 'not-allowed' : 'pointer',
-          border: `2px solid ${cfg.color}33`,
-          background: cfg.bg, color: cfg.color,
-          opacity: busy ? 0.6 : 1, whiteSpace: 'nowrap', maxWidth: 200,
-        }}
-      >
-        {!current && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#0ea5e9', flexShrink: 0 }} />}
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {current || 'New Lead'}
-        </span>
-        <ChevronDown size={11} style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none' }} />
-      </button>
+        <button
+          ref={btnRef}
+          type="button"
+          disabled={busy}
+          onClick={toggle}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+            letterSpacing: 0.3, cursor: busy ? 'not-allowed' : 'pointer',
+            border: `2px solid ${cfg.color}33`,
+            background: cfg.bg, color: cfg.color,
+            opacity: busy ? 0.6 : 1, whiteSpace: 'nowrap', maxWidth: 200,
+          }}
+        >
+          {!current && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#0ea5e9', flexShrink: 0 }} />}
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {current || 'New Lead'}
+          </span>
+          <ChevronDown size={11} style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none' }} />
+        </button>
       )}
 
       {open && typeof document !== 'undefined' && (
@@ -3179,7 +3179,7 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function LeadsPage() {
-  const location      = useLocation();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   // Lifted here so the modal survives lead-list re-renders (e.g. Chrome autofill changing search)
   const [pageConvertModal, setPageConvertModal] = useState(null); // { statusName, leadId, leadName, saveFn }
@@ -4191,11 +4191,13 @@ export default function LeadsPage() {
                           } catch (e) { showToast(e.message, 'error'); }
                           finally { setBulkAssigning(false); }
                         }}>
-                        {(() => { const av = getAvatarStyle(a.name); return (
-                          <span className="lp-bulk-dd-avatar" style={{ background: av.bg, color: av.color }}>
-                            {a.name.charAt(0).toUpperCase()}
-                          </span>
-                        ); })()}
+                        {(() => {
+                          const av = getAvatarStyle(a.name); return (
+                            <span className="lp-bulk-dd-avatar" style={{ background: av.bg, color: av.color }}>
+                              {a.name.charAt(0).toUpperCase()}
+                            </span>
+                          );
+                        })()}
                         {a.name}
                       </button>
                     ))}
@@ -4272,15 +4274,15 @@ export default function LeadsPage() {
                       else setSelectedLeads(new Set());
                     }} />
                 </th>
-                <th><div className="th-cell"><Calendar size={13} /> Date</div></th>
-                <th><div className="th-cell"><User size={13} /> Customer</div></th>
-                <th><div className="th-cell"><MapPin size={13} /> Location</div></th>
-                <th><div className="th-cell"><Car size={13} /> Vehicle</div></th>
-                <th><div className="th-cell"><Wrench size={13} /> Service</div></th>
-                <th>Status</th>
-                <th><div className="th-cell"><UserCheck size={13} /> Assign To</div></th>
-                <th><div className="th-cell"><Calendar size={13} /> Next Follow-up</div></th>
-                <th><div className="th-cell"><User size={13} /> Created By</div></th>
+                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Date</div></th>
+                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Customer</div></th>
+                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Location</div></th>
+                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Vehicle</div></th>
+                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Service</div></th>
+                <th style={{ fontWeight: 700, fontSize: '12px' }}>Status</th>
+                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Assign To</div></th>
+                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Next Follow-up</div></th>
+                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Created By</div></th>
                 <th style={{ width: 44 }} />
               </tr>
             </thead>
@@ -4362,9 +4364,11 @@ export default function LeadsPage() {
                       : <StatusBadge status={l.status} statusList={statusList} />
                     }
                     {l.is_converted && (
-                      <div style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:3,
-                        background:'#ecfdf5', color:'#059669', border:'1.5px solid #6ee7b7',
-                        borderRadius:20, padding:'2px 8px', fontSize:10, fontWeight:700, whiteSpace:'nowrap' }}>
+                      <div style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3,
+                        background: '#ecfdf5', color: '#059669', border: '1.5px solid #6ee7b7',
+                        borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap'
+                      }}>
                         <CheckCircle2 size={10} /> Converted to Appt.
                       </div>
                     )}
@@ -4376,11 +4380,6 @@ export default function LeadsPage() {
                   <td>
                     {l.assigned_to_name ? (
                       <div className="lp-created-by">
-                        {(() => { const av = getAvatarStyle(l.assigned_to_name); return (
-                          <div className="lp-created-by-avatar" style={{ background: av.bg, color: av.color }}>
-                            {l.assigned_to_name.charAt(0).toUpperCase()}
-                          </div>
-                        ); })()}
                         <span>{l.assigned_to_name}</span>
                       </div>
                     ) : <span className="lp-muted">—</span>}
@@ -4388,18 +4387,18 @@ export default function LeadsPage() {
                   {/* Next Follow-up column */}
                   <td>
                     {l.next_follow_up_date && !l.is_converted && !statusList.find(s => s.name === l.status)?.is_locked ? (() => {
-                      const d     = new Date(l.next_follow_up_date);
-                      const today = new Date(); today.setHours(0,0,0,0);
-                      const diff  = Math.round((d - today) / 86400000);
-                      const isOverdue  = diff < 0;
-                      const isToday    = diff === 0;
+                      const d = new Date(l.next_follow_up_date);
+                      const today = new Date(); today.setHours(0, 0, 0, 0);
+                      const diff = Math.round((d - today) / 86400000);
+                      const isOverdue = diff < 0;
+                      const isToday = diff === 0;
                       const isTomorrow = diff === 1;
-                      const label = isOverdue  ? 'Overdue'
-                                  : isToday    ? 'Today'
-                                  : isTomorrow ? 'Tomorrow'
-                                  : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                      const label = isOverdue ? 'Overdue'
+                        : isToday ? 'Today'
+                          : isTomorrow ? 'Tomorrow'
+                            : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
                       const color = isOverdue ? '#dc2626' : isToday ? '#d97706' : '#16a34a';
-                      const bg    = isOverdue ? '#fee2e2' : isToday ? '#fef3c7' : '#dcfce7';
+                      const bg = isOverdue ? '#fee2e2' : isToday ? '#fef3c7' : '#dcfce7';
                       return (
                         <span className="lp-followup-badge" style={{ background: bg, color }}>
                           {isOverdue && '⚠ '}{label}
@@ -4411,11 +4410,6 @@ export default function LeadsPage() {
                   <td>
                     {l.created_by_name ? (
                       <div className="lp-created-by">
-                        {(() => { const av = getAvatarStyle(l.created_by_name); return (
-                          <div className="lp-created-by-avatar" style={{ background: av.bg, color: av.color }}>
-                            {l.created_by_name.charAt(0).toUpperCase()}
-                          </div>
-                        ); })()}
                         <span>{l.created_by_name}</span>
                       </div>
                     ) : <span className="lp-muted">—</span>}
@@ -4468,9 +4462,11 @@ export default function LeadsPage() {
                     : <StatusBadge status={l.status} statusList={statusList} />
                   }
                   {l.is_converted && (
-                    <div style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:3,
-                      background:'#ecfdf5', color:'#059669', border:'1.5px solid #6ee7b7',
-                      borderRadius:20, padding:'2px 8px', fontSize:10, fontWeight:700, whiteSpace:'nowrap' }}>
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3,
+                      background: '#ecfdf5', color: '#059669', border: '1.5px solid #6ee7b7',
+                      borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap'
+                    }}>
                       <CheckCircle2 size={10} /> Converted to Appt.
                     </div>
                   )}

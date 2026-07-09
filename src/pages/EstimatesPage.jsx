@@ -2954,14 +2954,13 @@ export default function EstimatesPage() {
                 <table className="est-table">
                   <thead>
                     <tr>
-                      <th>#ID</th>
+                      <th>ID</th>
                       <th>Appointment</th>
                       <th>Hub</th>
                       <th style={{ textAlign: 'right' }}>Items</th>
                       <th style={{ textAlign: 'right' }}>Grand Total</th>
                       <th>Status</th>
                       <th>Created</th>
-                      <th style={{ width: 60 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2971,7 +2970,7 @@ export default function EstimatesPage() {
                         className="est-table-row"
                         onClick={() => setSelectedId(est.id)}
                       >
-                        <td style={{ fontWeight: 700, color: 'var(--primary)' }}>#{est.id}</td>
+                        <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{est.id}</td>
                         <td>
                           <div
                             className="est-cust-link"
@@ -3015,15 +3014,6 @@ export default function EstimatesPage() {
                         <td><StatusBadge status={est.status} /></td>
                         <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                           {est.created_at ? new Date(est.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                        </td>
-                        <td onClick={e => e.stopPropagation()}>
-                          <button
-                            className="icon-action"
-                            title="View"
-                            onClick={() => setSelectedId(est.id)}
-                          >
-                            <Eye size={14} />
-                          </button>
                         </td>
                       </tr>
                     ))}

@@ -1415,7 +1415,6 @@ export default function PurchaseInvoicesPage() {
                       <th style={{ textAlign: 'right' }}>Grand Total</th>
                       <th>Status</th>
                       <th>Payment</th>
-                      <th style={{ width: 48 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1478,11 +1477,6 @@ export default function PurchaseInvoicesPage() {
                           {inv.status === 'approved'
                             ? <PaymentStatusBadge status={inv.payment_status || 'pending'} />
                             : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                        </td>
-                        <td onClick={e => { e.stopPropagation(); setSelectedId(inv.id); }}>
-                          <button className="icon-action" title="View">
-                            <Eye size={15} />
-                          </button>
                         </td>
                       </tr>
                     ))}
