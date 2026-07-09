@@ -2076,6 +2076,10 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   // printing — on-screen these always show regardless of this toggle.
   const [includeB2bPrint, setIncludeB2bPrint] = react.useState(true);
 
+  // Whether to include the Notes box when printing — on-screen it always
+  // shows (subject to the existing status gate) regardless of this toggle.
+  const [includeNotesPrint, setIncludeNotesPrint] = react.useState(true);
+
   // Sub-modal states
   const [showApproval, setShowApproval] = react.useState(false);
   const [showRevision, setShowRevision] = react.useState(false);
@@ -2325,6 +2329,17 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 Include B2B details in print
               </label>
             )}
+            {estimate.notes && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={includeNotesPrint}
+                  onChange={e => setIncludeNotesPrint(e.target.checked)}
+                  style={{ width: 13, height: 13 }}
+                />
+                Include notes in print
+              </label>
+            )}
             <button
               className="btn btn-ghost"
               onClick={() => {
@@ -2487,29 +2502,6 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             </div>
           </div>
 
-          {estimate.notes && !['fully_approved', 'partially_approved', 'work_in_progress', 'work_completed'].includes(status) && (
-            <div className="est-no-print" style={{ 
-              background: status === 'revision_requested' ? '#fff7ed' : 'var(--bg-soft)', 
-              border: status === 'revision_requested' ? '1px solid #ffedd5' : 'none',
-              borderRadius: 8, 
-              padding: '12px 14px', 
-              fontSize: 13, 
-              color: 'var(--text)' 
-            }}>
-              <div style={{ 
-                fontSize: 11, 
-                fontWeight: 800, 
-                color: status === 'revision_requested' ? '#9a3412' : 'var(--text-muted)', 
-                textTransform: 'uppercase', 
-                letterSpacing: '0.05em', 
-                marginBottom: 6 
-              }}>
-                {status === 'revision_requested' ? 'Revision Requested' : 'Notes'}
-              </div>
-              {estimate.notes}
-            </div>
-          )}
-
           {/* ── Line Items ── */}
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10 }}>Line Items</div>
@@ -2621,16 +2613,40 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           {/* ── Totals ── */}
           <div className="est-totals-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderTop: '1px solid var(--border)', paddingTop: 16, gap: 24, flexWrap: 'wrap' }}>
 
-            {/* Amount in words — left */}
-            <div className="est-amount-words" style={{
-              flex: '1 1 220px', maxWidth: 340,
-              background: '#f8fafc', borderRadius: 10,
-              padding: '12px 16px', borderLeft: '3px solid #16b994',
-            }}>
-              <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Amount in Words</div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontStyle: 'italic', lineHeight: 1.7 }}>
-                {amountToWords(grandTotal)}
+            {/* Bottom-left corner: Amount in words, with Notes stacked below it */}
+            <div style={{ flex: '1 1 220px', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="est-amount-words" style={{
+                background: '#f8fafc', borderRadius: 10,
+                padding: '12px 16px', borderLeft: '3px solid #16b994',
+              }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Amount in Words</div>
+                <div style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontStyle: 'italic', lineHeight: 1.7 }}>
+                  {amountToWords(grandTotal)}
+                </div>
               </div>
+
+              {estimate.notes && (
+                <div className={includeNotesPrint ? '' : 'est-no-print'} style={{
+                  background: status === 'revision_requested' ? '#fff7ed' : 'var(--bg-soft)',
+                  border: status === 'revision_requested' ? '1px solid #ffedd5' : 'none',
+                  borderRadius: 8,
+                  padding: '12px 14px',
+                  fontSize: 13,
+                  color: 'var(--text)'
+                }}>
+                  <div style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: status === 'revision_requested' ? '#9a3412' : 'var(--text-muted)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: 6
+                  }}>
+                    {status === 'revision_requested' ? 'Revision Requested' : 'Notes'}
+                  </div>
+                  {estimate.notes}
+                </div>
+              )}
             </div>
 
             {/* Summary — right */}

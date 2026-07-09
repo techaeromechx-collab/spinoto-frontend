@@ -6,7 +6,7 @@ import PaginationBar from '../components/PaginationBar.jsx';
 import { getRoundingFunction } from '../lib/math.js';
 import {
   Receipt, Search, RefreshCw, X, Eye, Trash2,
-  AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Car, ChevronDown,
+  AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Car, ChevronDown, Pencil,
 } from 'lucide-react';
 import '../styles/CustomerInvoicesPage.css';
 
@@ -382,6 +382,33 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
   // printing — on-screen these always show regardless of this toggle.
   const [includeB2bPrint, setIncludeB2bPrint] = useState(true);
 
+  // Whether to include the Notes box when printing — on-screen it always
+  // shows (when present) regardless of this toggle.
+  const [includeNotesPrint, setIncludeNotesPrint] = useState(true);
+
+  // Editable CI notes — independent of the estimate's notes (which are only
+  // copied over once, at generation time).
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+
+  async function saveNotes() {
+    setSavingNotes(true);
+    try {
+      const r = await api(`/api/customer-invoices/${invoiceId}`, {
+        method: 'PATCH',
+        body: { notes: notesDraft.trim() || null },
+      });
+      setInv(r.item || r);
+      setEditingNotes(false);
+      showToast('Notes updated.');
+    } catch (err) {
+      showToast(err.message || 'Failed to update notes.', 'error');
+    } finally {
+      setSavingNotes(false);
+    }
+  }
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -548,6 +575,17 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
                 style={{ width: 13, height: 13 }}
               />
               Include B2B details in print
+            </label>
+          )}
+          {inv?.notes && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={includeNotesPrint}
+                onChange={e => setIncludeNotesPrint(e.target.checked)}
+                style={{ width: 13, height: 13 }}
+              />
+              Include notes in print
             </label>
           )}
           <button
@@ -753,16 +791,84 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
           {/* ── Totals ── */}
           <div className="ci-totals-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
 
-            {/* Amount in words — left */}
-            <div style={{
-              flex: '1 1 220px', maxWidth: 340,
-              background: '#f8fafc', borderRadius: 10,
-              padding: '12px 16px', borderLeft: '3px solid #16b994',
-            }}>
-              <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Amount in Words</div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontStyle: 'italic', lineHeight: 1.7 }}>
-                {amountToWords(parseFloat(grandTotal))}
+            {/* Bottom-left corner: Amount in words, with Notes stacked below it */}
+            <div style={{ flex: '1 1 220px', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{
+                background: '#f8fafc', borderRadius: 10,
+                padding: '12px 16px', borderLeft: '3px solid #16b994',
+              }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Amount in Words</div>
+                <div style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontStyle: 'italic', lineHeight: 1.7 }}>
+                  {amountToWords(parseFloat(grandTotal))}
+                </div>
               </div>
+
+              {(inv.notes || editingNotes) ? (
+                <div className={editingNotes ? 'est-no-print' : (includeNotesPrint ? '' : 'est-no-print')} style={{
+                  background: 'var(--bg-soft)',
+                  borderRadius: 8,
+                  padding: '12px 14px',
+                  fontSize: 13,
+                  color: 'var(--text)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: 'var(--text-muted)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      Notes
+                    </div>
+                    {!editingNotes && (
+                      <button
+                        type="button"
+                        className="est-no-print"
+                        onClick={() => { setNotesDraft(inv.notes || ''); setEditingNotes(true); }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, padding: 0 }}
+                      >
+                        <Pencil size={11} /> Edit
+                      </button>
+                    )}
+                  </div>
+                  {editingNotes ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <textarea
+                        className="form-input"
+                        style={{ minHeight: 70, resize: 'vertical', fontSize: 13 }}
+                        value={notesDraft}
+                        onChange={e => setNotesDraft(e.target.value)}
+                        placeholder="Add a note for this invoice…"
+                        autoFocus
+                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button type="button" className="btn btn-primary" style={{ padding: '5px 12px', fontSize: 12 }} disabled={savingNotes} onClick={saveNotes}>
+                          {savingNotes ? 'Saving…' : 'Save'}
+                        </button>
+                        <button type="button" className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: 12 }} disabled={savingNotes} onClick={() => setEditingNotes(false)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    inv.notes
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="est-no-print"
+                  onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
+                    background: 'none', border: '1px dashed var(--border)', borderRadius: 8,
+                    padding: '8px 12px', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600,
+                  }}
+                >
+                  <Plus size={13} /> Add note
+                </button>
+              )}
             </div>
 
             {/* Summary — right */}
