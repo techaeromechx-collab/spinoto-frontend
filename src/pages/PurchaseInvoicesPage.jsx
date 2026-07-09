@@ -1318,7 +1318,7 @@ export default function PurchaseInvoicesPage() {
                     <div style={{
                       position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
                       background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8,
-                      boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxH: 220,
+                      boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
                       overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
                     }}>
                       {hubs.map(h => {
