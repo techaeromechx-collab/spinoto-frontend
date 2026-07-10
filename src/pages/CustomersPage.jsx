@@ -7,7 +7,6 @@ import {
   Car, Network, MessageCircle, Plus, Trash2, FileText, Building2,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
-import { isValidGSTIN } from '../lib/gst.js';
 import '../styles/CustomersPage.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -572,7 +571,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
     if (editForm.is_b2b) {
       if (!editForm.b2b_company_name.trim()) { setEditErr('Please enter the company name for the B2B invoice.'); return; }
       if (!editForm.b2b_address.trim())      { setEditErr('Please enter the billing address for the B2B invoice.'); return; }
-      if (!isValidGSTIN(editForm.b2b_gst_number)) { setEditErr('Please enter a valid 15-character GSTIN.'); return; }
+      if (!editForm.b2b_gst_number.trim()) { setEditErr('Please enter a GST number.'); return; }
     }
     setEditErr('');
     const b2bRelevant = editForm.is_b2b || data?.default_is_b2b;
@@ -762,13 +761,9 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
                     </div>
                     <div className="cust-edit-field">
                       <label>GST Number</label>
-                      <input className="cust-edit-input" placeholder="15-character GSTIN" maxLength={15}
+                      <input className="cust-edit-input" placeholder="GST Number" maxLength={15}
                         value={editForm.b2b_gst_number}
-                        onChange={e => setEditForm(f => ({ ...f, b2b_gst_number: e.target.value.toUpperCase() }))}
-                        style={editForm.b2b_gst_number && !isValidGSTIN(editForm.b2b_gst_number) ? { borderColor: '#dc2626' } : undefined}/>
-                      {editForm.b2b_gst_number && !isValidGSTIN(editForm.b2b_gst_number) && (
-                        <p style={{ margin: '4px 0 0', fontSize: 11, color: '#dc2626' }}>Enter a valid 15-character GSTIN.</p>
-                      )}
+                        onChange={e => setEditForm(f => ({ ...f, b2b_gst_number: e.target.value.toUpperCase() }))}/>
                     </div>
                     <div className="cust-edit-field cust-edit-field--full">
                       <label>Billing Address</label>

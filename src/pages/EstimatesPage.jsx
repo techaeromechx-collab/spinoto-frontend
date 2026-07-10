@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import PaginationBar from '../components/PaginationBar.jsx';
-import { isValidGSTIN } from '../lib/gst.js';
 import { CreateAppointmentModal } from './AppointmentsPage.jsx';
 import {
   FileText, Plus, Search, RefreshCw, X, ChevronRight,
@@ -675,7 +674,6 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   const [b2bGstNumber, setB2bGstNumber] = react.useState(editEstimate?.b2b_gst_number || '');
   const [b2bAddress, setB2bAddress] = react.useState(editEstimate?.b2b_address || '');
   const [saveB2bToProfile, setSaveB2bToProfile] = react.useState(true);
-  const gstValid = b2bGstNumber ? isValidGSTIN(b2bGstNumber) : false;
 
   // Service / part search dropdowns
   const [serviceSearch, setServiceSearch] = react.useState('');
@@ -1064,7 +1062,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     if (isB2b) {
       if (!b2bCompanyName.trim()) { setError('Please enter the company name for the B2B invoice.'); return; }
       if (!b2bAddress.trim())     { setError('Please enter the billing address for the B2B invoice.'); return; }
-      if (!isValidGSTIN(b2bGstNumber)) { setError('Please enter a valid 15-character GSTIN.'); return; }
+      if (!b2bGstNumber.trim()) { setError('Please enter a GST number.'); return; }
     }
     if (!isEdit && mode === 'appointment') {
       const sel = appointments.find(a => String(a.id) === String(form.appointment_id));
@@ -1396,13 +1394,9 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                       className="form-input"
                       value={b2bGstNumber}
                       onChange={e => setB2bGstNumber(e.target.value.toUpperCase())}
-                      placeholder="15-character GSTIN"
+                      placeholder="GST Number"
                       maxLength={15}
-                      style={b2bGstNumber && !gstValid ? { borderColor: '#dc2626' } : undefined}
                     />
-                    {b2bGstNumber && !gstValid && (
-                      <p style={{ margin: '4px 0 0', fontSize: 11, color: '#dc2626' }}>Enter a valid 15-character GSTIN.</p>
-                    )}
                   </div>
                   <div className="form-field" style={{ gridColumn: '1 / -1' }}>
                     <label>Billing Address <span style={{ color: '#dc2626' }}>*</span></label>

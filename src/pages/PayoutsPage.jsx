@@ -492,13 +492,15 @@ function SummaryCards({ data, allInvoices, techRate }) {
   if (!data) return null;
   const bal = pi => parseFloat(pi.grand_total) - parseFloat(pi.amount_paid||0);
   const hubCount = arr => new Set(arr.map(p=>p.hub_name).filter(Boolean)).size;
-  const overdueList = data.overdue||[];
-  const weekList    = [...(data.due_today||[]), ...(data.due_this_week||[])];
-  const monthList   = data.due_this_month||[];
+  const overdueList  = data.overdue||[];
+  const weekList      = [...(data.due_today||[]), ...(data.due_this_week||[])];
+  const monthList      = data.due_this_month||[];
+  const awaitingList = data.awaiting_payment||[];
   const cards = [
     { label:'Overdue',           icon:<AlertTriangle size={20}/>, iconBg:'#fee2e2', iconColor:'#dc2626', amount:overdueList.reduce((s,p)=>s+bal(p),0),  hubs:hubCount(overdueList),  amtColor:'#dc2626', bg:'#fff5f5', border:'#fecaca' },
     { label:'Due This Week',     icon:<Calendar size={20}/>,      iconBg:'#fef3c7', iconColor:'#d97706', amount:weekList.reduce((s,p)=>s+bal(p),0),      hubs:hubCount(weekList),     amtColor:'#d97706', bg:'#fffbeb', border:'#fde68a' },
     { label:'This Month',        icon:<CalendarDays size={20}/>,  iconBg:'#ede9fe', iconColor:'#7c3aed', amount:monthList.reduce((s,p)=>s+bal(p),0),     hubs:hubCount(monthList),    amtColor:'#7c3aed', bg:'#f5f3ff', border:'#ddd6fe' },
+    { label:'Awaiting Customer Payment', icon:<Clock size={20}/>, iconBg:'#e0f2fe', iconColor:'#0284c7', amount:awaitingList.reduce((s,p)=>s+bal(p),0), hubs:hubCount(awaitingList), amtColor:'#0284c7', bg:'#f0f9ff', border:'#bae6fd' },
     { label:'Total Outstanding', icon:<Trophy size={20}/>,        iconBg:'#d1fae5', iconColor:'#059669', amount:allInvoices.reduce((s,p)=>s+bal(p),0),   hubs:hubCount(allInvoices),  amtColor:'var(--primary)', bg:'var(--bg-soft)', border:'var(--border)' },
   ];
   return (
@@ -796,7 +798,7 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                   <th style={{ padding:'9px 10px 9px 14px', background:'var(--bg-soft)', borderBottom:'1px solid var(--border)', width:36 }}>
                     <input type="checkbox" checked={allPageSelected && unpaidInvoices.length>0} ref={el=>{ if(el) el.indeterminate=somePageSelected&&!allPageSelected; }} onChange={toggleAll} style={{ cursor:'pointer', accentColor:'var(--primary)', width:15, height:15 }}/>
                   </th>
-                  {['PI #','Vehicle','Grand Total','Paid','Balance','Due Date','Status','Action'].map(h=>(
+                  {['PI # / CI #','Vehicle','Grand Total','Paid','Balance','Due Date','Status','Action'].map(h=>(
                     <th key={h} style={{ padding:'9px 14px', fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em', borderBottom:'1px solid var(--border)', background:'var(--bg-soft)', textAlign:['Grand Total','Paid','Balance'].includes(h)?'right':'left', whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -815,16 +817,29 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                         <input type="checkbox" disabled={!isSelectable} checked={selected.has(pi.id)} onChange={()=>toggleOne(pi.id)} style={{ cursor: isSelectable?'pointer':'not-allowed', accentColor:'var(--primary)', width:15, height:15 }}/>
                       </td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)' }}>
-                        <button onClick={()=>navigate('/purchase-invoices',{ state:{ openId:pi.id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
-                          PI-{String(pi.id).padStart(6,'0')}
-                        </button>
-                        {isOverdue && <span style={{ marginLeft:6, fontSize:10, fontWeight:700, background:'#fee2e2', color:'#991b1b', padding:'1px 6px', borderRadius:99 }}>OVERDUE</span>}
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <button onClick={()=>navigate('/purchase-invoices',{ state:{ openId:pi.id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
+                            PI-{String(pi.id).padStart(6,'0')}
+                          </button>
+                          {isOverdue && <span style={{ fontSize:10, fontWeight:700, background:'#fee2e2', color:'#991b1b', padding:'1px 6px', borderRadius:99 }}>OVERDUE</span>}
+                        </div>
+                        {pi.customer_invoice_id && (
+                          <button onClick={()=>navigate('/customer-invoices',{ state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, marginTop:2, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--text-muted)', fontFamily:'inherit' }}>
+                            CI-{String(pi.customer_invoice_id).padStart(6,'0')}
+                          </button>
+                        )}
                       </td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:13, color:'var(--text-muted)' }}>{pi.vehicle_number||'—'}</td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600, textAlign:'right' }}>{fmt(pi.grand_total)}</td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:13, color:'#16a34a', fontWeight:600, textAlign:'right' }}>{fmt(pi.amount_paid)}</td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:14, fontWeight:800, color:balance>0.01?'#ef4444':'#16a34a', textAlign:'right' }}>{fmt(balance)}</td>
-                      <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:isOverdue?'#dc2626':'var(--text-muted)', fontWeight:isOverdue?700:400 }}>{fmtDate(pi.payout_due_date)}</td>
+                      <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:isOverdue?'#dc2626':'var(--text-muted)', fontWeight:isOverdue?700:400 }}>
+                        {pi.payout_due_date ? fmtDate(pi.payout_due_date) : (
+                          <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:600, color:'#0284c7' }}>
+                            <Clock size={11}/> Awaiting payment
+                          </span>
+                        )}
+                      </td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)' }}><PayBadge status={pi.payment_status||'pending'}/></td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:6, justifyContent:'flex-end' }}>
@@ -950,11 +965,22 @@ function MobileHubCard({ hub, invoices, onPay, onViewPayments }) {
                           PI-{String(pi.id).padStart(6,'0')}
                         </button>
                         {isOverdue && <div style={{ fontSize:9, fontWeight:700, background:'#fee2e2', color:'#991b1b', padding:'1px 5px', borderRadius:4, marginTop:2, display:'inline-block' }}>OD</div>}
+                        {pi.customer_invoice_id && (
+                          <div>
+                            <button onClick={()=>navigate('/customer-invoices',{ state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:12, color:'var(--text-muted)', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                              CI-{String(pi.customer_invoice_id).padStart(6,'0')}
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding:'9px 10px', borderBottom:'1px solid var(--border)', fontSize:11, color:'var(--text-muted)' }}>{pi.vehicle_number||'—'}</td>
                       <td style={{ padding:'9px 10px', borderBottom:'1px solid var(--border)', fontSize:12, fontWeight:600, textAlign:'right' }}>{fmt(pi.grand_total)}</td>
                       <td style={{ padding:'9px 10px', borderBottom:'1px solid var(--border)', fontSize:12, fontWeight:800, color:balance>0.01?'#ef4444':'#16a34a', textAlign:'right' }}>{fmt(balance)}</td>
-                      <td style={{ padding:'9px 10px', borderBottom:'1px solid var(--border)', fontSize:11, color:isOverdue?'#dc2626':'var(--text-muted)', whiteSpace:'nowrap' }}>{fmtDate(pi.payout_due_date)}</td>
+                      <td style={{ padding:'9px 10px', borderBottom:'1px solid var(--border)', fontSize:11, color:isOverdue?'#dc2626':'var(--text-muted)', whiteSpace:'nowrap' }}>
+                        {pi.payout_due_date ? fmtDate(pi.payout_due_date) : (
+                          <span style={{ color:'#0284c7', fontWeight:600 }}>Awaiting payment</span>
+                        )}
+                      </td>
                       <td style={{ padding:'9px 10px', borderBottom:'1px solid var(--border)' }}><PayBadge status={pi.payment_status||'pending'}/></td>
                       <td style={{ padding:'9px 10px', borderBottom:'1px solid var(--border)', textAlign:'right' }}>
                         {pi.payment_status!=='paid' && (
@@ -1153,7 +1179,7 @@ export default function PayoutsPage() {
     await load();
   }
 
-  const SECTIONS = ['overdue','due_today','due_this_week','due_this_month','upcoming'];
+  const SECTIONS = ['overdue','due_today','due_this_week','due_this_month','upcoming','awaiting_payment'];
   const allInvoices = useMemo(()=>{ if(!data)return []; return SECTIONS.flatMap(k=>data[k]||[]); }, [data]);
 
   const hubs = useMemo(()=>{
