@@ -8,9 +8,32 @@ import {
   Calendar, Search, Eye, X, AlertCircle, CheckCircle2,
   ChevronLeft, ChevronRight, Clock, Car, Bike, Network,
   User, Phone, MapPin, Wrench, IndianRupee, ChevronDown,
-  FileText, MessageCircle, Plus, Pencil, Filter,
+  FileText, MessageCircle, Plus, Pencil, Filter, Copy, Check,
 } from 'lucide-react';
 import '../styles/AppointmentsPage.css';
+
+// Small inline "copy to clipboard" button — shows a checkmark briefly after
+// a successful copy. Used next to appointment codes wherever they're shown.
+function CopyButton({ text, size = 12 }) {
+  const [copied, setCopied] = useState(false);
+  if (!text) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      title="Copy"
+      style={{ background: 'none', border: 'none', padding: 2, margin: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', color: copied ? '#16a34a' : 'var(--text-muted)', verticalAlign: 'middle' }}
+    >
+      {copied ? <Check size={size} /> : <Copy size={size} />}
+    </button>
+  );
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -384,7 +407,10 @@ function RescheduleModal({ appt, onConfirm, onCancel }) {
     <div className="appt-backdrop" style={{ zIndex: 1200 }} onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
       <div className="appt-view-modal" style={{ maxWidth: 480 }} onMouseDown={e => e.stopPropagation()}>
         <div className="apptv-hdr" style={{ borderBottom: '1px solid var(--border)' }}>
-          <span className="apptv-hdr-title" style={{ fontSize: 15 }}>Reschedule Appointment {appt.appointment_code || `#${appt.id}`}</span>
+          <span className="apptv-hdr-title" style={{ fontSize: 15 }}>
+            Reschedule Appointment {appt.appointment_code || `#${appt.id}`}
+            {appt.appointment_code && <CopyButton text={appt.appointment_code} />}
+          </span>
           <button className="apptv-close-btn" onClick={onCancel}>✕</button>
         </div>
 
@@ -524,7 +550,10 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
         {/* ── Minimal Header ── */}
         <div className="apptv-hdr">
           <div className="apptv-hdr-left">
-            <span className="apptv-hdr-title">Appointment {appt.appointment_code || `#${appt.id}`}</span>
+            <span className="apptv-hdr-title">
+              Appointment {appt.appointment_code || `#${appt.id}`}
+              {appt.appointment_code && <CopyButton text={appt.appointment_code} />}
+            </span>
             {appt.lead_id && <span className="apptv-lead-chip">Lead #{appt.lead_id}</span>}
             {status && <StatusBadge name={status.name} color={status.color} bg={status.bg_color} />}
           </div>
@@ -1303,7 +1332,10 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
         {/* Header */}
         <div className="ea-hdr">
           <div>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>Edit Appointment {appt.appointment_code || `#${appt.id}`}</div>
+            <div style={{ fontWeight: 800, fontSize: 15, display: 'flex', alignItems: 'center', gap: 4 }}>
+              Edit Appointment {appt.appointment_code || `#${appt.id}`}
+              {appt.appointment_code && <CopyButton text={appt.appointment_code} />}
+            </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Update any appointment details below</div>
           </div>
           <button className="appt-icon-btn" onClick={onClose}><X size={16} /></button>
@@ -2924,8 +2956,9 @@ export default function AppointmentsPage() {
                     <td>
                       <div style={{ fontSize: 13, fontWeight: 400 }}>{a.hub_name || '—'}</div>
                       {a.appointment_code && (
-                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--primary)', marginTop: 2 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 600, color: 'var(--primary)', marginTop: 2 }}>
                           {a.appointment_code}
+                          <CopyButton text={a.appointment_code} size={10} />
                         </div>
                       )}
                       {a.created_by_name && (
