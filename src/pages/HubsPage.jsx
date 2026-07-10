@@ -1113,7 +1113,12 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
         <div className="hbv-hdr">
           <div className="hbv-hdr-icon"><Network size={20} /></div>
           <div className="hbv-hdr-body">
-            <div className="hbv-hdr-name">{hub.hub_name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="hbv-hdr-name">{hub.hub_name}</div>
+              {hub.hub_code && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 10%, var(--bg))', padding: '2px 8px', borderRadius: 99 }}>{hub.hub_code}</span>
+              )}
+            </div>
             <div className="hbv-hdr-badges">
               <VehicleBadge value={hub.vehicle_class} />
               <StatusBadge active={hub.is_active} />
@@ -1909,7 +1914,12 @@ export default function HubsPage() {
                         <Network size={13} />
                       </span>
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>{h.hub_name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 600, fontSize: 13 }}>{h.hub_name}</span>
+                          {h.hub_code && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 10%, var(--bg))', padding: '1px 6px', borderRadius: 99 }}>{h.hub_code}</span>
+                          )}
+                        </div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{h.owner_name}</div>
                         {(h.open_time || h.close_time) && (
                           <div className="hb-timing-badge"><Clock size={9} />{fmtTime(h.open_time)} – {fmtTime(h.close_time)}</div>

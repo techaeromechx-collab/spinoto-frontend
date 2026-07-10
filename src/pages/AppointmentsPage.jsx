@@ -384,7 +384,7 @@ function RescheduleModal({ appt, onConfirm, onCancel }) {
     <div className="appt-backdrop" style={{ zIndex: 1200 }} onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
       <div className="appt-view-modal" style={{ maxWidth: 480 }} onMouseDown={e => e.stopPropagation()}>
         <div className="apptv-hdr" style={{ borderBottom: '1px solid var(--border)' }}>
-          <span className="apptv-hdr-title" style={{ fontSize: 15 }}>Reschedule Appointment #{appt.id}</span>
+          <span className="apptv-hdr-title" style={{ fontSize: 15 }}>Reschedule Appointment {appt.appointment_code || `#${appt.id}`}</span>
           <button className="apptv-close-btn" onClick={onCancel}>✕</button>
         </div>
 
@@ -524,7 +524,7 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
         {/* ── Minimal Header ── */}
         <div className="apptv-hdr">
           <div className="apptv-hdr-left">
-            <span className="apptv-hdr-title">Appointment #{appt.id}</span>
+            <span className="apptv-hdr-title">Appointment {appt.appointment_code || `#${appt.id}`}</span>
             {appt.lead_id && <span className="apptv-lead-chip">Lead #{appt.lead_id}</span>}
             {status && <StatusBadge name={status.name} color={status.color} bg={status.bg_color} />}
           </div>
@@ -1303,7 +1303,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
         {/* Header */}
         <div className="ea-hdr">
           <div>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>Edit Appointment #{appt.id}</div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>Edit Appointment {appt.appointment_code || `#${appt.id}`}</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Update any appointment details below</div>
           </div>
           <button className="appt-icon-btn" onClick={onClose}><X size={16} /></button>
@@ -2923,6 +2923,11 @@ export default function AppointmentsPage() {
                     </td>
                     <td>
                       <div style={{ fontSize: 13, fontWeight: 400 }}>{a.hub_name || '—'}</div>
+                      {a.appointment_code && (
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--primary)', marginTop: 2 }}>
+                          {a.appointment_code}
+                        </div>
+                      )}
                       {a.created_by_name && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                           By: {a.created_by_name}
