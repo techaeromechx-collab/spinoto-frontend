@@ -2593,8 +2593,10 @@ export default function AppointmentsPage() {
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  // Hub users are locked to their own hub — pre-fill from user object
-  const [filterHub, setFilterHub] = useState(() => user?.hub_id ? String(user.hub_id) : '');
+  // Hub users are locked to their own hub — pre-fill from user object.
+  // Multi-select like the Estimates page's hub filter — array of hub-id strings.
+  const [filterHub, setFilterHub] = useState(() => user?.hub_id ? [String(user.hub_id)] : []);
+  const [showHubDropdown, setShowHubDropdown] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [filterCreatedBy, setFilterCreatedBy] = useState('');
@@ -2629,7 +2631,7 @@ export default function AppointmentsPage() {
       const qs = new URLSearchParams({ page, limit: pageSize });
       if (search) qs.set('search', search);
       if (filterStatus) qs.set('status_id', filterStatus);
-      if (filterHub) qs.set('hub_id', filterHub);
+      if (filterHub.length > 0) qs.set('hub_ids', filterHub.join(','));
       if (dateFrom) qs.set('date_from', dateFrom);
       if (dateTo) qs.set('date_to', dateTo);
       if (filterCreatedBy) qs.set('created_by_id', filterCreatedBy);
@@ -2729,11 +2731,72 @@ export default function AppointmentsPage() {
             {statusList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           {!isHubUser && (
-            <select className="appt-filter-sel" value={filterHub}
-              onChange={e => { setFilterHub(e.target.value); setPage(1); }}>
-              <option value="">All Hubs</option>
-              {hubs.map(h => <option key={h.id} value={h.id}>{h.hub_name}</option>)}
-            </select>
+            <div style={{ position: 'relative' }}>
+              <button
+                type="button"
+                className="appt-filter-sel"
+                style={{ textAlign: 'left', background: 'var(--bg)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, minWidth: 140 }}
+                onClick={() => setShowHubDropdown(p => !p)}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {filterHub.length === 0
+                    ? 'All Hubs'
+                    : `${filterHub.length} Hubs Selected`}
+                </span>
+                <ChevronDown size={14} style={{ opacity: 0.5, flexShrink: 0 }} />
+              </button>
+
+              {showHubDropdown && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowHubDropdown(false)} />
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+                    background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8,
+                    boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
+                    overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200,
+                  }}>
+                    {filterHub.length > 0 && (
+                      <button
+                        type="button"
+                        style={{
+                          width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                          color: 'var(--text-danger, #dc2626)', background: 'none', border: 'none',
+                          textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                          paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4,
+                        }}
+                        onClick={() => { setFilterHub([]); setPage(1); }}
+                      >
+                        <X size={12} /> Clear Selection
+                      </button>
+                    )}
+                    {hubs.map(h => {
+                      const isChecked = filterHub.includes(String(h.id));
+                      return (
+                        <label
+                          key={h.id}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', cursor: 'pointer', borderRadius: 4, userSelect: 'none' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              const newIds = isChecked
+                                ? filterHub.filter(id => id !== String(h.id))
+                                : [...filterHub, String(h.id)];
+                              setFilterHub(newIds);
+                              setPage(1);
+                            }}
+                          />
+                          <span style={{ fontSize: 13, color: 'var(--text)' }}>{h.hub_name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
           )}
           <select className="appt-filter-sel" value={filterCreatedBy}
             onChange={e => { setFilterCreatedBy(e.target.value); setPage(1); }}>
@@ -2806,7 +2869,7 @@ export default function AppointmentsPage() {
                       <Calendar size={36} style={{ opacity: .2, marginBottom: 10 }} />
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>No appointments found</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {search || filterStatus || filterHub || dateFrom || dateTo || filterCreatedBy
+                        {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo || filterCreatedBy
                           ? 'Try adjusting your filters.'
                           : 'Appointments appear here when leads are converted.'}
                       </div>
@@ -2957,7 +3020,7 @@ export default function AppointmentsPage() {
               <Calendar size={36} style={{ opacity: .2, marginBottom: 10 }} />
               <div style={{ fontWeight: 600, marginBottom: 4 }}>No appointments found</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                {search || filterStatus || filterHub || dateFrom || dateTo
+                {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo
                   ? 'Try adjusting your filters.'
                   : 'Appointments appear here when leads are converted.'}
               </div>

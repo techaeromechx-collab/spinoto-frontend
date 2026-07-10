@@ -34,6 +34,8 @@ function usePerms() {
     canDeletePricing:  useCan('DELETE_PRICING_RULE',   'MANAGE_PRICING', 'MANAGE_MASTER_DATA'),
     canTogglePricing:  useCan('TOGGLE_PRICING_STATUS', 'UPDATE_PRICING_RULE', 'MANAGE_PRICING', 'MANAGE_MASTER_DATA'),
     canBulkPricing:    useCan('BULK_UPLOAD_PRICING',   'MANAGE_PRICING', 'MANAGE_MASTER_DATA'),
+    // Assigning/unassigning a service to a hub mutates hub data — gate with hub permissions
+    canManageHubAssign: useCan('EDIT_HUB', 'MANAGE_HUBS'),
   };
 }
 
@@ -100,6 +102,318 @@ function previewAppliesTo(form, { vehicleTypes, makes, models, segments, bodyTyp
     return vtObj ? `${vtObj.name} Vehicles` : 'All Vehicles';
   }
   return vtObj ? `${vtObj.name} → ${parts.join(' · ')}` : parts.join(' · ');
+}
+
+// ── Assigned Hubs panel ──────────────────────────────────────────────────────
+// Reverse lookup for hub_service_mappings / hub_category_mappings — shown on a
+// service's Overview tab (kind='service') or a category's pricing panel
+// (kind='category') so admins can see which hubs currently have this
+// service/category assigned, and (with hub permissions) assign/unassign
+// directly from here.
+function AssignedHubsPanel({ kind = 'service', entityId, entityVehicleClass, perms: P, showToast, defaultCollapsed }) {
+  const [hubs,       setHubs]       = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState('');
+  const [removingId, setRemovingId] = useState(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [confirmHub, setConfirmHub] = useState(null); // hub pending unassign confirmation
+  // Category panel defaults to collapsed (it's already busy with dimensions +
+  // the rules table); service Overview tab defaults to expanded (more room).
+  const [collapsed, setCollapsed] = useState(() => defaultCollapsed ?? (kind === 'category'));
+
+  const basePath = kind === 'category'
+    ? `/api/services/categories/${entityId}/hubs`
+    : `/api/services/services/${entityId}/hubs`;
+
+  const loadHubs = useCallback(() => {
+    setLoading(true); setError('');
+    return api(basePath)
+      .then(r => setHubs(r.items || []))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [basePath]);
+
+  useEffect(() => { loadHubs(); }, [loadHubs]);
+
+  async function handleUnassign(hub) {
+    setRemovingId(hub.id);
+    try {
+      await api(`${basePath}/${hub.id}`, { method: 'DELETE' });
+      showToast?.('Hub unassigned');
+      await loadHubs();
+    } catch (e) { showToast?.(e.message, 'error'); }
+    finally { setRemovingId(null); setConfirmHub(null); }
+  }
+
+  return (
+    <div className="sp-ov-section">
+      <div
+        className="sp-ov-section-label"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: collapsed ? 0 : 10 }}
+        onClick={() => setCollapsed(c => !c)}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+          <Wrench size={13} /> Assigned Hubs
+          {!loading && !error && (
+            <span style={{
+              fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+              background: 'var(--bg-soft)', color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0,
+            }}>
+              {hubs.length}
+            </span>
+          )}
+        </span>
+        {P?.canManageHubAssign && (
+          <button
+            type="button"
+            className="sp-link-btn"
+            style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, textTransform: 'none', letterSpacing: 0 }}
+            onClick={(e) => { e.stopPropagation(); setAssignOpen(true); }}
+          >
+            <Plus size={12} /> Assign Hub
+          </button>
+        )}
+      </div>
+      {!collapsed && (
+        <>
+          {kind === 'category' && (
+            <p style={{ margin: '-4px 0 10px', fontSize: 11.5, color: 'var(--text-muted)' }}>
+              Assigning a hub here assigns every active service in this category to that hub.
+            </p>
+          )}
+          {loading ? (
+            <div style={{ display: 'flex', gap: 6 }}>
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="sp-skel-cell" style={{ width: 90, height: 22, borderRadius: 20 }} />
+              ))}
+            </div>
+          ) : error ? (
+            <p className="sp-ov-desc" style={{ color: 'var(--danger, #dc2626)' }}>{error}</p>
+          ) : hubs.length === 0 ? (
+            <p className="sp-ov-desc">
+              <span className="sp-ov-empty">Not assigned to any hub yet.</span>
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {hubs.map(h => (
+                <span
+                  key={h.id}
+                  title={h.is_active ? 'Active hub' : 'Inactive hub'}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    fontSize: 11.5, fontWeight: 600, padding: '4px 8px 4px 10px', borderRadius: 20,
+                    background: h.is_active ? '#ecfdf5' : '#f3f4f6',
+                    color:      h.is_active ? '#047857' : '#6b7280',
+                    border: `1px solid ${h.is_active ? '#a7f3d0' : '#e5e7eb'}`,
+                  }}
+                >
+                  {h.hub_name}
+                  {!h.is_active && <span style={{ fontSize: 9.5, fontWeight: 700, opacity: 0.8 }}>(inactive)</span>}
+                  {P?.canManageHubAssign && (
+                    <button
+                      type="button"
+                      title="Unassign"
+                      onClick={() => setConfirmHub(h)}
+                      disabled={removingId === h.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        width: 14, height: 14, borderRadius: '50%', marginLeft: 2,
+                        background: 'rgba(0,0,0,0.08)', border: 'none', cursor: 'pointer',
+                        color: 'inherit', padding: 0, opacity: removingId === h.id ? 0.5 : 1,
+                      }}
+                    >
+                      <X size={9} strokeWidth={3} />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {assignOpen && (
+        <AssignHubModal
+          kind={kind}
+          entityId={entityId}
+          entityVehicleClass={entityVehicleClass}
+          currentHubIds={new Set(hubs.map(h => h.id))}
+          onClose={() => setAssignOpen(false)}
+          onSaved={() => { setAssignOpen(false); loadHubs(); showToast?.('Hub assignments updated'); }}
+          showToast={showToast}
+        />
+      )}
+
+      {confirmHub && (
+        <UnassignHubModal
+          kind={kind}
+          hubName={confirmHub.hub_name}
+          loading={removingId === confirmHub.id}
+          onConfirm={() => handleUnassign(confirmHub)}
+          onClose={() => setConfirmHub(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Unassign confirm modal ────────────────────────────────────────────────────
+// In-app replacement for window.confirm() — matches the app's own modal styling
+// (mirrors DeleteModal below) instead of the native browser dialog.
+function UnassignHubModal({ kind = 'service', hubName, loading, onConfirm, onClose }) {
+  return (
+    <div className="sp-modal-backdrop" onClick={onClose}>
+      <div className="sp-modal sp-modal--sm" onClick={e => e.stopPropagation()}>
+        <div className="sp-modal-header">
+          <h3>Unassign Hub</h3>
+          <button className="sp-modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="sp-modal-body">
+          <p style={{ margin: kind === 'category' ? '0 0 8px' : '0 0 16px', fontSize: 14 }}>
+            Remove <strong>{hubName}</strong> from this {kind === 'category' ? 'category' : 'service'}?
+          </p>
+          {kind === 'category' && (
+            <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-muted)' }}>
+              This will also unassign every service in this category that this hub currently has.
+            </p>
+          )}
+          <div className="sp-modal-footer">
+            <button className="button secondary" onClick={onClose} disabled={loading}>Cancel</button>
+            <button className="button danger" onClick={onConfirm} disabled={loading}>
+              {loading ? 'Removing…' : 'Remove'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Assign Hub modal ──────────────────────────────────────────────────────────
+// Lets an admin pick which hubs this service/category should be assigned to,
+// directly from the Services & Pricing page (instead of via the Hub page's
+// own "Manage Services" full-replace modal).
+function AssignHubModal({ kind = 'service', entityId, entityVehicleClass, currentHubIds, onClose, onSaved, showToast }) {
+  const [allHubs, setAllHubs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search,  setSearch]  = useState('');
+  const [selected, setSelected] = useState(() => new Set(currentHubIds));
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState('');
+
+  const basePath = kind === 'category'
+    ? `/api/services/categories/${entityId}/hubs`
+    : `/api/services/services/${entityId}/hubs`;
+
+  useEffect(() => {
+    setLoading(true);
+    api('/api/hubs?limit=100')
+      .then(r => setAllHubs(r.items || []))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  function vcCompatible(hubVc) {
+    if (!entityVehicleClass || entityVehicleClass === 'both' || hubVc === 'both') return true;
+    return hubVc === entityVehicleClass;
+  }
+
+  const compatibleHubs = allHubs.filter(h => vcCompatible(h.vehicle_class));
+  const q = search.trim().toLowerCase();
+  const visible = q ? compatibleHubs.filter(h => h.hub_name.toLowerCase().includes(q)) : compatibleHubs;
+
+  function toggle(id) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true); setError('');
+    const toAdd    = [...selected].filter(id => !currentHubIds.has(id));
+    const toRemove = [...currentHubIds].filter(id => !selected.has(id));
+    if (toAdd.length === 0 && toRemove.length === 0) { onClose(); return; }
+    let ok = 0, fail = 0, lastErr = '';
+    await Promise.all([
+      ...toAdd.map(id => api(basePath, { method: 'POST', body: { hub_id: id } })
+        .then(() => ok++).catch(e => { fail++; lastErr = e.message; })),
+      ...toRemove.map(id => api(`${basePath}/${id}`, { method: 'DELETE' })
+        .then(() => ok++).catch(e => { fail++; lastErr = e.message; })),
+    ]);
+    setSaving(false);
+    if (fail === 0) { onSaved(); }
+    else if (ok > 0) { showToast?.(`${ok} change(s) saved, ${fail} failed — ${lastErr}`, 'error'); onSaved(); }
+    else { setError(lastErr || 'Failed to save changes.'); }
+  }
+
+  return (
+    <div className="sp-modal-backdrop" onClick={onClose}>
+      <div className="sp-modal sp-modal--sm" onClick={e => e.stopPropagation()}>
+        <div className="sp-modal-header">
+          <h3>Assign to Hubs</h3>
+          <button className="sp-modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        {kind === 'category' && (
+          <div style={{ margin: '0 22px', padding: '8px 12px', background: 'var(--bg-soft)', borderRadius: 8, fontSize: 12, color: 'var(--text-muted)', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+            <Info size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+            Checking a hub assigns every active service in this category to it. Unchecking removes all of them.
+          </div>
+        )}
+        <div className="sp-modal-body" style={{ paddingBottom: 14 }}>
+          {error && <div className="sp-form-error"><AlertCircle size={14} /> {error}</div>}
+          <input
+            className="sp-input"
+            placeholder="Search hubs…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="sp-skel-cell" style={{ height: 32, borderRadius: 8 }} />
+              ))}
+            </div>
+          ) : visible.length === 0 ? (
+            <p className="sp-ov-desc"><span className="sp-ov-empty">No compatible hubs found.</span></p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {visible.map(hub => {
+                const on = selected.has(hub.id);
+                return (
+                  <label
+                    key={hub.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+                      borderRadius: 8, cursor: 'pointer',
+                      background: on ? 'var(--bg-soft)' : 'transparent',
+                    }}
+                  >
+                    <input type="checkbox" checked={on} onChange={() => toggle(hub.id)} />
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{hub.hub_name}</span>
+                    {!hub.is_active && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af' }}>inactive</span>
+                    )}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {/* Footer is a sibling of sp-modal-body (not nested inside it) so it stays
+            pinned at the bottom and visible even when the hub list is long enough
+            to scroll — matches the pattern used by SmartPricingModal (spt-modal-footer). */}
+        <div className="sp-modal-footer" style={{ borderTop: '1px solid var(--border)', padding: '14px 22px', margin: 0, flexShrink: 0 }}>
+          <button type="button" className="button secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className="button primary" onClick={handleSave} disabled={saving || loading}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -617,6 +931,7 @@ export default function ServicesPage() {
                 <OverviewTab
                   service={selService}
                   perms={P}
+                  showToast={showToast}
                   onEdit={() => setSvcModal({ mode: 'edit', item: selService })}
                   onDelete={() => setDeleteModal({ type: 'service', item: selService })}
                   onToggle={toggleServiceStatus}
@@ -688,7 +1003,7 @@ export default function ServicesPage() {
 // ══════════════════════════════════════════════════════════════════════════
 // OVERVIEW TAB
 // ══════════════════════════════════════════════════════════════════════════
-function OverviewTab({ service: svc, perms: P, onEdit, onDelete, onToggle }) {
+function OverviewTab({ service: svc, perms: P, showToast, onEdit, onDelete, onToggle }) {
   const vcLabel = svc.vehicle_class === '4W' ? '4W Only'
                 : svc.vehicle_class === '2W' ? '2W Only'
                 : 'All Vehicles';
@@ -791,6 +1106,9 @@ function OverviewTab({ service: svc, perms: P, onEdit, onDelete, onToggle }) {
           </div>
         </div>
       </div>
+
+      {/* ── Assigned Hubs card ── */}
+      <AssignedHubsPanel kind="service" entityId={svc.id} entityVehicleClass={svc.vehicle_class} perms={P} showToast={showToast} />
     </div>
   );
 }
@@ -1175,6 +1493,8 @@ function CategoryPricingPanel({ category, perms: P, showToast, pricingModal, set
             : <> No dimension configured — <button className="sp-link-btn" onClick={() => setDimModal(true)}>set one now</button>.</>}
         </p>
       </div>
+
+      <AssignedHubsPanel kind="category" entityId={category.id} entityVehicleClass={category.vehicle_class} perms={P} showToast={showToast} />
 
       <PricingRulesList
         targetId={category.id}

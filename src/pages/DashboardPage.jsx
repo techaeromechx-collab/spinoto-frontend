@@ -59,6 +59,11 @@ export default function DashboardPage() {
   const [activities,   setActivities]   = useState([]);
   const [purchaseInvs, setPurchaseInvs] = useState([]);
   const [todayAppts,   setTodayAppts]   = useState([]);
+  // Total appointments created by the current user (all-time) — fetched via a
+  // dedicated limit=1 call so we get the accurate `total` without pulling every
+  // row (the dashboard's other appointments fetch below is capped at 30, which
+  // would undercount if reused for this).
+  const [apptsCreatedByMe, setApptsCreatedByMe] = useState(0);
   const [customers,    setCustomers]    = useState([]);
   const [notifications,setNotifications]= useState([]);
   const [partsData,    setPartsData]    = useState(null);
@@ -155,12 +160,17 @@ export default function DashboardPage() {
       canViewDashLeads ? api('/api/leads').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       canViewDashLeads ? api('/api/lead-statuses').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       canViewDashFollowups ? api('/api/lead-events?filter=today').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
-    ]).then(([s, ds, l, sl, ev]) => {
+      // limit=1 — we only need the `total` count, not the rows themselves.
+      (canViewDashAppointments && user?.id)
+        ? api(`/api/appointments?created_by_id=${user.id}&limit=1`).catch(() => ({ total: 0 }))
+        : Promise.resolve({ total: 0 }),
+    ]).then(([s, ds, l, sl, ev, apptsCreated]) => {
       setStats(s);
       setDashStats(ds);
       setLeads(l.items || []);
       setStatusList(sl.items || []);
       setTodayEvents(ev.items || []);
+      setApptsCreatedByMe(apptsCreated?.total || 0);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -274,6 +284,12 @@ export default function DashboardPage() {
   const totalLeads    = leads.length;
   const myId          = Number(user?.id);
   const assignedLeads = leads.filter(l => Number(l.assigned_to) === myId && Number(l.created_by) !== myId).length;
+  // Created / Assigned KPI chips — independent counts (a lead where you're both
+  // the creator and the assignee counts in BOTH, it isn't split or deduped).
+  // created_by_id / assigned_to_id are the aliased columns listLeads actually
+  // returns (raw l.created_by isn't selected, so we don't rely on it here).
+  const myCreatedLeadsCount  = leads.filter(l => Number(l.created_by_id) === myId).length;
+  const myAssignedLeadsCount = leads.filter(l => Number(l.assigned_to_id ?? l.assigned_to) === myId).length;
 
   const statusCounts = useMemo(() => {
     const map = {};
@@ -502,7 +518,7 @@ export default function DashboardPage() {
               icon={<Users size={18} />} color="#3b82f6"
               label="My Leads"
               value={loading ? '—' : String(leads.length)}
-              sub={`${myConvertedLeads} converted`}
+              sub={`${myCreatedLeadsCount} created · ${myAssignedLeadsCount} assigned`}
               sparkData={sparkLeads} sparkColor="#3b82f6"
               to="/leads"
             />
@@ -539,6 +555,14 @@ export default function DashboardPage() {
         <StatChip icon={<Users size={14} />} color="#3b82f6" label="Total Leads" value={loading ? '…' : totalLeads} />
         <div className="db-strip-div" />
 
+        {/* 1b. Created by Me */}
+        <StatChip icon={<UserPlus size={14} />} color="#8b5cf6" label="Created by Me" value={loading ? '…' : myCreatedLeadsCount} />
+        <div className="db-strip-div" />
+
+        {/* 1c. Assigned to Me */}
+        <StatChip icon={<Users size={14} />} color="#06b6d4" label="Assigned to Me" value={loading ? '…' : myAssignedLeadsCount} />
+        <div className="db-strip-div" />
+
         {/* 2. Pipeline Value */}
         <StatChip icon={<IndianRupee size={14} />} color="#10b981" label="Pipeline Value" value={loading ? '…' : '₹' + fmtINR(canViewOwnDashboard && !dashStats ? myPipelineValue : pipelineVal)} />
         <div className="db-strip-div" />
@@ -546,6 +570,14 @@ export default function DashboardPage() {
         {/* 3. Appointments Today */}
         <StatChip icon={<CalendarDays size={14} />} color="#8b5cf6" label="Appointments Today" value={loading ? '…' : (dashStats?.today_appointments ?? '—')} />
         <div className="db-strip-div" />
+
+        {/* 3b. Appointments Created by Me */}
+        {canViewDashAppointments && (
+          <>
+            <StatChip icon={<CalendarDays size={14} />} color="#ec4899" label="Appts Created by Me" value={loading ? '…' : apptsCreatedByMe} />
+            <div className="db-strip-div" />
+          </>
+        )}
 
         {/* 4. New Today */}
         <StatChip icon={<Activity size={14} />} color="#f59e0b" label="New Today" value={loading ? '…' : todayLeads} />
