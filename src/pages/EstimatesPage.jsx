@@ -674,6 +674,34 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   const [b2bGstNumber, setB2bGstNumber] = react.useState(editEstimate?.b2b_gst_number || '');
   const [b2bAddress, setB2bAddress] = react.useState(editEstimate?.b2b_address || '');
   const [saveB2bToProfile, setSaveB2bToProfile] = react.useState(true);
+  const [b2bRefreshing, setB2bRefreshing] = react.useState(false);
+  const [b2bRefreshed, setB2bRefreshed] = react.useState(false);
+
+  // Manual "pull latest from profile" — only fires on click, so it never
+  // silently changes an estimate's already-saved B2B details. Used when the
+  // profile's B2B info was edited after this estimate already had its own.
+  async function refreshB2bFromProfile() {
+    if (!editEstimate?.mobile || b2bRefreshing) return;
+    setB2bRefreshing(true);
+    try {
+      const custRes = await api(`/api/customers/${encodeURIComponent(editEstimate.mobile)}`);
+      const custItem = custRes?.item || custRes;
+      if (custItem?.default_is_b2b) {
+        setIsB2b(true);
+        setB2bCompanyName(custItem.default_b2b_company_name || '');
+        setB2bGstNumber(custItem.default_b2b_gst_number || '');
+        setB2bAddress(custItem.default_b2b_address || '');
+        setB2bRefreshed(true);
+        setTimeout(() => setB2bRefreshed(false), 1500);
+      } else {
+        setError('This customer has no B2B details saved on their profile.');
+      }
+    } catch {
+      setError('Could not refresh B2B details from profile.');
+    } finally {
+      setB2bRefreshing(false);
+    }
+  }
 
   // Service / part search dropdowns
   const [serviceSearch, setServiceSearch] = react.useState('');
@@ -745,6 +773,29 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       }
     }
     loadMaster();
+  }, []); // eslint-disable-line
+
+  // Edit mode: if this estimate doesn't already have its own B2B details
+  // saved, but the customer's profile does, pull them in automatically —
+  // covers the case where B2B was added to the profile after the estimate
+  // was already created. Never overwrites an estimate that already has its
+  // own B2B details (is_b2b on, or a GST number saved) — those are left
+  // exactly as saved, since they may deliberately differ per invoice.
+  react.useEffect(() => {
+    if (!isEdit || !editEstimate?.mobile) return;
+    if (editEstimate?.is_b2b || editEstimate?.b2b_gst_number) return;
+    (async () => {
+      try {
+        const custRes = await api(`/api/customers/${encodeURIComponent(editEstimate.mobile)}`);
+        const custItem = custRes?.item || custRes;
+        if (custItem?.default_is_b2b) {
+          setIsB2b(true);
+          setB2bCompanyName(custItem.default_b2b_company_name || '');
+          setB2bGstNumber(custItem.default_b2b_gst_number || '');
+          setB2bAddress(custItem.default_b2b_address || '');
+        }
+      } catch { /* no saved profile / no permission — ignore */ }
+    })();
   }, []); // eslint-disable-line
 
   // When opened via "Create Estimate" from an appointment, auto-trigger the
@@ -1358,24 +1409,45 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
             {/* B2B Invoice */}
             <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', background: isB2b ? 'var(--primary-light, #eff6ff)' : 'var(--bg-soft)' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0 }}>
-                <input
-                  type="checkbox"
-                  checked={isB2b}
-                  onChange={e => {
-                    const checked = e.target.checked;
-                    setIsB2b(checked);
-                    if (!checked) {
-                      setB2bCompanyName('');
-                      setB2bGstNumber('');
-                      setB2bAddress('');
-                    }
-                  }}
-                  style={{ width: 16, height: 16 }}
-                />
-                <Building2 size={15} style={{ color: 'var(--primary)' }} />
-                <span style={{ fontWeight: 700, fontSize: 13 }}>B2B Invoice (GST Registered Customer)</span>
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={isB2b}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setIsB2b(checked);
+                      if (!checked) {
+                        setB2bCompanyName('');
+                        setB2bGstNumber('');
+                        setB2bAddress('');
+                      }
+                    }}
+                    style={{ width: 16, height: 16 }}
+                  />
+                  <Building2 size={15} style={{ color: 'var(--primary)' }} />
+                  <span style={{ fontWeight: 700, fontSize: 13 }}>B2B Invoice (GST Registered Customer)</span>
+                </label>
+
+                {isEdit && editEstimate?.mobile && (
+                  <button
+                    type="button"
+                    onClick={refreshB2bFromProfile}
+                    disabled={b2bRefreshing}
+                    title="Pull the latest B2B details from this customer's profile"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      background: 'none', border: '1px solid var(--border)', borderRadius: 6,
+                      padding: '4px 10px', fontSize: 12, fontWeight: 600,
+                      color: b2bRefreshed ? '#16a34a' : 'var(--primary)',
+                      cursor: b2bRefreshing ? 'default' : 'pointer',
+                    }}
+                  >
+                    <RefreshCw size={12} />
+                    {b2bRefreshing ? 'Refreshing…' : b2bRefreshed ? 'Updated from profile' : 'Refresh from profile'}
+                  </button>
+                )}
+              </div>
 
               {isB2b && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
