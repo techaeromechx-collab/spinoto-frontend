@@ -1633,7 +1633,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
 // which is appointment-specific) is skipped entirely — as soon as a vehicle
 // is picked/saved in step 2, onComplete({ customer, vehicle }) fires instead
 // of advancing to step 3 or POSTing to /api/appointments.
-export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, standaloneMode = false, onComplete, title = 'New Appointment' }) {
+export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, standaloneMode = false, onComplete, title = 'New Appointment', initialCustomer = null }) {
   // ── Step tracker ──────────────────────────────────────────────────────────
   const [step, setStep] = useState(1); // 1 customer · 2 vehicle · 3 details
 
@@ -1644,6 +1644,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
   const [selectedCust, setSelectedCust] = useState(null); // {mobile, customer_name, whatsapp}
   const [showAddCust, setShowAddCust] = useState(false);
   const [newCust, setNewCust] = useState({ name: '', mobile: '', whatsapp: '', state_id: '', city_id: '', area_id: '' });
+  const [duplicateCust, setDuplicateCust] = useState(null); // set when the typed mobile already belongs to an existing customer
   const [waSameAsMobile, setWaSameAsMobile] = useState(false);
   const [locStates, setLocStates] = useState([]);
   const [locCities, setLocCities] = useState([]);
@@ -1741,6 +1742,17 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
     setStep(2);
   }
 
+  // Opened with a customer already known (e.g. "New Appointment" from that
+  // customer's profile page) — auto-select them and jump straight to step 2,
+  // same as clicking a search result. Vehicle is intentionally left for the
+  // user to pick/add on step 2, not auto-selected.
+  const initialCustTriggered = useRef(false);
+  useEffect(() => {
+    if (!initialCustomer || initialCustTriggered.current) return;
+    initialCustTriggered.current = true;
+    pickCustomer(initialCustomer);
+  }, [initialCustomer]); // eslint-disable-line
+
   // ── Create new customer ───────────────────────────────────────────────────
   async function saveNewCustomer() {
     const name = newCust.name.trim();
@@ -1753,6 +1765,25 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
     if (!/^\d{10}$/.test(mobile)) { setError('Mobile must be exactly 10 digits'); return; }
     if (wa && !/^\d{10}$/.test(wa)) { setError('WhatsApp must be exactly 10 digits'); return; }
     setError('');
+    setDuplicateCust(null);
+
+    // Guard: this mobile might already belong to an existing customer — e.g.
+    // staff searched by a misspelled name/nickname, got no results, and are
+    // now typing in a number from memory. The PUT below is an unconditional
+    // upsert (it's also the "edit existing profile" endpoint), so saving
+    // blind here would silently rename that existing customer. Check first.
+    try {
+      const existing = await api(`/api/customers/${encodeURIComponent(mobile)}`);
+      if (existing?.item) {
+        setDuplicateCust(existing.item);
+        setError(`This mobile number already belongs to "${existing.item.customer_name || 'an existing customer'}". Use that customer instead of creating a duplicate.`);
+        return;
+      }
+    } catch (e) {
+      if (e.status !== 404) { setError('Could not verify this mobile number. Please try again.'); return; }
+      // 404 — genuinely new customer, safe to proceed
+    }
+
     try {
       await api(`/api/customers/${encodeURIComponent(mobile)}`, {
         method: 'PUT',
@@ -2102,8 +2133,17 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
         {/* Body */}
         <div className="ca-body">
           {error && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '9px 13px', color: '#991b1b', fontSize: 13, marginBottom: 14 }}>
-              <AlertCircle size={14} /> {error}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '9px 13px', color: '#991b1b', fontSize: 13, marginBottom: 14 }}>
+              <AlertCircle size={14} style={{ flexShrink: 0 }} /> <span style={{ flex: 1 }}>{error}</span>
+              {duplicateCust && (
+                <button
+                  type="button"
+                  onClick={() => { const dc = duplicateCust; setDuplicateCust(null); setError(''); setShowAddCust(false); pickCustomer(dc); }}
+                  style={{ background: '#991b1b', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
+                >
+                  Use this customer
+                </button>
+              )}
             </div>
           )}
 
@@ -2132,7 +2172,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
                   {!custLoading && custQuery.trim() && custResults.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '16px 0' }}>
                       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>No customer found for "{custQuery}"</div>
-                      <button className="ca-btn-outline" onClick={() => { setNewCust({ name: custQuery, mobile: '', whatsapp: '', state_id: '', city_id: '', area_id: '' }); setWaSameAsMobile(false); setLocCities([]); setLocAreas([]); setShowAddCust(true); setError(''); }}>
+                      <button className="ca-btn-outline" onClick={() => { setNewCust({ name: custQuery, mobile: '', whatsapp: '', state_id: '', city_id: '', area_id: '' }); setWaSameAsMobile(false); setLocCities([]); setLocAreas([]); setShowAddCust(true); setError(''); setDuplicateCust(null); }}>
                         <Plus size={13} /> Add New Customer
                       </button>
                     </div>
@@ -2149,7 +2189,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
                           <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                         </button>
                       ))}
-                      <button className="ca-btn-outline" style={{ margin: '8px 0 0' }} onClick={() => { setNewCust({ name: '', mobile: '', whatsapp: '' }); setWaSameAsMobile(false); setShowAddCust(true); setError(''); }}>
+                      <button className="ca-btn-outline" style={{ margin: '8px 0 0' }} onClick={() => { setNewCust({ name: '', mobile: '', whatsapp: '' }); setWaSameAsMobile(false); setShowAddCust(true); setError(''); setDuplicateCust(null); }}>
                         <Plus size={13} /> Add New Customer Instead
                       </button>
                     </div>
@@ -2181,6 +2221,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
                           whatsapp: waSameAsMobile ? val : v.whatsapp,
                         }));
                         setError('');
+                        setDuplicateCust(null);
                       }} />
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'block' }}>10 digits, no spaces</span>
                   </div>
@@ -2638,6 +2679,7 @@ export default function AppointmentsPage() {
   const [showFilters, setShowFilters] = useState(true); // mobile funnel toggle
   const [modal, setModal] = useState(null); // null | { mode: 'view', appt }
   const [createModal, setCreateModal] = useState(false);
+  const [prefillCustomer, setPrefillCustomer] = useState(null); // customer to auto-select when opened from Customer Profile
   const [editAppt, setEditAppt] = useState(null); // appt being edited
   const [toast, setToast] = useState(null);
   const searchTimer = useRef(null);
@@ -2689,6 +2731,16 @@ export default function AppointmentsPage() {
       .then(r => { if (r.item) setModal({ mode: 'view', appt: r.item }); })
       .catch(() => { });
   }, [location.state?.openApptId]);
+
+  // Open "New Appointment" with a customer already selected, when navigated
+  // here from that customer's profile page.
+  useEffect(() => {
+    const pc = location.state?.prefillCustomer;
+    if (!pc) return;
+    window.history.replaceState({}, '');
+    setPrefillCustomer(pc);
+    setCreateModal(true);
+  }, [location.state?.prefillCustomer]);
 
   function handleSearchChange(v) {
     clearTimeout(searchTimer.current);
@@ -3137,7 +3189,8 @@ export default function AppointmentsPage() {
         <CreateAppointmentModal
           hubs={hubs}
           statusList={statusList}
-          onClose={() => setCreateModal(false)}
+          initialCustomer={prefillCustomer}
+          onClose={() => { setCreateModal(false); setPrefillCustomer(null); }}
           onCreated={newAppt => {
             showToast('Appointment created!');
             setAppts(prev => [newAppt, ...prev]);

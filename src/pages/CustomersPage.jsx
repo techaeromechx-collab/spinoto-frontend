@@ -5,6 +5,7 @@ import {
   Users, Search, X, ChevronLeft, ChevronRight, ChevronDown,
   Phone, Calendar, Eye, Pencil, Mail, StickyNote, Check,
   Car, Network, MessageCircle, Plus, Trash2, FileText, Building2,
+  IndianRupee, BarChart3, Wallet, AlertCircle,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
 import '../styles/CustomersPage.css';
@@ -138,36 +139,47 @@ function buildModelLabel(model, allModels, bodyTypes, segments) {
 const TW_KW = ['two', '2w', 'bike', 'scoot', 'motor', 'moped'];
 function isTwo(name = '') { const n = name.toLowerCase(); return TW_KW.some(k => n.includes(k)); }
 
-function AddVehicleModal({ mobile, onClose, onSaved }) {
+function AddVehicleModal({ mobile, onClose, onSaved, initial = null }) {
   const [form, setForm] = useState({
-    vehicle_number: '', vehicle_type_id: '', make_id: '', model_id: '',
-    color: '', year: '', notes: '',
+    vehicle_number:  initial?.vehicle_number  || '',
+    vehicle_type_id: initial?.vehicle_type_id ? String(initial.vehicle_type_id) : '',
+    make_id:         initial?.make_id         ? String(initial.make_id)         : '',
+    model_id:        initial?.model_id        ? String(initial.model_id)        : '',
+    color:           initial?.color           || '',
+    year:            initial?.year            || '',
+    notes:           initial?.notes           || '',
   });
-  const [types,     setTypes]     = useState([]);
-  const [makes,     setMakes]     = useState([]);
-  const [models,    setModels]    = useState([]);
-  const [bodyTypes, setBodyTypes] = useState([]);
-  const [segments,  setSegments]  = useState([]);
-  const [saving,    setSaving]    = useState(false);
-  const [err,       setErr]       = useState('');
+  const [types,       setTypes]       = useState([]);
+  const [makes,       setMakes]       = useState([]);
+  const [models,      setModels]      = useState([]);
+  const [bodyTypes,   setBodyTypes]   = useState([]);
+  const [segments,    setSegments]    = useState([]);
+  const [ccCategories, setCcCategories] = useState([]);
+  const [saving,      setSaving]      = useState(false);
+  const [err,         setErr]         = useState('');
 
   useEffect(() => {
     api('/api/vehicles/types').then(r => setTypes(r.items || [])).catch(() => {});
     api('/api/vehicles/body-types').then(r => setBodyTypes(r.items || [])).catch(() => {});
     api('/api/vehicles/segments').then(r => setSegments(r.items || [])).catch(() => {});
+    api('/api/cc-categories').then(r => setCcCategories(r.items || [])).catch(() => {});
   }, []);
 
+  const isFirstType = useRef(true);
   useEffect(() => {
     setMakes([]); setModels([]);
-    setForm(f => ({ ...f, make_id: '', model_id: '' }));
+    if (isFirstType.current) { isFirstType.current = false; }
+    else { setForm(f => ({ ...f, make_id: '', model_id: '' })); }
     if (!form.vehicle_type_id) return;
     api(`/api/vehicles/makes?type_id=${form.vehicle_type_id}`)
       .then(r => setMakes(r.items || [])).catch(() => {});
   }, [form.vehicle_type_id]);
 
+  const isFirstMake = useRef(true);
   useEffect(() => {
     setModels([]);
-    setForm(f => ({ ...f, model_id: '' }));
+    if (isFirstMake.current) { isFirstMake.current = false; }
+    else { setForm(f => ({ ...f, model_id: '' })); }
     if (!form.make_id) return;
     api(`/api/vehicles/models?make_id=${form.make_id}`)
       .then(r => setModels(r.items || [])).catch(() => {});
@@ -175,12 +187,13 @@ function AddVehicleModal({ mobile, onClose, onSaved }) {
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
-  const selectedModel = models.find(m => String(m.id) === String(form.model_id)) || null;
-  const selectedType  = types.find(t => String(t.id) === String(form.vehicle_type_id)) || null;
-  const isTwoWheeler  = selectedType ? isTwo(selectedType.name) : false;
-  const bodyTypeName  = selectedModel?.body_type_id ? (bodyTypes.find(b => b.id === selectedModel.body_type_id)?.name || null) : null;
-  const segmentName   = selectedModel?.segment_id   ? (segments.find(s => s.id === selectedModel.segment_id)?.name   || null) : null;
-  const engineCC      = selectedModel?.engine_cc || null;
+  const selectedModel  = models.find(m => String(m.id) === String(form.model_id)) || null;
+  const selectedType   = types.find(t => String(t.id) === String(form.vehicle_type_id)) || null;
+  const isTwoWheeler   = selectedType ? isTwo(selectedType.name) : false;
+  const bodyTypeName   = selectedModel?.body_type_id   ? (bodyTypes.find(b => b.id === selectedModel.body_type_id)?.name || null) : null;
+  const segmentName    = selectedModel?.segment_id     ? (segments.find(s => s.id === selectedModel.segment_id)?.name   || null) : null;
+  const ccCategoryName = selectedModel?.cc_category_id ? (ccCategories.find(c => c.id === selectedModel.cc_category_id)?.name || null) : null;
+  const engineCC       = selectedModel?.engine_cc || null;
 
   async function handleSave() {
     if (!form.vehicle_number.trim()) { setErr('Vehicle number is required'); return; }
@@ -210,11 +223,18 @@ function AddVehicleModal({ mobile, onClose, onSaved }) {
     <div className="aveh-backdrop" onClick={onClose}>
       <div className="aveh-modal" onClick={e => e.stopPropagation()}>
         <div className="aveh-hdr">
-          <span className="aveh-title"><Car size={14}/> Add Vehicle</span>
+          <span className="aveh-title">
+            {initial ? <><Pencil size={14}/> Save Vehicle</> : <><Car size={14}/> Add Vehicle</>}
+          </span>
           <button className="cust-icon-btn" onClick={onClose}><X size={15}/></button>
         </div>
         <div className="aveh-body">
           {err && <div className="aveh-err">{err}</div>}
+          {initial && !err && (
+            <div className="aveh-hint">
+              Seen on a past appointment/invoice — save it to make it editable.
+            </div>
+          )}
 
           <div className="aveh-field aveh-field--full">
             <label>Vehicle Number *</label>
@@ -281,7 +301,7 @@ function AddVehicleModal({ mobile, onClose, onSaved }) {
                   </div>
                   <div className="aveh-autoinfo-item">
                     <span className="aveh-autoinfo-lbl">Category</span>
-                    <span className="aveh-autoinfo-val">{segmentName || '—'}</span>
+                    <span className="aveh-autoinfo-val">{ccCategoryName || '—'}</span>
                   </div>
                 </>
               )}
@@ -321,7 +341,9 @@ function AddVehicleModal({ mobile, onClose, onSaved }) {
 
 // ── Edit Vehicle Modal ────────────────────────────────────────────────────────
 function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
+  const originalPlate = (vehicle.vehicle_number || '').toUpperCase();
   const [form, setForm] = useState({
+    vehicle_number:  vehicle.vehicle_number || '',
     vehicle_type_id: String(vehicle.vehicle_type_id || ''),
     make_id:         String(vehicle.make_id         || ''),
     model_id:        String(vehicle.model_id        || ''),
@@ -329,18 +351,35 @@ function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
     year:            vehicle.year  || '',
     notes:           vehicle.notes || '',
   });
-  const [types,     setTypes]     = useState([]);
-  const [makes,     setMakes]     = useState([]);
-  const [models,    setModels]    = useState([]);
-  const [bodyTypes, setBodyTypes] = useState([]);
-  const [segments,  setSegments]  = useState([]);
-  const [saving,    setSaving]    = useState(false);
-  const [err,       setErr]       = useState('');
+  const [types,        setTypes]        = useState([]);
+  const [makes,        setMakes]        = useState([]);
+  const [models,       setModels]       = useState([]);
+  const [bodyTypes,    setBodyTypes]    = useState([]);
+  const [segments,     setSegments]     = useState([]);
+  const [ccCategories, setCcCategories] = useState([]);
+  const [saving,       setSaving]       = useState(false);
+  const [err,          setErr]          = useState('');
+  const [propagateNumber, setPropagateNumber] = useState(false);
+  const [usage, setUsage] = useState(null); // { appointments, estimates, invoices } for the ORIGINAL plate
+
+  const plateChanged = form.vehicle_number.trim().toUpperCase() !== originalPlate;
+
+  useEffect(() => {
+    api(`/api/customers/${encodeURIComponent(mobile)}/vehicle-usage?number=${encodeURIComponent(originalPlate)}`)
+      .then(setUsage).catch(() => setUsage({ appointments: 0, estimates: 0, invoices: 0 }));
+  }, []);
+
+  const usageParts = usage ? [
+    usage.appointments > 0 && `${usage.appointments} appointment${usage.appointments !== 1 ? 's' : ''}`,
+    usage.estimates    > 0 && `${usage.estimates} estimate${usage.estimates !== 1 ? 's' : ''}`,
+    usage.invoices     > 0 && `${usage.invoices} invoice${usage.invoices !== 1 ? 's' : ''}`,
+  ].filter(Boolean) : [];
 
   useEffect(() => {
     api('/api/vehicles/types').then(r => setTypes(r.items || [])).catch(() => {});
     api('/api/vehicles/body-types').then(r => setBodyTypes(r.items || [])).catch(() => {});
     api('/api/vehicles/segments').then(r => setSegments(r.items || [])).catch(() => {});
+    api('/api/cc-categories').then(r => setCcCategories(r.items || [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -362,22 +401,26 @@ function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
   const selectedModel  = models.find(m => String(m.id) === String(form.model_id)) || null;
   const selectedType   = types.find(t => String(t.id) === String(form.vehicle_type_id)) || null;
   const isTwoWheeler   = selectedType ? isTwo(selectedType.name) : false;
-  const bodyTypeName   = selectedModel?.body_type_id ? (bodyTypes.find(b => b.id === selectedModel.body_type_id)?.name || null) : null;
-  const segmentName    = selectedModel?.segment_id   ? (segments.find(s => s.id === selectedModel.segment_id)?.name   || null) : null;
+  const bodyTypeName   = selectedModel?.body_type_id   ? (bodyTypes.find(b => b.id === selectedModel.body_type_id)?.name || null) : null;
+  const segmentName    = selectedModel?.segment_id     ? (segments.find(s => s.id === selectedModel.segment_id)?.name   || null) : null;
+  const ccCategoryName = selectedModel?.cc_category_id ? (ccCategories.find(c => c.id === selectedModel.cc_category_id)?.name || null) : null;
   const engineCC       = selectedModel?.engine_cc || null;
 
   async function handleSave() {
+    if (!form.vehicle_number.trim()) { setErr('Vehicle number is required'); return; }
     setSaving(true); setErr('');
     try {
       await api(`/api/customers/${encodeURIComponent(mobile)}/vehicles/${vehicle.cv_id}`, {
         method: 'PUT',
         body: {
+          vehicle_number:  form.vehicle_number.trim().toUpperCase(),
           vehicle_type_id: form.vehicle_type_id || null,
           make_id:         form.make_id         || null,
           model_id:        form.model_id        || null,
           color:           form.color           || null,
           year:            form.year ? parseInt(form.year, 10) : null,
           notes:           form.notes           || null,
+          propagate_vehicle_number: plateChanged && propagateNumber,
         },
       });
       onSaved();
@@ -393,15 +436,30 @@ function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
       <div className="aveh-modal" onClick={e => e.stopPropagation()}>
         <div className="aveh-hdr">
           <span className="aveh-title"><Pencil size={14}/> Edit Vehicle</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="cust-veh-plate" style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', letterSpacing: '.5px', color: 'var(--text-muted)' }}>
-              {vehicle.vehicle_number}
-            </span>
-            <button className="cust-icon-btn" onClick={onClose}><X size={15}/></button>
-          </div>
+          <button className="cust-icon-btn" onClick={onClose}><X size={15}/></button>
         </div>
         <div className="aveh-body">
           {err && <div className="aveh-err">{err}</div>}
+
+          <div className="aveh-field aveh-field--full">
+            <label>Vehicle Number *</label>
+            <input className="aveh-input" placeholder="e.g. GJ07BA9034"
+              value={form.vehicle_number}
+              onChange={e => set('vehicle_number', e.target.value.toUpperCase())}/>
+          </div>
+
+          {plateChanged && usage && usageParts.length > 0 && (
+            <label className="aveh-checkbox-row">
+              <input type="checkbox" checked={propagateNumber}
+                onChange={e => setPropagateNumber(e.target.checked)}/>
+              <span>Also update this number on {usageParts.join(', ')} for this customer</span>
+            </label>
+          )}
+          {plateChanged && usage && usageParts.length === 0 && (
+            <div className="aveh-hint">
+              No past appointments, estimates or invoices found for {originalPlate} — nothing else to update.
+            </div>
+          )}
 
           <div className="aveh-field aveh-field--full">
             <label>Vehicle Type</label>
@@ -460,7 +518,7 @@ function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
                   </div>
                   <div className="aveh-autoinfo-item">
                     <span className="aveh-autoinfo-lbl">Category</span>
-                    <span className="aveh-autoinfo-val">{segmentName || '—'}</span>
+                    <span className="aveh-autoinfo-val">{ccCategoryName || '—'}</span>
                   </div>
                 </>
               )}
@@ -510,6 +568,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
   const [tlLoading,   setTlLoading]  = useState(false);
   const [addVehOpen,  setAddVehOpen] = useState(false);
   const [editVeh,     setEditVeh]    = useState(null); // vehicle object being edited
+  const [promoteVeh,  setPromoteVeh] = useState(null); // non-manual vehicle being saved for the first time
   const [deleting,    setDeleting]   = useState(null);
 
   const [editing,     setEditing]    = useState(startEditing);
@@ -521,8 +580,23 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
   const [editErr,     setEditErr]    = useState('');
   const [showB2bConfirm, setShowB2bConfirm] = useState(false);
 
+  // Scoped B2B-only edit — opens a small modal instead of the full profile
+  // edit form. Still writes through the same editForm/handleEditSave/
+  // doSaveEdit path (so the existing "confirm B2B change" step and the PUT
+  // call are unchanged), just entered differently and with a narrower UI.
+  const [editingB2b, setEditingB2b] = useState(false);
+
   const [delConfirm, setDelConfirm]  = useState(false);
   const [delBusy,    setDelBusy]     = useState(false);
+
+  // ── Appointments tab: client-side search/filter/pagination (same data
+  // already fetched by loadData — data.appointments — no extra API calls) ──
+  const [apptSearch,       setApptSearch]       = useState('');
+  const [apptStatusFilter, setApptStatusFilter] = useState('');
+  const [apptDateFrom,     setApptDateFrom]     = useState('');
+  const [apptDateTo,       setApptDateTo]       = useState('');
+  const [apptPage,         setApptPage]         = useState(1);
+  const [apptPageSize,     setApptPageSize]     = useState(10);
 
   function loadData() {
     setLoading(true); setErr('');
@@ -547,6 +621,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
   useEffect(() => {
     setTab('appointments');
     setEditing(false);
+    setApptSearch(''); setApptStatusFilter(''); setApptDateFrom(''); setApptDateTo(''); setApptPage(1);
     loadData();
   }, [mobile]);
 
@@ -563,10 +638,11 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
     if (tab === 'timeline') loadTimeline();
   }, [tab, mobile]);
 
-  // Validates, then — if B2B details are involved (being set, changed, or
-  // cleared) — shows a confirmation popup with the current saved details
-  // before actually saving. Non-B2B edits (name/whatsapp/email/notes only)
-  // save immediately with no extra step.
+  // Validates, then — only if B2B details actually changed vs what's
+  // currently saved — shows a confirmation popup before saving. Editing just
+  // the Customer Information modal (name/whatsapp/email/notes) never
+  // triggers this, even for an existing B2B customer, since editForm's B2B
+  // fields are carried through unchanged from that flow.
   function handleEditSave() {
     if (editForm.is_b2b) {
       if (!editForm.b2b_company_name.trim()) { setEditErr('Please enter the company name for the B2B invoice.'); return; }
@@ -574,8 +650,14 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
       if (!editForm.b2b_gst_number.trim()) { setEditErr('Please enter a GST number.'); return; }
     }
     setEditErr('');
-    const b2bRelevant = editForm.is_b2b || data?.default_is_b2b;
-    if (b2bRelevant) {
+    const b2bChanged =
+      !!editForm.is_b2b !== !!data?.default_is_b2b ||
+      (editForm.is_b2b && (
+        editForm.b2b_company_name !== (data?.default_b2b_company_name || '') ||
+        editForm.b2b_gst_number   !== (data?.default_b2b_gst_number   || '') ||
+        editForm.b2b_address      !== (data?.default_b2b_address      || '')
+      ));
+    if (b2bChanged) {
       setShowB2bConfirm(true);
     } else {
       doSaveEdit();
@@ -591,6 +673,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
         body: editForm,
       });
       setEditing(false);
+      setEditingB2b(false);
       loadData();
       if (onRefresh) onRefresh();
     } catch (e) {
@@ -629,6 +712,34 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
   const avStyle = avatarStyle(data?.customer_name || mobile);
   const initial = (data?.customer_name || mobile || '?')[0].toUpperCase();
 
+  // "Customer Since" — earliest date across appointments/invoices/estimates
+  // already in `data` (no dedicated created-date field exists for a customer
+  // that never had its profile edited, so this is the best available proxy).
+  const customerSince = (() => {
+    if (!data) return null;
+    const ts = [
+      ...(data.appointments || []).map(a => a.created_at),
+      ...(data.invoices     || []).map(i => i.created_at),
+      ...(data.estimates    || []).map(e => e.created_at),
+    ].filter(Boolean).map(d => new Date(d).getTime());
+    return ts.length ? new Date(Math.min(...ts)) : null;
+  })();
+
+  // ── Appointments tab: filtered + paginated view of data.appointments ──
+  const filteredAppts = (data?.appointments || []).filter(a => {
+    if (apptStatusFilter && a.status_name !== apptStatusFilter) return false;
+    if (apptDateFrom && (a.scheduled_date || '') < apptDateFrom) return false;
+    if (apptDateTo   && (a.scheduled_date || '') > apptDateTo)   return false;
+    if (apptSearch) {
+      const q = apptSearch.toLowerCase();
+      const hay = `${a.id} ${a.vehicle_number || ''} ${a.hub_name || ''} ${a.make_name || ''} ${a.model_name || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const apptStatusOptions = [...new Set((data?.appointments || []).map(a => a.status_name).filter(Boolean))];
+  const pagedAppts = filteredAppts.slice((apptPage - 1) * apptPageSize, apptPage * apptPageSize);
+
   function daysSince(dateStr) {
     if (!dateStr) return null;
     const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
@@ -650,7 +761,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
 
         <span className="cust-detail-title">Customer Profile</span>
 
-        {data && !editing && (
+        {data && (
           <div className="cust-hdr-actions">
             <a href={`https://wa.me/91${(data.whatsapp || data.mobile).replace(/\D/g,'')}`}
               target="_blank" rel="noreferrer" className="cust-hdr-btn cust-hdr-btn--wa" title="Open WhatsApp">
@@ -658,7 +769,19 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
               <span>WhatsApp</span>
             </a>
             <button className="cust-hdr-btn cust-hdr-btn--edit" title="Edit details"
-              onClick={() => { setEditing(true); setEditErr(''); setDelConfirm(false); }}>
+              onClick={() => {
+                setEditForm({
+                  display_name: data.customer_name || '',
+                  whatsapp:     data.whatsapp      || '',
+                  email:        data.email         || '',
+                  notes:        data.profile_notes || '',
+                  is_b2b:            !!data.default_is_b2b,
+                  b2b_company_name:  data.default_b2b_company_name || '',
+                  b2b_gst_number:    data.default_b2b_gst_number   || '',
+                  b2b_address:       data.default_b2b_address      || '',
+                });
+                setEditErr(''); setDelConfirm(false); setEditing(true);
+              }}>
               <Pencil size={13}/>
               <span>Edit</span>
             </button>
@@ -679,19 +802,6 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
           </div>
         )}
 
-        {editing && (
-          <div className="cust-hdr-actions">
-            <button className="cust-hdr-btn cust-hdr-btn--save" onClick={handleEditSave} disabled={editSaving}>
-              <Check size={13}/>
-              <span>{editSaving ? 'Saving…' : 'Save'}</span>
-            </button>
-            <button className="cust-hdr-btn cust-hdr-btn--cancel"
-              onClick={() => { setEditing(false); setEditErr(''); }} disabled={editSaving}>
-              <X size={13}/>
-              <span>Cancel</span>
-            </button>
-          </div>
-        )}
       </div>
 
       {loading ? (
@@ -701,221 +811,131 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
       ) : (
         <div className="cust-detail-body">
 
-          {/* ── Identity banner / Edit form ── */}
-          {editing ? (
-            <div className="cust-edit-form">
-              {editErr && <div className="cust-edit-err"><X size={12}/> {editErr}</div>}
-              <div className="cust-edit-grid">
-                <div className="cust-edit-field">
-                  <label>Full Name</label>
-                  <input className="cust-edit-input" placeholder="Customer name" autoFocus
-                    value={editForm.display_name}
-                    onChange={e => setEditForm(f => ({ ...f, display_name: e.target.value }))}/>
+          {/* ── Identity banner ── */}
+          <div className="cdh-card">
+              <div className="cdh-identity">
+                <div className="cust-avatar cust-avatar--lg" style={{ background: avStyle.bg, color: avStyle.color }}>
+                  {initial}
                 </div>
-                <div className="cust-edit-field">
-                  <label>WhatsApp</label>
-                  <input className="cust-edit-input" placeholder="WhatsApp number"
-                    value={editForm.whatsapp}
-                    onChange={e => setEditForm(f => ({ ...f, whatsapp: e.target.value }))}/>
-                </div>
-                <div className="cust-edit-field cust-edit-field--full">
-                  <label>Email</label>
-                  <input className="cust-edit-input" placeholder="Email address (optional)"
-                    autoComplete="off" value={editForm.email}
-                    onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}/>
-                </div>
-                <div className="cust-edit-field cust-edit-field--full">
-                  <label>Notes</label>
-                  <textarea className="cust-edit-input cust-edit-textarea"
-                    placeholder="Internal notes about this customer…" rows={2}
-                    value={editForm.notes}
-                    onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}/>
-                </div>
-
-                <div className="cust-edit-field cust-edit-field--full" style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 2 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={editForm.is_b2b}
-                      onChange={e => {
-                        const checked = e.target.checked;
-                        setEditForm(f => ({
-                          ...f, is_b2b: checked,
-                          ...(checked ? {} : { b2b_company_name: '', b2b_gst_number: '', b2b_address: '' }),
-                        }));
-                      }}
-                      style={{ width: 15, height: 15 }}
-                    />
-                    <Building2 size={13} style={{ color: 'var(--primary)' }} />
-                    <span style={{ fontWeight: 700 }}>B2B Customer (GST Registered)</span>
-                  </label>
-                </div>
-
-                {editForm.is_b2b && (
-                  <>
-                    <div className="cust-edit-field">
-                      <label>Company Name</label>
-                      <input className="cust-edit-input" placeholder="GST-registered company name"
-                        value={editForm.b2b_company_name}
-                        onChange={e => setEditForm(f => ({ ...f, b2b_company_name: e.target.value }))}/>
-                    </div>
-                    <div className="cust-edit-field">
-                      <label>GST Number</label>
-                      <input className="cust-edit-input" placeholder="GST Number" maxLength={15}
-                        value={editForm.b2b_gst_number}
-                        onChange={e => setEditForm(f => ({ ...f, b2b_gst_number: e.target.value.toUpperCase() }))}/>
-                    </div>
-                    <div className="cust-edit-field cust-edit-field--full">
-                      <label>Billing Address</label>
-                      <textarea className="cust-edit-input cust-edit-textarea"
-                        placeholder="Registered billing address" rows={2}
-                        value={editForm.b2b_address}
-                        onChange={e => setEditForm(f => ({ ...f, b2b_address: e.target.value }))}/>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="cust-profile-banner">
-              <div className="cust-avatar cust-avatar--lg" style={{ background: avStyle.bg, color: avStyle.color }}>
-                {initial}
-              </div>
-              <div className="cust-profile-info">
-                <div className="cust-profile-name">{data.customer_name || 'Unknown'}</div>
-                <div className="cust-profile-contact">
-                  <span><Phone size={11}/> {data.mobile}</span>
-                  {data.whatsapp && data.whatsapp !== data.mobile && (
-                    <span><MessageCircle size={11}/> {data.whatsapp}</span>
-                  )}
-                  {data.email && (
-                    <span><Mail size={11}/> {data.email}</span>
-                  )}
-                </div>
-                {data.profile_notes && (
-                  <div className="cust-profile-note">{data.profile_notes}</div>
-                )}
-                {data.last_visit && (
-                  <div className="cust-last-visit">
-                    Last visit: <strong>{daysSince(data.last_visit)}</strong> · {fmtDate(data.last_visit)}
+                <div className="cust-profile-info">
+                  <div className="cdh-name-row">
+                    <span className="cust-profile-name">{data.customer_name || 'Unknown'}</span>
+                    <span className="cdh-badge">Active</span>
                   </div>
-                )}
+                  <div className="cust-profile-contact">
+                    <span><Phone size={11}/> {data.mobile}</span>
+                    {data.whatsapp && data.whatsapp !== data.mobile && (
+                      <span><MessageCircle size={11}/> {data.whatsapp}</span>
+                    )}
+                    {data.email && (
+                      <span><Mail size={11}/> {data.email}</span>
+                    )}
+                  </div>
+                  {data.profile_notes && (
+                    <div className="cust-profile-note">{data.profile_notes}</div>
+                  )}
+                  {data.last_visit && (
+                    <div className="cust-last-visit">
+                      Last visit: <strong>{daysSince(data.last_visit)}</strong> · {fmtDate(data.last_visit)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Stats ── */}
+              <div className="cdh-stats">
+                <div className="cdh-stat">
+                  <div className="cdh-stat-icon" style={{ background: '#e0f2fe', color: '#0369a1' }}><Users size={15}/></div>
+                  <div>
+                    <div className="cdh-stat-val">{data.total_appointments}</div>
+                    <div className="cdh-stat-lbl">Total Visits</div>
+                  </div>
+                </div>
+                <div className="cdh-stat">
+                  <div className="cdh-stat-icon" style={{ background: '#dcfce7', color: '#166534' }}><IndianRupee size={15}/></div>
+                  <div>
+                    <div className="cdh-stat-val">{fmtINR(data.total_spend)}</div>
+                    <div className="cdh-stat-lbl">Total Spend</div>
+                  </div>
+                </div>
+                <div className="cdh-stat">
+                  <div className="cdh-stat-icon" style={{ background: '#ede9fe', color: '#6d28d9' }}><BarChart3 size={15}/></div>
+                  <div>
+                    <div className="cdh-stat-val">{fmtINR(data.avg_spend)}</div>
+                    <div className="cdh-stat-lbl">Avg/Visit</div>
+                  </div>
+                </div>
+                <div className="cdh-stat">
+                  <div className="cdh-stat-icon" style={{ background: '#fef3c7', color: '#92400e' }}><Wallet size={15}/></div>
+                  <div>
+                    <div className="cdh-stat-val" style={{ color: Number(data.total_outstanding) > 0 ? '#dc2626' : undefined }}>
+                      {Number(data.total_outstanding) > 0 ? fmtINR(data.total_outstanding) : 'Nil'}
+                    </div>
+                    <div className="cdh-stat-lbl">Due Amount</div>
+                  </div>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* ── Stats bar ── */}
-          <div className="cust-stats-bar cust-stats-bar--4">
-            <div className="cust-stat">
-              <span className="cust-stat-val">{data.total_appointments}</span>
-              <span className="cust-stat-lbl">Visits</span>
-            </div>
-            <div className="cust-stat">
-              <span className="cust-stat-val" style={{ color: '#0f766e' }}>{fmtINR(data.total_spend)}</span>
-              <span className="cust-stat-lbl">Total Spend</span>
-            </div>
-            <div className="cust-stat">
-              <span className="cust-stat-val" style={{ fontSize: 13 }}>{fmtINR(data.avg_spend)}</span>
-              <span className="cust-stat-lbl">Avg/Visit</span>
-            </div>
-            <div className="cust-stat">
-              <span className="cust-stat-val" style={{ fontSize: 13, color: Number(data.total_outstanding) > 0 ? '#dc2626' : '#16a34a' }}>
-                {Number(data.total_outstanding) > 0 ? fmtINR(data.total_outstanding) : '✓ Nil'}
-              </span>
-              <span className="cust-stat-lbl">Due</span>
-            </div>
-          </div>
+          {/* ── Two-column layout ── */}
+          <div className="cust-detail-grid">
+          <div className="cdg-left">
 
-          {/* ── Vehicles ── */}
-          <div className="cust-section">
+          {/* ── Customer Information ── */}
+          <div className="cust-section cds-card">
             <div className="cust-section-title">
-              <Car size={11}/> Vehicles ({data.vehicles?.length || 0})
-              <button className="cust-add-veh-btn" onClick={() => setAddVehOpen(true)}>
-                <Plus size={11}/> Add
+              <StickyNote size={11}/> Customer Information
+              <button className="cust-add-veh-btn" onClick={() => {
+                setEditForm({
+                  display_name: data.customer_name || '',
+                  whatsapp:     data.whatsapp      || '',
+                  email:        data.email         || '',
+                  notes:        data.profile_notes || '',
+                  is_b2b:            !!data.default_is_b2b,
+                  b2b_company_name:  data.default_b2b_company_name || '',
+                  b2b_gst_number:    data.default_b2b_gst_number   || '',
+                  b2b_address:       data.default_b2b_address      || '',
+                });
+                setEditErr(''); setDelConfirm(false); setEditing(true);
+              }}>
+                <Pencil size={11}/> Edit
               </button>
             </div>
-            {data.vehicles?.length > 0 ? (
-              <div className="cust-vehicles-wrap">
-                {data.vehicles.map((v, i) => (
-                  <div key={v.cv_id || i} className="cust-vehicle-card">
-                    {/* Left: plate + info */}
-                    <div className="cust-veh-left">
-                      <div className="cust-veh-plate">
-                        {v.vehicle_number}
-                        {v.source === 'manual' && (
-                          <span className="cust-veh-manual-tag">manual</span>
-                        )}
-                      </div>
-                      {(v.make_name || v.model_name) && (
-                        <div className="cust-veh-makemodel">
-                          {[v.make_name, v.model_name].filter(Boolean).join(' ')}
-                        </div>
-                      )}
-                      <div className="cust-veh-chips">
-                        {v.vehicle_type_name && (
-                          <span className="cust-veh-chip cust-veh-chip--type">{v.vehicle_type_name}</span>
-                        )}
-                        {v.body_type_name && (
-                          <span className="cust-veh-chip cust-veh-chip--body">{v.body_type_name}</span>
-                        )}
-                        {v.segment_name && (
-                          <span className="cust-veh-chip cust-veh-chip--fuel">{v.segment_name}</span>
-                        )}
-                        {v.color && (
-                          <span className="cust-veh-chip cust-veh-chip--color">● {v.color}</span>
-                        )}
-                        {v.year && (
-                          <span className="cust-veh-chip cust-veh-chip--year">{v.year}</span>
-                        )}
-                      </div>
-                      {v.notes && <div className="cust-veh-notes">{v.notes}</div>}
-                    </div>
-
-                    {/* Right: stats + actions */}
-                    <div className="cust-veh-right">
-                      <div className="cust-veh-stats">
-                        {v.visit_count > 0 && (
-                          <div className="cust-veh-visits">{v.visit_count} visit{v.visit_count !== 1 ? 's' : ''}</div>
-                        )}
-                        {v.last_seen && <div className="cust-veh-lastseen">Last: {fmtDate(v.last_seen)}</div>}
-                      </div>
-                      {v.source === 'manual' && v.cv_id && (
-                        <div className="cust-veh-actions">
-                          <button
-                            className="cust-veh-act-btn cust-veh-act-btn--edit"
-                            title="Edit vehicle"
-                            onClick={() => setEditVeh(v)}
-                          >
-                            <Pencil size={11}/>
-                          </button>
-                          <button
-                            className="cust-veh-act-btn cust-veh-act-btn--del"
-                            title="Remove vehicle"
-                            disabled={deleting === v.cv_id}
-                            onClick={() => handleDeleteVehicle(v.cv_id)}
-                          >
-                            {deleting === v.cv_id ? '…' : <Trash2 size={11}/>}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="cust-vehicles-wrap">
-                <div className="cust-veh-empty">
-                  No vehicles on record. Click <strong>+ Add</strong> to register one.
-                </div>
-              </div>
-            )}
+            <div className="cds-info-list">
+              <div className="cds-info-row"><Phone size={12}/><span className="cds-info-lbl">Phone</span><span className="cds-info-val">{data.mobile}</span></div>
+              {data.email && (
+                <div className="cds-info-row"><Mail size={12}/><span className="cds-info-lbl">Email</span><span className="cds-info-val">{data.email}</span></div>
+              )}
+              {data.default_is_b2b && data.default_b2b_gst_number && (
+                <div className="cds-info-row"><FileText size={12}/><span className="cds-info-lbl">GSTIN</span><span className="cds-info-val">{data.default_b2b_gst_number}</span></div>
+              )}
+              {customerSince && (
+                <div className="cds-info-row"><Calendar size={12}/><span className="cds-info-lbl">Customer Since</span><span className="cds-info-val">{fmtDate(customerSince)}</span></div>
+              )}
+              {data.profile_notes && (
+                <div className="cds-info-row"><StickyNote size={12}/><span className="cds-info-lbl">Notes</span><span className="cds-info-val">{data.profile_notes}</span></div>
+              )}
+            </div>
           </div>
 
           {/* ── B2B / GST Details ── */}
-          <div className="cust-section">
+          <div className="cust-section cds-card">
             <div className="cust-section-title">
               <Building2 size={11}/> B2B / GST Details
-              <button className="cust-add-veh-btn" onClick={() => { setEditing(true); setEditErr(''); setDelConfirm(false); }}>
+              <button className="cust-add-veh-btn" onClick={() => {
+                setEditForm({
+                  display_name: data.customer_name || '',
+                  whatsapp:     data.whatsapp      || '',
+                  email:        data.email         || '',
+                  notes:        data.profile_notes || '',
+                  is_b2b:            !!data.default_is_b2b,
+                  b2b_company_name:  data.default_b2b_company_name || '',
+                  b2b_gst_number:    data.default_b2b_gst_number   || '',
+                  b2b_address:       data.default_b2b_address      || '',
+                });
+                setEditErr('');
+                setEditingB2b(true);
+              }}>
                 <Pencil size={11}/> Edit
               </button>
             </div>
@@ -939,6 +959,114 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
               </div>
             )}
           </div>
+
+          {editing && !showB2bConfirm && (
+            <div className="aveh-backdrop" onClick={() => { setEditing(false); setEditErr(''); }}>
+              <div className="aveh-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+                <div className="aveh-hdr">
+                  <span className="aveh-title"><StickyNote size={14}/> Edit Customer Information</span>
+                  <button className="cust-icon-btn" onClick={() => { setEditing(false); setEditErr(''); }}><X size={15}/></button>
+                </div>
+                <div className="aveh-body">
+                  {editErr && <div className="aveh-err">{editErr}</div>}
+                  <div className="aveh-field">
+                    <label>Full Name</label>
+                    <input className="aveh-input" placeholder="Customer name" autoFocus
+                      value={editForm.display_name}
+                      onChange={e => setEditForm(f => ({ ...f, display_name: e.target.value }))}/>
+                  </div>
+                  <div className="aveh-field">
+                    <label>WhatsApp</label>
+                    <input className="aveh-input" placeholder="WhatsApp number"
+                      value={editForm.whatsapp}
+                      onChange={e => setEditForm(f => ({ ...f, whatsapp: e.target.value }))}/>
+                  </div>
+                  <div className="aveh-field">
+                    <label>Email</label>
+                    <input className="aveh-input" placeholder="Email address (optional)" autoComplete="off"
+                      value={editForm.email}
+                      onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}/>
+                  </div>
+                  <div className="aveh-field">
+                    <label>Notes</label>
+                    <textarea className="aveh-input aveh-textarea" rows={2}
+                      placeholder="Internal notes about this customer…"
+                      value={editForm.notes}
+                      onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}/>
+                  </div>
+                </div>
+                <div className="aveh-footer">
+                  <button className="cust-hdr-btn cust-hdr-btn--cancel" onClick={() => { setEditing(false); setEditErr(''); }} disabled={editSaving}>
+                    <X size={13}/> <span>Cancel</span>
+                  </button>
+                  <button className="cust-hdr-btn cust-hdr-btn--save" onClick={handleEditSave} disabled={editSaving}>
+                    <Check size={13}/> <span>{editSaving ? 'Saving…' : 'Save'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {editingB2b && !showB2bConfirm && (
+            <div className="aveh-backdrop" onClick={() => { setEditingB2b(false); setEditErr(''); }}>
+              <div className="aveh-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+                <div className="aveh-hdr">
+                  <span className="aveh-title"><Building2 size={14}/> Edit B2B / GST Details</span>
+                  <button className="cust-icon-btn" onClick={() => { setEditingB2b(false); setEditErr(''); }}><X size={15}/></button>
+                </div>
+                <div className="aveh-body">
+                  {editErr && <div className="aveh-err">{editErr}</div>}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editForm.is_b2b}
+                      onChange={e => {
+                        const checked = e.target.checked;
+                        setEditForm(f => ({
+                          ...f, is_b2b: checked,
+                          ...(checked ? {} : { b2b_company_name: '', b2b_gst_number: '', b2b_address: '' }),
+                        }));
+                      }}
+                      style={{ width: 15, height: 15 }}
+                    />
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>B2B Customer (GST Registered)</span>
+                  </label>
+
+                  {editForm.is_b2b && (
+                    <div className="aveh-row">
+                      <div className="aveh-field">
+                        <label>Company Name</label>
+                        <input className="aveh-input" placeholder="GST-registered company name"
+                          value={editForm.b2b_company_name}
+                          onChange={e => setEditForm(f => ({ ...f, b2b_company_name: e.target.value }))}/>
+                      </div>
+                      <div className="aveh-field">
+                        <label>GST Number</label>
+                        <input className="aveh-input" placeholder="GST Number" maxLength={15}
+                          value={editForm.b2b_gst_number}
+                          onChange={e => setEditForm(f => ({ ...f, b2b_gst_number: e.target.value.toUpperCase() }))}/>
+                      </div>
+                      <div className="aveh-field aveh-field--full">
+                        <label>Billing Address</label>
+                        <textarea className="aveh-input aveh-textarea" rows={2}
+                          placeholder="Registered billing address"
+                          value={editForm.b2b_address}
+                          onChange={e => setEditForm(f => ({ ...f, b2b_address: e.target.value }))}/>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="aveh-footer">
+                  <button className="cust-hdr-btn cust-hdr-btn--cancel" onClick={() => { setEditingB2b(false); setEditErr(''); }} disabled={editSaving}>
+                    <X size={13}/> <span>Cancel</span>
+                  </button>
+                  <button className="cust-hdr-btn cust-hdr-btn--save" onClick={handleEditSave} disabled={editSaving}>
+                    <Check size={13}/> <span>Save</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {showB2bConfirm && (
             <div className="aveh-backdrop" onClick={() => setShowB2bConfirm(false)}>
@@ -1014,13 +1142,114 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
             />
           )}
 
+          {promoteVeh && (
+            <AddVehicleModal
+              mobile={mobile}
+              initial={promoteVeh}
+              onClose={() => setPromoteVeh(null)}
+              onSaved={() => { setPromoteVeh(null); loadData(); }}
+            />
+          )}
+
+          </div>{/* /cdg-left */}
+          <div className="cdg-right">
+
+          {/* ── Vehicles ── */}
+          <div className="cust-section cds-card cust-veh-wide">
+            <div className="cust-section-title">
+              <Car size={11}/> Vehicles ({data.vehicles?.length || 0})
+              <button className="cust-add-veh-btn" onClick={() => setAddVehOpen(true)}>
+                <Plus size={11}/> Add
+              </button>
+            </div>
+            {data.vehicles?.length > 0 ? (
+              <div className="cust-vehicles-wrap cust-vehicles-wrap--grid">
+                {data.vehicles.map((v, i) => (
+                  <div key={v.cv_id || i} className="cust-vehicle-card">
+                    {/* Left: plate + info */}
+                    <div className="cust-veh-left">
+                      <div className="cust-veh-plate">
+                        {v.vehicle_number}
+                        {v.source === 'manual' && (
+                          <span className="cust-veh-manual-tag">manual</span>
+                        )}
+                      </div>
+                      {(v.make_name || v.model_name) && (
+                        <div className="cust-veh-makemodel">
+                          {[v.make_name, v.model_name].filter(Boolean).join(' ')}
+                        </div>
+                      )}
+                      <div className="cust-veh-chips">
+                        {v.vehicle_type_name && (
+                          <span className="cust-veh-chip cust-veh-chip--type">{v.vehicle_type_name}</span>
+                        )}
+                        {v.body_type_name && (
+                          <span className="cust-veh-chip cust-veh-chip--body">{v.body_type_name}</span>
+                        )}
+                        {v.segment_name && (
+                          <span className="cust-veh-chip cust-veh-chip--fuel">{v.segment_name}</span>
+                        )}
+                        {v.color && (
+                          <span className="cust-veh-chip cust-veh-chip--color">● {v.color}</span>
+                        )}
+                        {v.year && (
+                          <span className="cust-veh-chip cust-veh-chip--year">{v.year}</span>
+                        )}
+                      </div>
+                      {v.notes && <div className="cust-veh-notes">{v.notes}</div>}
+                    </div>
+
+                    {/* Right: stats + actions */}
+                    <div className="cust-veh-right">
+                      <div className="cust-veh-stats">
+                        {v.visit_count > 0 && (
+                          <div className="cust-veh-visits">{v.visit_count} visit{v.visit_count !== 1 ? 's' : ''}</div>
+                        )}
+                        {v.last_seen && <div className="cust-veh-lastseen">Last: {fmtDate(v.last_seen)}</div>}
+                      </div>
+                      <div className="cust-veh-actions">
+                        <button
+                          className="cust-veh-act-btn cust-veh-act-btn--edit"
+                          title={v.cv_id ? 'Edit vehicle' : 'Save vehicle to make it editable'}
+                          onClick={() => v.cv_id ? setEditVeh(v) : setPromoteVeh(v)}
+                        >
+                          <Pencil size={11}/>
+                        </button>
+                        {v.source === 'manual' && v.cv_id && (
+                          <button
+                            className="cust-veh-act-btn cust-veh-act-btn--del"
+                            title="Remove vehicle"
+                            disabled={deleting === v.cv_id}
+                            onClick={() => handleDeleteVehicle(v.cv_id)}
+                          >
+                            {deleting === v.cv_id ? '…' : <Trash2 size={11}/>}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="cust-vehicles-wrap">
+                <div className="cust-veh-empty">
+                  No vehicles on record. Click <strong>+ Add</strong> to register one.
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* ── Tabs ── */}
+          <div className="cust-section cds-card" style={{ padding: 0 }}>
           <div className="cust-tabs">
             <button className={`cust-tab${tab === 'appointments' ? ' cust-tab--on' : ''}`} onClick={() => setTab('appointments')}>
               <Calendar size={11}/> Appointments <span className="cust-tab-count">{data.appointments.length}</span>
             </button>
             <button className={`cust-tab${tab === 'invoices' ? ' cust-tab--on' : ''}`} onClick={() => setTab('invoices')}>
               🧾 Invoices <span className="cust-tab-count">{data.invoices?.length || 0}</span>
+            </button>
+            <button className={`cust-tab${tab === 'estimates' ? ' cust-tab--on' : ''}`} onClick={() => setTab('estimates')}>
+              📋 Estimates <span className="cust-tab-count">{data.estimates?.length || 0}</span>
             </button>
             <button className={`cust-tab${tab === 'timeline' ? ' cust-tab--on' : ''}`} onClick={() => setTab('timeline')}>
               🕐 Timeline
@@ -1030,50 +1259,81 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
           {/* ── Tab content ── */}
           <div className="cust-tab-content">
 
-            {/* Appointments */}
+            {/* Appointments — searchable/filterable/paginated table */}
             {tab === 'appointments' && (
-              data.appointments.length === 0
-                ? <div className="cust-empty">No appointments yet.</div>
-                : data.appointments.map(a => (
-                    <div
-                      key={a.id}
-                      className="cust-history-card"
-                      onClick={() => navigate('/appointments', { state: { openApptId: a.id } })}
-                      style={{ cursor: 'pointer' }}
-                      title={`Open Appointment #${a.id}`}
-                    >
-                      <div className="cust-hc-top">
-                        <span className="cust-hc-id">Appt #{a.id}</span>
-                        {a.status_name && (
-                          <span className="cust-hc-badge" style={{ background: a.status_bg || '#f3f4f6', color: a.status_color || '#6b7280' }}>
-                            {a.status_name}
-                          </span>
-                        )}
-                        <span className="cust-hc-price">{fmtINR(a.total_price)}</span>
-                      </div>
-                      <div className="cust-hc-meta">
-                        <span><Calendar size={10}/> {fmtDate(a.scheduled_date)}{a.scheduled_time ? ` · ${fmtTime(a.scheduled_time)}` : ''}</span>
-                        {a.hub_name     && <span><Network size={10}/> {a.hub_name}</span>}
-                        {a.vehicle_number && <span>🚗 {a.vehicle_number}</span>}
-                        {(a.make_name || a.model_name) && (
-                          <span><Car size={10}/> {[a.make_name, a.model_name].filter(Boolean).join(' ')}</span>
-                        )}
-                      </div>
-                      {a.services?.length > 0 && (
-                        <div className="cust-hc-services">
-                          {a.services.map((s, si) => (
-                            <span key={si} className="cust-svc-pill">
-                              {s.name} · ₹{Number(s.price || 0).toLocaleString('en-IN')}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {a.cancellation_reason && (
-                        <div className="cust-hc-cancel">⛔ {a.cancellation_reason}</div>
-                      )}
-                      {a.notes && <div className="cust-hc-notes">{a.notes}</div>}
+              data.appointments.length === 0 ? (
+                <div className="cust-empty">No appointments yet.</div>
+              ) : (
+                <>
+                  <div className="cds-toolbar">
+                    <div className="cust-search-wrap" style={{ maxWidth: 220 }}>
+                      <Search size={13} className="cust-search-icon"/>
+                      <input className="cust-search" placeholder="Search appointments…"
+                        value={apptSearch}
+                        onChange={e => { setApptSearch(e.target.value); setApptPage(1); }}/>
                     </div>
-                  ))
+                    <select className="cds-filter-select" value={apptStatusFilter}
+                      onChange={e => { setApptStatusFilter(e.target.value); setApptPage(1); }}>
+                      <option value="">All statuses</option>
+                      {apptStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <input type="date" className="cds-filter-select" value={apptDateFrom}
+                      onChange={e => { setApptDateFrom(e.target.value); setApptPage(1); }}/>
+                    <input type="date" className="cds-filter-select" value={apptDateTo}
+                      onChange={e => { setApptDateTo(e.target.value); setApptPage(1); }}/>
+                    <button className="cust-hdr-btn cust-hdr-btn--edit" style={{ marginLeft: 'auto' }}
+                      onClick={() => navigate('/appointments', { state: { prefillCustomer: {
+                        mobile: data.mobile, customer_name: data.customer_name, whatsapp: data.whatsapp,
+                      } } })}>
+                      <Plus size={13}/> <span>New Appointment</span>
+                    </button>
+                  </div>
+
+                  {filteredAppts.length === 0 ? (
+                    <div className="cust-empty">No appointments match these filters.</div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="cust-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                            <th style={{ padding: '8px 10px' }}>Appointment</th>
+                            <th style={{ padding: '8px 10px' }}>Date &amp; Time</th>
+                            <th style={{ padding: '8px 10px' }}>Vehicle</th>
+                            <th style={{ padding: '8px 10px' }}>Status</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'right' }}>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedAppts.map(a => (
+                            <tr key={a.id} onClick={() => navigate('/appointments', { state: { openApptId: a.id } })}
+                              style={{ cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
+                              <td style={{ padding: '9px 10px' }}>
+                                <div style={{ fontWeight: 700, fontSize: 13 }}>Appt #{a.id}</div>
+                                {a.hub_name && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.hub_name}</div>}
+                              </td>
+                              <td style={{ padding: '9px 10px', fontSize: 12 }}>
+                                {fmtDate(a.scheduled_date)}{a.scheduled_time ? ` · ${fmtTime(a.scheduled_time)}` : ''}
+                              </td>
+                              <td style={{ padding: '9px 10px', fontSize: 12 }}>{a.vehicle_number || '—'}</td>
+                              <td style={{ padding: '9px 10px' }}>
+                                {a.status_name && (
+                                  <span className="cust-hc-badge" style={{ background: a.status_bg || '#f3f4f6', color: a.status_color || '#6b7280' }}>
+                                    {a.status_name}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '9px 10px', textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmtINR(a.total_price)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <PaginationBar page={apptPage} total={filteredAppts.length} pageSize={apptPageSize}
+                    onPage={setApptPage} onPageSize={setApptPageSize} noun="appointment"/>
+                </>
+              )
             )}
 
             {/* Customer Invoices */}
@@ -1118,30 +1378,68 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
                             ))}
                           </div>
                         )}
-                        <div className="cust-inv-pay-row">
-                          {paid > 0 && <span className="cust-inv-paid">✓ Paid {fmtINR(paid)}</span>}
-                          {outstanding > 0
-                            ? <span className="cust-inv-due">⚠ Due {fmtINR(outstanding)}</span>
-                            : <span className="cust-inv-clear">✓ Fully Paid</span>}
-                        </div>
-                        {/* Navigation links */}
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
-                          <button
-                            onClick={() => navigate('/customer-invoices', { state: { openId: inv.id } })}
-                            style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'1.5px solid #7dd3fc', background:'#f0f9ff', color:'#0369a1', cursor:'pointer' }}>
-                            <FileText size={11}/> View Invoice
-                          </button>
-                          {inv.estimate_id && (
+                        <div className="cust-inv-footer">
+                          <div className="cust-inv-status-row">
+                            {paid > 0 && (
+                              <span className="cust-inv-chip cust-inv-chip--paid"><Check size={11}/> Paid {fmtINR(paid)}</span>
+                            )}
+                            {outstanding > 0
+                              ? <span className="cust-inv-chip cust-inv-chip--due"><AlertCircle size={11}/> Due {fmtINR(outstanding)}</span>
+                              : <span className="cust-inv-chip cust-inv-chip--clear"><Check size={11}/> Fully Paid</span>}
+                          </div>
+                          <div className="cust-inv-actions">
                             <button
-                              onClick={() => navigate('/estimates', { state: { openId: inv.estimate_id } })}
-                              style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:7, border:'1.5px solid #86efac', background:'#f0fdf4', color:'#166534', cursor:'pointer' }}>
-                              View Estimate #EST-{String(inv.estimate_id).padStart(6, '0')}
+                              className="cust-inv-action cust-inv-action--invoice"
+                              onClick={() => navigate('/customer-invoices', { state: { openId: inv.id } })}>
+                              <FileText size={11}/> View Invoice
                             </button>
-                          )}
+                            {inv.estimate_id && (
+                              <button
+                                className="cust-inv-action cust-inv-action--estimate"
+                                onClick={() => navigate('/estimates', { state: { openId: inv.estimate_id } })}>
+                                View Estimate #EST-{String(inv.estimate_id).padStart(6, '0')}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
                   })
+            )}
+
+            {/* ── Estimates (standalone only — appointment-linked estimates aren't
+                 included in this response) ── */}
+            {tab === 'estimates' && (
+              !data.estimates?.length
+                ? <div className="cust-empty">No standalone estimates yet.</div>
+                : data.estimates.map(e => (
+                    <div
+                      key={e.id}
+                      className="cust-history-card"
+                      onClick={() => navigate('/estimates', { state: { openId: e.id } })}
+                      style={{ cursor: 'pointer' }}
+                      title={`Open Estimate #${e.id}`}
+                    >
+                      <div className="cust-hc-top">
+                        <span className="cust-hc-id">EST-{String(e.id).padStart(6, '0')}</span>
+                        {e.status && (
+                          <span className="cust-hc-badge" style={{ background: '#f3f4f6', color: '#6b7280' }}>
+                            {e.status.charAt(0).toUpperCase() + e.status.slice(1)}
+                          </span>
+                        )}
+                        <span className="cust-hc-price">{fmtINR(e.grand_total)}</span>
+                      </div>
+                      <div className="cust-hc-meta">
+                        <span><Calendar size={10}/> {fmtDate(e.created_at)}</span>
+                        {e.hub_name       && <span><Network size={10}/> {e.hub_name}</span>}
+                        {e.vehicle_number && <span>🚗 {e.vehicle_number}</span>}
+                        {(e.make_name || e.model_name) && (
+                          <span><Car size={10}/> {[e.make_name, e.model_name].filter(Boolean).join(' ')}</span>
+                        )}
+                      </div>
+                      {e.notes && <div className="cust-hc-notes">{e.notes}</div>}
+                    </div>
+                  ))
             )}
 
             {/* ── Timeline ── */}
@@ -1198,6 +1496,10 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
             )}
 
           </div>
+          </div>{/* /cust-tabs card */}
+
+          </div>{/* /cdg-right */}
+          </div>{/* /cust-detail-grid */}
         </div>
       )}
     </div>

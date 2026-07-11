@@ -127,6 +127,19 @@
     .cust-veh-stats { flex-direction:row; align-items:center; gap:8px; }
   }
 
+  /* Vehicles card in the wide right column — multi-column grid instead of a
+     single-column stack, since it now sits in a much wider card. */
+  .cust-vehicles-wrap--grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+    padding: 0 14px 14px;
+  }
+  .cust-vehicles-wrap--grid .cust-vehicle-card { height: 100%; }
+  @media (max-width: 640px) {
+    .cust-vehicles-wrap--grid { grid-template-columns: 1fr; padding: 0 12px 12px; }
+  }
+
   /* Add vehicle button */
   .cust-add-veh-btn { margin-left:auto; display:inline-flex; align-items:center; gap:4px; border:1.5px solid #0891b2; border-radius:6px; background:transparent; color:#0891b2; font-size:10px; font-weight:700; padding:3px 9px; cursor:pointer; transition:background .12s,color .12s; }
   .cust-add-veh-btn:hover { background:#0891b2; color:#fff; }
@@ -140,7 +153,7 @@
   .cust-tab--on .cust-tab-count { background:#e0f2fe; color:#0369a1; }
 
   /* ── Timeline ── */
-  .cust-timeline { display:flex; flex-direction:column; padding:8px 0; }
+  .cust-timeline { display:flex; flex-direction:column; padding:8px 4px 8px 0; max-height:640px; overflow-y:auto; }
   .cust-tl-row { display:flex; gap:12px; }
   .cust-tl-left { display:flex; flex-direction:column; align-items:center; flex-shrink:0; }
   .cust-tl-dot { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -156,26 +169,41 @@
   .cust-tl-notes { margin-top:6px; font-size:12px; color:var(--text-muted); font-style:italic; }
 
   /* History cards */
-  .cust-tab-content { padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
+  .cust-tab-content { padding:14px 16px; display:flex; flex-direction:column; gap:12px; }
   .cust-empty { font-size:13px; color:var(--text-muted); text-align:center; padding:30px 0; font-style:italic; }
-  .cust-history-card { border:1.5px solid var(--border); border-radius:10px; padding:12px 14px; }
-  .cust-hc-top { display:flex; align-items:center; gap:7px; margin-bottom:6px; flex-wrap:wrap; }
-  .cust-hc-id { font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; background:#e0f2fe; color:#0369a1; white-space:nowrap; }
+  .cust-history-card { border:1.5px solid var(--border); border-radius:14px; padding:14px 16px; background:var(--bg); transition:box-shadow .15s, border-color .15s; }
+  .cust-history-card:hover { border-color:#bfdbfe; box-shadow:0 4px 16px rgba(15,23,42,.06); }
+  .cust-hc-top { display:flex; align-items:center; gap:7px; margin-bottom:8px; flex-wrap:wrap; }
+  .cust-hc-id { font-size:11px; font-weight:800; padding:3px 9px; border-radius:7px; background:#e0f2fe; color:#0369a1; white-space:nowrap; letter-spacing:.02em; }
   .cust-hc-id--inv { background:#fef3c7; color:#92400e; }
   .cust-hc-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; white-space:nowrap; }
-  .cust-hc-price { margin-left:auto; font-size:13px; font-weight:800; color:#0f766e; }
-  .cust-hc-meta { display:flex; flex-wrap:wrap; gap:7px; font-size:11px; color:var(--text-muted); margin-bottom:6px; }
-  .cust-hc-meta span { display:flex; align-items:center; gap:3px; }
-  .cust-hc-services { display:flex; flex-wrap:wrap; gap:5px; margin:6px 0 4px; }
-  .cust-svc-pill { font-size:10px; font-weight:600; padding:3px 9px; border-radius:20px; background:var(--bg-soft,#f1f5f9); color:var(--text); border:1px solid var(--border); }
+  .cust-hc-price { margin-left:auto; font-size:16px; font-weight:800; color:#0f766e; letter-spacing:-.01em; }
+  .cust-hc-meta { display:flex; flex-wrap:wrap; gap:9px; font-size:11px; color:var(--text-muted); margin-bottom:6px; }
+  .cust-hc-meta span { display:flex; align-items:center; gap:4px; }
+  .cust-hc-services { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 2px; }
+  .cust-svc-pill { font-size:10px; font-weight:600; padding:4px 10px; border-radius:20px; background:var(--bg-soft,#f1f5f9); color:var(--text); border:1px solid var(--border); }
   .cust-hc-cancel { font-size:11px; color:#dc2626; background:#fef2f2; border-radius:6px; padding:4px 8px; margin-top:5px; }
   .cust-hc-notes { font-size:11px; color:var(--text-muted); margin-top:6px; font-style:italic; border-top:1px dashed var(--border); padding-top:6px; }
 
-  /* Invoice pay row */
-  .cust-inv-pay-row { display:flex; gap:10px; margin-top:7px; padding-top:7px; border-top:1px dashed var(--border); font-size:11px; font-weight:700; }
-  .cust-inv-paid  { color:#0f766e; }
-  .cust-inv-due   { color:#dc2626; }
-  .cust-inv-clear { color:#16a34a; }
+  /* Invoice card footer — payment status + action links, one clean divider
+     instead of two stacked dashed rows */
+  .cust-inv-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+  .cust-inv-status-row { display:flex; flex-wrap:wrap; gap:8px; }
+  .cust-inv-chip { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
+  .cust-inv-chip--paid  { background:#f0fdfa; color:#0f766e; }
+  .cust-inv-chip--due   { background:#fef2f2; color:#dc2626; }
+  .cust-inv-chip--clear { background:#f0fdf4; color:#16a34a; }
+  .cust-inv-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .cust-inv-action { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:5px 12px; border-radius:8px; cursor:pointer; transition:background .12s, color .12s, border-color .12s; border:1.5px solid transparent; }
+  .cust-inv-action--invoice { border-color:#7dd3fc; background:#f0f9ff; color:#0369a1; }
+  .cust-inv-action--invoice:hover { background:#0369a1; border-color:#0369a1; color:#fff; }
+  .cust-inv-action--estimate { border-color:#86efac; background:#f0fdf4; color:#166534; }
+  .cust-inv-action--estimate:hover { background:#166534; border-color:#166534; color:#fff; }
+
+  @media (max-width: 480px) {
+    .cust-inv-footer { flex-direction:column; align-items:stretch; }
+    .cust-inv-actions button { flex:1; justify-content:center; }
+  }
 
   /* Searchable Select */
   .ss-wrap { position:relative; width:100%; }
@@ -206,6 +234,9 @@
   .aveh-title { flex:1; font-size:14px; font-weight:700; display:flex; align-items:center; gap:7px; color:var(--text); }
   .aveh-body { padding:16px; display:flex; flex-direction:column; gap:11px; max-height:70vh; overflow-y:auto; }
   .aveh-err { background:#fef2f2; color:#dc2626; font-size:12px; padding:8px 10px; border-radius:7px; border:1px solid #fecaca; }
+  .aveh-hint { background:#eff6ff; color:#1d4ed8; font-size:11.5px; padding:8px 10px; border-radius:7px; border:1px solid #bfdbfe; }
+  .aveh-checkbox-row { display:flex; align-items:flex-start; gap:8px; font-size:11.5px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:7px; padding:8px 10px; cursor:pointer; line-height:1.4; }
+  .aveh-checkbox-row input[type="checkbox"] { margin-top:2px; flex-shrink:0; cursor:pointer; }
   .aveh-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .aveh-field { display:flex; flex-direction:column; gap:4px; }
   .aveh-field--full { grid-column:1/-1; }
@@ -338,4 +369,74 @@
     .pgbar { flex-direction: column; align-items: flex-start; gap: 8px; }
     .pgbar-controls { width: 100%; justify-content: center; }
     .pgbar-btn { min-width: 36px; height: 36px; font-size: 14px; }
+  }
+
+  /* ── Redesigned customer detail: merged header card ── */
+  .cdh-card { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 18px; background: var(--bg); }
+  .cdh-identity { display: flex; align-items: flex-start; gap: 14px; }
+  .cdh-name-row { display: flex; align-items: center; gap: 9px; }
+  .cdh-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 2px 9px; border-radius: 20px; background: #dcfce7; color: #166534; }
+  .cdh-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .cdh-stat { display: flex; align-items: center; gap: 10px; border: 1.5px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+  .cdh-stat-icon { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .cdh-stat-val { font-size: 14px; font-weight: 800; color: var(--text); line-height: 1.2; }
+  .cdh-stat-lbl { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-top: 1px; }
+
+  @media (max-width: 768px) {
+    .cdh-stats { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 480px) {
+    .cdh-card { padding: 14px 16px; }
+    .cdh-identity { flex-direction: column; }
+  }
+
+  /* ── Two-column layout ── */
+  .cust-detail-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; padding: 16px 20px; }
+  .cdg-left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .cdg-right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+  /* Side cards — Customer Info / Vehicles / B2B / Activity / Tabs all reuse
+     .cust-section, restyled as standalone bordered cards inside the grid. */
+  .cdg-left .cust-section,
+  .cdg-right .cust-section {
+    border: 1.5px solid var(--border); border-radius: 12px; border-bottom: 1.5px solid var(--border);
+    background: var(--bg); overflow: hidden;
+  }
+  .cds-card .cust-section-title { padding: 12px 14px 6px; }
+
+  @media (max-width: 1024px) {
+    .cust-detail-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .cust-detail-grid { padding: 12px; }
+  }
+
+  /* Customer Information list */
+  .cds-info-list { padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 9px; }
+  .cds-info-row { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--text); }
+  .cds-info-row svg { flex-shrink: 0; margin-top: 2px; color: var(--text-muted); }
+  .cds-info-lbl { min-width: 96px; flex-shrink: 0; color: var(--text-muted); font-weight: 600; }
+  .cds-info-val { flex: 1; font-weight: 600; word-break: break-word; }
+
+  /* Recent Activity strip */
+  .cust-activity-strip { display: flex; align-items: flex-start; gap: 4px; padding: 6px 14px 16px; overflow-x: auto; }
+  .cust-activity-item { display: flex; flex-direction: column; align-items: center; gap: 5px; position: relative; flex: 1; min-width: 84px; text-align: center; }
+  .cust-activity-icon { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; z-index: 1; background: var(--bg); }
+  .cust-activity-connector { position: absolute; top: 17px; left: calc(50% + 22px); width: calc(100% - 22px); height: 2px; background: var(--border); z-index: 0; }
+  .cust-activity-label { font-size: 10.5px; font-weight: 700; color: var(--text); line-height: 1.3; max-width: 100px; }
+  .cust-activity-date { font-size: 9.5px; color: var(--text-muted); }
+
+  @media (max-width: 480px) {
+    .cust-activity-strip { justify-content: flex-start; }
+  }
+
+  /* Appointments tab toolbar (search / status / date range / new appt) */
+  .cds-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .cds-filter-select { padding: 6px 9px; border: 1.5px solid var(--border); border-radius: 7px; font-size: 12px; background: var(--bg); color: var(--text); outline: none; }
+  .cds-filter-select:focus { border-color: var(--primary); }
+
+  @media (max-width: 640px) {
+    .cds-toolbar { flex-direction: column; align-items: stretch; }
+    .cds-toolbar > * { width: 100%; }
+    .cds-toolbar button { justify-content: center; }
   }
