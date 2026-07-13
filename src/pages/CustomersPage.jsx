@@ -768,23 +768,6 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
               <MessageCircle size={13}/>
               <span>WhatsApp</span>
             </a>
-            <button className="cust-hdr-btn cust-hdr-btn--edit" title="Edit details"
-              onClick={() => {
-                setEditForm({
-                  display_name: data.customer_name || '',
-                  whatsapp:     data.whatsapp      || '',
-                  email:        data.email         || '',
-                  notes:        data.profile_notes || '',
-                  is_b2b:            !!data.default_is_b2b,
-                  b2b_company_name:  data.default_b2b_company_name || '',
-                  b2b_gst_number:    data.default_b2b_gst_number   || '',
-                  b2b_address:       data.default_b2b_address      || '',
-                });
-                setEditErr(''); setDelConfirm(false); setEditing(true);
-              }}>
-              <Pencil size={13}/>
-              <span>Edit</span>
-            </button>
             {!delConfirm ? (
               <button className="cust-hdr-btn cust-hdr-btn--del" title="Delete customer"
                 onClick={() => setDelConfirm(true)}>

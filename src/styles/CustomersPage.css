@@ -321,14 +321,20 @@
   }
 
 
-  /* Full-page detail layout */
+  /* Full-page detail layout
+     Note: this whole page already sits inside the app's global `.content`
+     wrapper, which supplies a consistent 32px gutter on every page. The
+     inner elements below intentionally use 0 horizontal padding so the
+     header bar and cards line up with that same 32px edge instead of
+     stacking extra padding on top of it (which was pushing this page's
+     content noticeably further in than every other page in the app). */
   .cust-detail-page { min-height:100%; display:flex; flex-direction:column; }
-  .cust-detail-hdr { display:flex; align-items:center; gap:10px; padding:12px 20px; border-bottom:1px solid var(--border); flex-shrink:0; min-height:52px; background:var(--bg); position:sticky; top:0; z-index:10; }
+  .cust-detail-hdr { display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px solid var(--border); flex-shrink:0; min-height:52px; background:var(--bg); position:sticky; top:0; z-index:10; }
   .cust-back-btn { display:inline-flex; align-items:center; gap:5px; border:1.5px solid var(--border); background:var(--bg); color:var(--text-muted); font-size:12px; font-weight:700; padding:5px 12px; border-radius:8px; cursor:pointer; transition:all .15s; white-space:nowrap; flex-shrink:0; }
   .cust-back-btn:hover { background:var(--bg-soft); color:var(--text); border-color:var(--text-muted); }
   .cust-detail-title { font-size:14px; font-weight:700; color:var(--text); white-space:nowrap; }
   .cust-detail-loading { display:flex; align-items:center; justify-content:center; flex:1; font-size:13px; color:var(--text-muted); min-height:200px; }
-  .cust-detail-err { padding:20px 24px; font-size:13px; color:#dc2626; }
+  .cust-detail-err { padding:20px 0; font-size:13px; color:#dc2626; }
   .cust-detail-body { flex:1; display:flex; flex-direction:column; }
 
 
@@ -371,27 +377,31 @@
     .pgbar-btn { min-width: 36px; height: 36px; font-size: 14px; }
   }
 
-  /* ── Redesigned customer detail: merged header card ── */
-  .cdh-card { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 18px; background: var(--bg); }
-  .cdh-identity { display: flex; align-items: flex-start; gap: 14px; }
+  /* ── Redesigned customer detail: merged header card ──
+     Identity sits beside the stats, which are now a 2x2 grid rather than
+     a single 1x4 row spanning the full width. */
+  .cdh-card { padding: 20px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: row; align-items: center; gap: 24px; background: var(--bg); }
+  .cdh-identity { display: flex; align-items: flex-start; gap: 14px; flex: 1 1 auto; min-width: 0; }
   .cdh-name-row { display: flex; align-items: center; gap: 9px; }
   .cdh-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 2px 9px; border-radius: 20px; background: #dcfce7; color: #166534; }
-  .cdh-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .cdh-stats { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 10px; flex: 0 0 auto; }
   .cdh-stat { display: flex; align-items: center; gap: 10px; border: 1.5px solid var(--border); border-radius: 12px; padding: 10px 12px; }
   .cdh-stat-icon { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .cdh-stat-val { font-size: 14px; font-weight: 800; color: var(--text); line-height: 1.2; }
   .cdh-stat-lbl { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-top: 1px; }
 
-  @media (max-width: 768px) {
-    .cdh-stats { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 900px) {
+    .cdh-card { flex-direction: column; align-items: stretch; gap: 16px; }
+    .cdh-stats { grid-template-columns: repeat(2, 1fr); }
   }
   @media (max-width: 480px) {
     .cdh-card { padding: 14px 16px; }
     .cdh-identity { flex-direction: column; }
+    .cdh-stats { grid-template-columns: 1fr 1fr; }
   }
 
   /* ── Two-column layout ── */
-  .cust-detail-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; padding: 16px 20px; }
+  .cust-detail-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; padding: 16px 0; }
   .cdg-left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
   .cdg-right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
@@ -408,7 +418,7 @@
     .cust-detail-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 480px) {
-    .cust-detail-grid { padding: 12px; }
+    .cust-detail-grid { padding: 12px 0; }
   }
 
   /* Customer Information list */
