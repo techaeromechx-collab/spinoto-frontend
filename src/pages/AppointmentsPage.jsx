@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import PaginationBar from '../components/PaginationBar.jsx';
 import {
   Calendar, Search, Eye, X, AlertCircle, CheckCircle2,
@@ -80,6 +81,7 @@ function getStatusCfg(statusId, statusList) {
 // ── Status inline selector ────────────────────────────────────────────────────
 // Fix #16: separate chip selection from free-text details so they don't clobber each other
 function CancelReasonModal({ statusName, onConfirm, onCancel }) {
+  useEscapeClose(onCancel);
   const [chip, setChip] = useState('');   // one of REASONS or ''
   const [details, setDetails] = useState('');   // optional extra text
   const [err, setErr] = useState('');
@@ -208,7 +210,7 @@ function ApptStatusSelect({
       // ── Estimate flow ──
       case 'estimate-created':
         if (!estExists)
-          return { ok: false, redirect: '/estimates', state: { createForAppointmentId: apptId } };
+          return { ok: false, redirect: `/estimates?createForAppointmentId=${apptId}` };
         break;
 
       case 'estimate-submitted':
@@ -388,6 +390,7 @@ const RESCHEDULE_REASONS = [
 ];
 
 function RescheduleModal({ appt, onConfirm, onCancel }) {
+  useEscapeClose(onCancel);
   const [form, setForm] = useState({
     scheduled_date: appt.scheduled_date?.slice(0, 10) || '',
     scheduled_time: appt.scheduled_time?.slice(0, 5) || '',
@@ -404,7 +407,7 @@ function RescheduleModal({ appt, onConfirm, onCancel }) {
   }
 
   return createPortal(
-    <div className="appt-backdrop" style={{ zIndex: 1200 }} onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="appt-backdrop" style={{ zIndex: 1200 }}>
       <div className="appt-view-modal" style={{ maxWidth: 480 }} onMouseDown={e => e.stopPropagation()}>
         <div className="apptv-hdr" style={{ borderBottom: '1px solid var(--border)' }}>
           <span className="apptv-hdr-title" style={{ fontSize: 15 }}>
@@ -475,6 +478,7 @@ function RescheduleModal({ appt, onConfirm, onCancel }) {
 
 // ── View Modal ────────────────────────────────────────────────────────────────
 function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
+  useEscapeClose(onClose);
   const navigate = useNavigate();
   const canEditAppt = useCan('EDIT_APPOINTMENT');
   const canCreateInv = useCan('CREATE_INVOICE');
@@ -544,7 +548,7 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
   const is2W = appt.vehicle_type_name?.toLowerCase().includes('two') || appt.vehicle_type_name?.toLowerCase().includes('2');
 
   return (
-    <div className="appt-backdrop" onClick={onClose}>
+    <div className="appt-backdrop">
       <div className="appt-view-modal" onClick={e => e.stopPropagation()}>
 
         {/* ── Minimal Header ── */}
@@ -842,14 +846,14 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
             {appt.estimate_id ? (
               <button
                 className="apptv-inv-btn"
-                onClick={() => { onClose(); navigate('/estimates', { state: { highlightId: appt.estimate_id } }); }}
+                onClick={() => { onClose(); navigate(appt.estimate_token ? `/estimates/${appt.estimate_token}` : '/estimates', appt.estimate_token ? undefined : { state: { openId: appt.estimate_id } }); }}
               >
                 <FileText size={13} /> View Estimate #{appt.estimate_id}
               </button>
             ) : (
               <button
                 className="apptv-inv-btn"
-                onClick={() => { onClose(); navigate('/estimates', { state: { createForAppointmentId: appt.id } }); }}
+                onClick={() => { onClose(); navigate(`/estimates?createForAppointmentId=${appt.id}`); }}
               >
                 <FileText size={13} /> Create Estimate
               </button>
@@ -978,6 +982,7 @@ function MiniSearchSelect({ value, onChange, options, placeholder = 'Select…',
 // Edit Appointment Modal  (single-page form, pre-filled)
 // ═════════════════════════════════════════════════════════════════════════════
 function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
+  useEscapeClose(onClose);
   // ── Form state, pre-filled from appt ─────────────────────────────────────
   const [form, setForm] = useState({
     customer_name: appt.customer_name || '',
@@ -1326,7 +1331,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="appt-backdrop" onClick={onClose}>
+    <div className="appt-backdrop">
       <div className="ea-modal" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -1634,6 +1639,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
 // is picked/saved in step 2, onComplete({ customer, vehicle }) fires instead
 // of advancing to step 3 or POSTing to /api/appointments.
 export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, standaloneMode = false, onComplete, title = 'New Appointment', initialCustomer = null }) {
+  useEscapeClose(onClose);
   // ── Step tracker ──────────────────────────────────────────────────────────
   const [step, setStep] = useState(1); // 1 customer · 2 vehicle · 3 details
 
@@ -2098,7 +2104,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
   const STEPS = standaloneMode ? ['Customer', 'Vehicle'] : ['Customer', 'Vehicle', 'Details'];
 
   return (
-    <div className="appt-backdrop" onClick={onClose}>
+    <div className="appt-backdrop">
       <div className="ca-modal" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -2649,6 +2655,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
 export default function AppointmentsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { token } = useParams();
   const { user } = useAuth();
   const isHubUser = !!user?.hub_id;          // hub portal user
   const canEdit = useCan('EDIT_APPOINTMENT');
@@ -2721,16 +2728,58 @@ export default function AppointmentsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const resolvedTokenRef = useRef(null);
+  // Flips true the instant the user explicitly closes the modal. Guards
+  // against a slow/late-resolving fetch (the openApptId resolver or the
+  // by-token resolver below) firing setModal/navigate AFTER the modal has
+  // already been closed — without this, a stale response could silently
+  // reopen the modal or re-push the token URL back into the address bar.
+  const closedRef = useRef(false);
+
+  function openAppt(a) {
+    closedRef.current = false;
+    resolvedTokenRef.current = a.public_token;
+    setModal({ mode: 'view', appt: a });
+    navigate(`/appointments/${a.public_token}`);
+  }
+
+  function closeAppt() {
+    closedRef.current = true;
+    resolvedTokenRef.current = null;
+    navigate('/appointments');
+  }
+
   // Open a specific appointment modal when navigated from Customer Profile
+  // (numeric-id-only entry point — resolve the item, then sync the URL to
+  // its token via a replace so the back button doesn't leave an extra stop).
   useEffect(() => {
     const openApptId = location.state?.openApptId;
     if (!openApptId) return;
     // Clear state so refresh doesn't re-open
     window.history.replaceState({}, '');
+    closedRef.current = false;
     api(`/api/appointments/${openApptId}`)
-      .then(r => { if (r.item) setModal({ mode: 'view', appt: r.item }); })
+      .then(r => {
+        if (!r.item || closedRef.current) return;
+        setModal({ mode: 'view', appt: r.item });
+        if (r.item.public_token) {
+          resolvedTokenRef.current = r.item.public_token;
+          navigate(`/appointments/${r.item.public_token}`, { replace: true });
+        }
+      })
       .catch(() => { });
   }, [location.state?.openApptId]);
+
+  // Direct token URL entry / refresh / browser back-forward.
+  useEffect(() => {
+    if (!token) { setModal(null); resolvedTokenRef.current = null; return; }
+    if (resolvedTokenRef.current === token) return;
+    closedRef.current = false;
+    resolvedTokenRef.current = token;
+    api(`/api/appointments/by-token/${token}`)
+      .then(r => { if (r.item && !closedRef.current) setModal({ mode: 'view', appt: r.item }); })
+      .catch(() => { resolvedTokenRef.current = null; });
+  }, [token]);
 
   // Open "New Appointment" with a customer already selected, when navigated
   // here from that customer's profile page.
@@ -2964,7 +3013,7 @@ export default function AppointmentsPage() {
                 const statusCfg = statusList.find(s => s.id === a.status_id);
                 return (
                   <tr key={a.id} className="appt-row-clickable"
-                    onClick={() => setModal({ mode: 'view', appt: a })}>
+                    onClick={() => openAppt(a)}>
                     <td>
                       <span className="appt-id-badge">{a.id}</span>
                       {a.lead_id && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Lead #{a.lead_id}</div>}
@@ -2975,7 +3024,7 @@ export default function AppointmentsPage() {
                         className="appt-cust-link"
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigate('/customers', { state: { openMobile: a.mobile } });
+                          navigate(a.customer_token ? `/customers/${a.customer_token}` : '/customers', a.customer_token ? undefined : { state: { openMobile: a.mobile } });
                         }}
                       >
                         <div>
@@ -3039,7 +3088,7 @@ export default function AppointmentsPage() {
                               style={{ color: '#4f46e5', cursor: 'pointer', textDecoration: 'underline' }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigate('/estimates', { state: { openId: a.estimate_id } });
+                                navigate(a.estimate_token ? `/estimates/${a.estimate_token}` : '/estimates', a.estimate_token ? undefined : { state: { openId: a.estimate_id } });
                               }}
                             >
                               Estimate:
@@ -3053,7 +3102,7 @@ export default function AppointmentsPage() {
                               style={{ color: '#0f766e', cursor: 'pointer', textDecoration: 'underline' }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigate('/customer-invoices', { state: { openId: a.invoice_id } });
+                                navigate(a.invoice_token ? `/customer-invoices/${a.invoice_token}` : '/customer-invoices', a.invoice_token ? undefined : { state: { openId: a.invoice_id } });
                               }}
                             >
                               Invoice:
@@ -3121,7 +3170,7 @@ export default function AppointmentsPage() {
               ? new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
               : '';
             return (
-              <div key={a.id} className="appt-card" onClick={() => setModal({ mode: 'view', appt: a })}>
+              <div key={a.id} className="appt-card" onClick={() => openAppt(a)}>
                 <div className="appt-card-left">
                   {(() => {
                     const tag = getScheduleTag(a.scheduled_date);
@@ -3155,7 +3204,7 @@ export default function AppointmentsPage() {
                   </div>
                 </div>
                 <div className="appt-card-right" onClick={e => e.stopPropagation()}>
-                  <div className="appt-card-price" onClick={() => setModal({ mode: 'view', appt: a })}>
+                  <div className="appt-card-price" onClick={() => openAppt(a)}>
                     ₹{Number(a.invoice_id ? a.invoice_total : (a.estimate_id ? a.estimate_total : a.total_price) || 0).toLocaleString('en-IN')}
                   </div>
                   <ApptStatusSelect
@@ -3203,7 +3252,7 @@ export default function AppointmentsPage() {
         <ViewModal
           appt={modal.appt}
           statusList={statusList}
-          onClose={() => setModal(null)}
+          onClose={closeAppt}
           onUpdated={handleUpdated}
           onEdit={appt => setEditAppt(appt)}
         />

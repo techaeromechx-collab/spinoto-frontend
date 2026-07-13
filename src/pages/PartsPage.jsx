@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api/client.js';
 import useSync from '../hooks/useSync.js';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import {
   Plus, Pencil, Trash2, X, Search, RefreshCw,
@@ -64,8 +65,9 @@ function Toast({ msg, type, onClose }) {
 
 // ── Delete confirm modal ──────────────────────────────────────────────────────
 function DeleteModal({ item, onClose, onConfirm, loading }) {
+  useEscapeClose(onClose);
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
         <div className="modal-header">
           <h3>Delete Part</h3>
@@ -89,6 +91,7 @@ function DeleteModal({ item, onClose, onConfirm, loading }) {
 
 // ── Add / Edit modal ──────────────────────────────────────────────────────────
 function PartModal({ item, onClose, onSave }) {
+  useEscapeClose(onClose);
   const isEdit = !!item?.id;
   const [form, setForm] = useState({
     name:          item?.name          || '',
@@ -130,7 +133,7 @@ function PartModal({ item, onClose, onSave }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
         <div className="modal-header">
           <h3>{isEdit ? 'Edit Part' : 'Add Part'}</h3>

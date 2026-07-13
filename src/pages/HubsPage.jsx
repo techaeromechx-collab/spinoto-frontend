@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api, getToken } from '../api/client.js';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import {
   Plus, Pencil, Eye, X, AlertCircle, CheckCircle2,
   Network, Search, ChevronLeft, ChevronRight, ToggleLeft, ToggleRight,
@@ -318,6 +319,7 @@ function DocSlot({ label, existing, selected, onSelect, onClearSelected, onRemov
 // ── Hub Form Modal (Add / Edit) ───────────────────────────────────────────────
 function HubModal({ hub, onClose, onSaved }) {
   const isEdit = !!hub?.id;
+  useEscapeClose(onClose);
 
   const [form, setForm] = useState({
     hub_name:          hub?.hub_name         || '',
@@ -597,7 +599,7 @@ function HubModal({ hub, onClose, onSaved }) {
   }
 
   return (
-    <div className="hb-backdrop" onClick={onClose}>
+    <div className="hb-backdrop">
       <div className="hb-modal" onClick={e => e.stopPropagation()}>
         <div className="hb-modal-hdr">
           <h3>{isEdit ? 'Edit HUB' : 'Add New HUB'}</h3>
@@ -1012,6 +1014,7 @@ function HubModal({ hub, onClose, onSaved }) {
 function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onHubUpdated }) {
   const { user: me } = useAuth();
   const isSuperAdmin = me?.is_super_admin;
+  useEscapeClose(onClose);
 
   const [hub, setHub]           = useState(initialHub);
   const [verifyErr, setVerifyErr] = useState('');
@@ -1107,7 +1110,7 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
   }
 
   return (
-    <div className="hb-backdrop" onClick={onClose}>
+    <div className="hb-backdrop">
       <div className="hb-modal hb-modal--view" onClick={e => e.stopPropagation()}>
 
         <div className="hbv-hdr">
@@ -1492,6 +1495,7 @@ function DR({ label, value, full }) {
 
 // ── Hub Services Modal ────────────────────────────────────────────────────────
 function HubServicesModal({ hub, onClose, onSaved }) {
+  useEscapeClose(onClose);
   const [data, setData]                   = useState(null);
   const [selectedCatIds, setSelectedCatIds] = useState(new Set());
   const [selectedSvcIds, setSelectedSvcIds] = useState(new Set());
@@ -1605,7 +1609,7 @@ function HubServicesModal({ hub, onClose, onSaved }) {
   }
 
   return (
-    <div className="hb-backdrop" onClick={onClose}>
+    <div className="hb-backdrop">
       <div className="hb-modal hb-modal--services" onClick={e => e.stopPropagation()}>
         <div className="hb-modal-hdr">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

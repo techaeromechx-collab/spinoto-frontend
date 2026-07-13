@@ -262,8 +262,9 @@ function AssignedHubsPanel({ kind = 'service', entityId, entityVehicleClass, per
 // In-app replacement for window.confirm() — matches the app's own modal styling
 // (mirrors DeleteModal below) instead of the native browser dialog.
 function UnassignHubModal({ kind = 'service', hubName, loading, onConfirm, onClose }) {
+  useEscapeClose(onClose);
   return (
-    <div className="sp-modal-backdrop" onClick={onClose}>
+    <div className="sp-modal-backdrop">
       <div className="sp-modal sp-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="sp-modal-header">
           <h3>Unassign Hub</h3>
@@ -295,6 +296,7 @@ function UnassignHubModal({ kind = 'service', hubName, loading, onConfirm, onClo
 // directly from the Services & Pricing page (instead of via the Hub page's
 // own "Manage Services" full-replace modal).
 function AssignHubModal({ kind = 'service', entityId, entityVehicleClass, currentHubIds, onClose, onSaved, showToast }) {
+  useEscapeClose(onClose);
   const [allHubs, setAllHubs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search,  setSearch]  = useState('');
@@ -350,7 +352,7 @@ function AssignHubModal({ kind = 'service', entityId, entityVehicleClass, curren
   }
 
   return (
-    <div className="sp-modal-backdrop" onClick={onClose}>
+    <div className="sp-modal-backdrop">
       <div className="sp-modal sp-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="sp-modal-header">
           <h3>Assign to Hubs</h3>
@@ -1614,6 +1616,7 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
   // 4W  → Body Type + Segment / Price rows, 4W-only types+makes
   // both→ all fields (keep existing behaviour)
 
+  useEscapeClose(onClose);
   const isTW   = vehicleClass === '2W';
   const isFW   = vehicleClass === '4W';
   const isBoth = vehicleClass === 'both';
@@ -1844,7 +1847,7 @@ function PricingRuleModal({ mode, rule, serviceId, categoryId, targetName, vehic
   const activeRows = effectiveTW ? ccRows : segRows;
 
   return (
-    <div className="sp-modal-backdrop" onClick={onClose}>
+    <div className="sp-modal-backdrop">
       <div className="sp-modal sp-modal--wide" onClick={e => e.stopPropagation()}>
         <div className="sp-modal-header">
           <h3>{mode === 'create' ? 'Add Pricing Rule' : 'Edit Pricing Rule'}</h3>
@@ -2189,6 +2192,7 @@ function selectedKeysToDims(selectedKeys) {
 }
 
 function DimensionConfigModal({ category, currentConfig, onSave, onClose }) {
+  useEscapeClose(onClose);
   const vc = category?.vehicle_class || 'both';
 
   // For 'both': split into 4W group and 2W group so the user understands
@@ -2244,7 +2248,7 @@ function DimensionConfigModal({ category, currentConfig, onSave, onClose }) {
   }
 
   return (
-    <div className="sp-modal-backdrop" onClick={onClose}>
+    <div className="sp-modal-backdrop">
       <div className="spt-cfg-modal" onClick={e => e.stopPropagation()}>
         <div className="sp-modal-header">
           <div>
@@ -2316,6 +2320,7 @@ function DimensionConfigModal({ category, currentConfig, onSave, onClose }) {
 // dimensions (e.g. body_type + cc_category for a 'both' category).
 // Each section collects its own rules; submit fires all of them at once.
 function SmartPricingModal({ config, serviceId, categoryId, targetName, vehicleClass = 'both', onClose, onSaved, showToast }) {
+  useEscapeClose(onClose);
   const { fwModes: rawFwModes, twMode: rawTwMode } = detectModes(config);
 
   // Filter modes by the service's vehicle_class so a 4W-only service never
@@ -2691,7 +2696,7 @@ function SmartPricingModal({ config, serviceId, categoryId, targetName, vehicleC
           : FW_MODE_LABELS[activeFwMode] || 'Pricing';
 
   return (
-    <div className="sp-modal-backdrop" onClick={onClose}>
+    <div className="sp-modal-backdrop">
       <div className="spt-modal" onClick={e => e.stopPropagation()}>
         <div className="sp-modal-header">
           <div>
@@ -2940,6 +2945,7 @@ function PricingBulkPanel({ service, onClose, onSuccess, showToast }) {
 // CATEGORY MODAL
 // ══════════════════════════════════════════════════════════════════════════
 function CategoryModal({ mode, item, onSave, onClose }) {
+  useEscapeClose(onClose);
   const [form, setForm] = useState({
     name:          item?.name          || '',
     description:   item?.description   || '',
@@ -2955,7 +2961,7 @@ function CategoryModal({ mode, item, onSave, onClose }) {
   }
 
   return (
-    <div className="sp-modal-backdrop" onClick={onClose}>
+    <div className="sp-modal-backdrop">
       <div className="sp-modal sp-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="sp-modal-header">
           <h3>{mode === 'create' ? 'New Category' : 'Edit Category'}</h3>
@@ -3017,6 +3023,7 @@ function CategoryModal({ mode, item, onSave, onClose }) {
 const VC_LABELS = { both: '🚗🏍️ Both (2W + 4W)', '4W': '🚗 4W Only', '2W': '🏍️ 2W Only' };
 
 function ServiceModal({ mode, item, categories, defaultCatId, onSave, onClose }) {
+  useEscapeClose(onClose);
   const [form, setForm] = useState({
     category_id:   item?.category_id   || defaultCatId || '',
     name:          item?.name          || '',
@@ -3063,7 +3070,7 @@ function ServiceModal({ mode, item, categories, defaultCatId, onSave, onClose })
   }
 
   return (
-    <div className="sp-modal-backdrop" onClick={onClose}>
+    <div className="sp-modal-backdrop">
       <div className="sp-modal sp-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="sp-modal-header">
           <h3>{mode === 'create' ? 'New Service' : 'Edit Service'}</h3>
@@ -3151,6 +3158,7 @@ function ServiceModal({ mode, item, categories, defaultCatId, onSave, onClose })
 // DELETE MODAL
 // ══════════════════════════════════════════════════════════════════════════
 function DeleteModal({ type, item, onConfirm, onClose }) {
+  useEscapeClose(onClose);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
@@ -3161,7 +3169,7 @@ function DeleteModal({ type, item, onConfirm, onClose }) {
   }
 
   return (
-    <div className="sp-modal-backdrop" onClick={onClose}>
+    <div className="sp-modal-backdrop">
       <div className="sp-modal sp-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="sp-modal-header">
           <h3>Delete {type === 'category' ? 'Category' : 'Service'}</h3>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import { useBodyLock } from '../hooks/useBodyLock.js';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import {
   User, MapPin, Car, Bike, Wrench, Plus, Trash2,
   Info, CheckCircle2, X, ChevronDown, Search, Zap,
@@ -198,6 +199,7 @@ function SearchableSelect({
 // ══════════════════════════════════════════════════════════════════════════════
 export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
   useBodyLock(isOpen);
+  useEscapeClose(onClose, isOpen);
   const [step, setStep] = useState(1);   // 1 or 2
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

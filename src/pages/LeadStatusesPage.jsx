@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api/client.js';
 import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import {
   Plus, Pencil, Trash2, X, AlertCircle, CheckCircle2,
   GripVertical, Tag, Calendar, FileText, RefreshCw, Phone,
@@ -82,13 +83,14 @@ function ColourPicker({ form, setForm }) {
 function DeleteModal({ item, onClose, onConfirm }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  useEscapeClose(onClose);
   async function go() {
     setBusy(true); setErr('');
     try { await onConfirm(); }
     catch (e) { setErr(e.message); setBusy(false); }
   }
   return (
-    <div className="ls-backdrop" onClick={onClose}>
+    <div className="ls-backdrop">
       <div className="ls-modal ls-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="ls-modal-hdr">
           <h3>Delete Status</h3>
@@ -118,6 +120,7 @@ function DeleteModal({ item, onClose, onConfirm }) {
 
 function LeadStatusModal({ item, maxOrder, onClose, onSaved }) {
   const isEdit = !!item?.id;
+  useEscapeClose(onClose);
   const [form, setForm] = useState({
     name: item?.name || '',
     color: item?.color || '#2563eb',
@@ -146,7 +149,7 @@ function LeadStatusModal({ item, maxOrder, onClose, onSaved }) {
   }
 
   return (
-    <div className="ls-backdrop" onClick={onClose}>
+    <div className="ls-backdrop">
       <div className="ls-modal" onClick={e => e.stopPropagation()}>
         <div className="ls-modal-hdr">
           <h3>{isEdit ? 'Edit Lead Status' : 'New Lead Status'}</h3>
@@ -541,6 +544,7 @@ function LeadStatusPanel({ canManage }) {
 
 function GenericStatusModal({ title, apiBase, item, maxOrder, onClose, onSaved }) {
   const isEdit = !!item?.id;
+  useEscapeClose(onClose);
   const [form, setForm] = useState({
     name: item?.name || '',
     color: item?.color || '#2563eb',
@@ -564,7 +568,7 @@ function GenericStatusModal({ title, apiBase, item, maxOrder, onClose, onSaved }
   }
 
   return (
-    <div className="ls-backdrop" onClick={onClose}>
+    <div className="ls-backdrop">
       <div className="ls-modal" onClick={e => e.stopPropagation()}>
         <div className="ls-modal-hdr">
           <h3>{isEdit ? `Edit ${title}` : `New ${title}`}</h3>
@@ -871,6 +875,7 @@ function GenericStatusPanel({ canManage, apiBase, title, description, addLabel }
 
 function SourceModal({ item, onClose, onSaved }) {
   const isEdit = !!item?.id;
+  useEscapeClose(onClose);
   const [name, setName] = useState(item?.name || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -886,7 +891,7 @@ function SourceModal({ item, onClose, onSaved }) {
   }
 
   return (
-    <div className="ls-backdrop" onClick={onClose}>
+    <div className="ls-backdrop">
       <div className="ls-modal ls-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="ls-modal-hdr">
           <h3>{isEdit ? 'Edit Source' : 'New Source'}</h3>
@@ -1132,6 +1137,7 @@ function LeadSourcesPanel({ canManage }) {
 
 function CallOutcomeForm({ item, onClose, onSaved, canManage }) {
   const isEdit = !!item?.id;
+  useEscapeClose(onClose);
   const [form, setForm] = useState({ name: item?.name || '', is_active: item?.is_active ?? true });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1149,7 +1155,7 @@ function CallOutcomeForm({ item, onClose, onSaved, canManage }) {
   }
 
   return (
-    <div className="ls-backdrop" onClick={onClose}>
+    <div className="ls-backdrop">
       <div className="ls-modal ls-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="ls-modal-hdr">
           <h3>{isEdit ? 'Edit Outcome' : 'Add Outcome'}</h3>
@@ -1193,6 +1199,8 @@ function CallOutcomesPanel({ canManage }) {
   const [delBusy,  setDelBusy]    = useState(false);
   const [dragOver, setDragOver]   = useState(null);
   const dragIdx                   = useRef(null);
+
+  useEscapeClose(() => setDelItem(null), !!delItem);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1318,7 +1326,7 @@ function CallOutcomesPanel({ canManage }) {
       )}
 
       {delItem && (
-        <div className="ls-backdrop" onClick={() => setDelItem(null)}>
+        <div className="ls-backdrop">
           <div className="ls-modal ls-modal--sm" onClick={e => e.stopPropagation()}>
             <div className="ls-modal-hdr">
               <h3>Delete Outcome</h3>

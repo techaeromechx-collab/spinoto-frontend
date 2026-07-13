@@ -2,12 +2,14 @@ import { useEffect, useState, useCallback } from 'react';
 import { api } from '../api/client.js';
 import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { Plus, Pencil, Trash2, X, AlertCircle, CheckCircle2, Building2 } from 'lucide-react';
 import '../styles/DepartmentsPage.css';
 
 // ── Add / Edit modal ──────────────────────────────────────────────────────────
 function DeptModal({ item, onClose, onSaved }) {
   const isEdit = !!item?.id;
+  useEscapeClose(onClose);
   const [name,    setName]    = useState(item?.name || '');
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState('');
@@ -24,7 +26,7 @@ function DeptModal({ item, onClose, onSaved }) {
   }
 
   return (
-    <div className="dp-backdrop" onClick={onClose}>
+    <div className="dp-backdrop">
       <div className="dp-modal dp-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="dp-modal-hdr">
           <h3>{isEdit ? 'Edit Department' : 'New Department'}</h3>
@@ -61,13 +63,14 @@ function DeptModal({ item, onClose, onSaved }) {
 function DeleteModal({ item, onClose, onConfirm }) {
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState('');
+  useEscapeClose(onClose);
   async function go() {
     setBusy(true); setErr('');
     try { await onConfirm(); }
     catch (e) { setErr(e.message); setBusy(false); }
   }
   return (
-    <div className="dp-backdrop" onClick={onClose}>
+    <div className="dp-backdrop">
       <div className="dp-modal dp-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="dp-modal-hdr">
           <h3>Delete Department</h3>

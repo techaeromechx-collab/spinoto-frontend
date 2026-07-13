@@ -74,6 +74,9 @@
         .crumbs a:hover { color: var(--primary); }
         .mx-1 { margin: 0 6px; color: var(--text-muted); }
         .capitalize { text-transform: capitalize; color: var(--text); font-weight: 600; font-size: 13px; }
+        /* Opaque shareable-URL tokens shouldn't be visually capitalized — it
+           misrepresents the actual (mixed-case) token value at a glance. */
+        .crumb-token { text-transform: none; font-weight: 500; color: var(--text-muted); }
 
         /* ── Topbar search wrap ── */
         .topbar-search-wrap {

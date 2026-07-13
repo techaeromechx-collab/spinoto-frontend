@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import {
   Wallet, RefreshCw, AlertCircle, CheckCircle2, Clock,
   X, ChevronRight, ChevronLeft, Search, CreditCard,
@@ -47,6 +48,7 @@ function Toast({ msg, type, onClose }) {
 
 // ── Pay Modal ─────────────────────────────────────────────────────────────────
 function PayModal({ pi, onClose, onSuccess }) {
+  useEscapeClose(onClose);
   const [form, setForm] = useState({ amount:'', method:'bank_transfer', reference_no:'', notes:'' });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState(null);
@@ -69,7 +71,7 @@ function PayModal({ pi, onClose, onSuccess }) {
   }
 
   return (
-    <div className="po-backdrop" onClick={onClose}>
+    <div className="po-backdrop">
       <div className="po-modal" onClick={e=>e.stopPropagation()}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
           <div>
@@ -115,6 +117,7 @@ function PayModal({ pi, onClose, onSuccess }) {
 
 // ── PI Payment History Modal (3-dot menu) ─────────────────────────────────────
 function PIPaymentsModal({ pi, onClose }) {
+  useEscapeClose(onClose);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading]   = useState(true);
 
@@ -126,7 +129,7 @@ function PIPaymentsModal({ pi, onClose }) {
   }, [pi.id]);
 
   return (
-    <div className="po-backdrop" onClick={onClose}>
+    <div className="po-backdrop">
       <div className="po-modal" style={{ maxWidth:560 }} onClick={e=>e.stopPropagation()}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
           <div>
@@ -316,7 +319,7 @@ function HubPaymentsTab({ hubName, hubId, onExport }) {
                 <tr key={p.id} style={{ background: i%2===0?undefined:'var(--bg-soft)' }}>
                   <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(p.paid_at)}</td>
                   <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
-                    <button onClick={() => navigate('/purchase-invoices', { state:{ openId: p.purchase_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
+                    <button onClick={() => navigate(p.purchase_invoice_token ? `/purchase-invoices/${p.purchase_invoice_token}` : '/purchase-invoices', p.purchase_invoice_token ? undefined : { state:{ openId: p.purchase_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
                       PI-{String(p.purchase_invoice_id).padStart(6,'0')}
                     </button>
                   </td>
@@ -462,7 +465,7 @@ function GlobalPaymentHistory({ onExport }) {
                   <tr key={p.id} style={{ background: i%2===0?undefined:'var(--bg-soft)' }}>
                     <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(p.paid_at)}</td>
                     <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
-                      <button onClick={()=>navigate('/purchase-invoices',{ state:{ openId:p.purchase_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
+                      <button onClick={()=>navigate(p.purchase_invoice_token ? `/purchase-invoices/${p.purchase_invoice_token}` : '/purchase-invoices', p.purchase_invoice_token ? undefined : { state:{ openId:p.purchase_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
                         PI-{String(p.purchase_invoice_id).padStart(6,'0')}
                       </button>
                     </td>
@@ -580,6 +583,7 @@ function HubSidebar({ hubs, selectedHub, onSelect }) {
 
 // ── Bulk Payment Modal ────────────────────────────────────────────────────────
 function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
+  useEscapeClose(onClose);
   const r2 = n => Math.round(n * 100) / 100;
   // Sort oldest first by PI id
   const sorted = [...selectedInvoices].sort((a,b) => a.id - b.id);
@@ -620,7 +624,7 @@ function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
   }
 
   return (
-    <div className="po-backdrop" onClick={onClose}>
+    <div className="po-backdrop">
       <div className="po-modal" style={{ maxWidth:580 }} onClick={e=>e.stopPropagation()}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
           <div>
@@ -818,13 +822,13 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                       </td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <button onClick={()=>navigate('/purchase-invoices',{ state:{ openId:pi.id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
+                          <button onClick={()=>navigate(pi.purchase_invoice_token ? `/purchase-invoices/${pi.purchase_invoice_token}` : '/purchase-invoices', pi.purchase_invoice_token ? undefined : { state:{ openId:pi.id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
                             PI-{String(pi.id).padStart(6,'0')}
                           </button>
                           {isOverdue && <span style={{ fontSize:10, fontWeight:700, background:'#fee2e2', color:'#991b1b', padding:'1px 6px', borderRadius:99 }}>OVERDUE</span>}
                         </div>
                         {pi.customer_invoice_id && (
-                          <button onClick={()=>navigate('/customer-invoices',{ state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, marginTop:2, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--text-muted)', fontFamily:'inherit' }}>
+                          <button onClick={()=>navigate(pi.customer_invoice_token ? `/customer-invoices/${pi.customer_invoice_token}` : '/customer-invoices', pi.customer_invoice_token ? undefined : { state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, marginTop:2, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--text-muted)', fontFamily:'inherit' }}>
                             CI-{String(pi.customer_invoice_id).padStart(6,'0')}
                           </button>
                         )}
@@ -853,7 +857,7 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                                 <button className="po-menu-item" onClick={()=>{ onViewPayments(pi); setOpenMenu(null); }}>
                                   <History size={13}/> View Payments
                                 </button>
-                                <button className="po-menu-item" onClick={()=>{ navigate('/purchase-invoices',{ state:{ openId:pi.id } }); setOpenMenu(null); }}>
+                                <button className="po-menu-item" onClick={()=>{ navigate(pi.purchase_invoice_token ? `/purchase-invoices/${pi.purchase_invoice_token}` : '/purchase-invoices', pi.purchase_invoice_token ? undefined : { state:{ openId:pi.id } }); setOpenMenu(null); }}>
                                   <Receipt size={13}/> View Invoice
                                 </button>
                               </div>
@@ -961,13 +965,13 @@ function MobileHubCard({ hub, invoices, onPay, onViewPayments }) {
                   return (
                     <tr key={pi.id} style={{ background:isOverdue?'#fff5f5':undefined }}>
                       <td style={{ padding:'9px 10px', borderBottom:'1px solid var(--border)' }}>
-                        <button onClick={()=>navigate('/purchase-invoices',{ state:{ openId:pi.id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:12, color:'var(--primary)', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                        <button onClick={()=>navigate(pi.purchase_invoice_token ? `/purchase-invoices/${pi.purchase_invoice_token}` : '/purchase-invoices', pi.purchase_invoice_token ? undefined : { state:{ openId:pi.id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:12, color:'var(--primary)', fontFamily:'inherit', whiteSpace:'nowrap' }}>
                           PI-{String(pi.id).padStart(6,'0')}
                         </button>
                         {isOverdue && <div style={{ fontSize:9, fontWeight:700, background:'#fee2e2', color:'#991b1b', padding:'1px 5px', borderRadius:4, marginTop:2, display:'inline-block' }}>OD</div>}
                         {pi.customer_invoice_id && (
                           <div>
-                            <button onClick={()=>navigate('/customer-invoices',{ state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:12, color:'var(--text-muted)', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+                            <button onClick={()=>navigate(pi.customer_invoice_token ? `/customer-invoices/${pi.customer_invoice_token}` : '/customer-invoices', pi.customer_invoice_token ? undefined : { state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:12, color:'var(--text-muted)', fontFamily:'inherit', whiteSpace:'nowrap' }}>
                               CI-{String(pi.customer_invoice_id).padStart(6,'0')}
                             </button>
                           </div>

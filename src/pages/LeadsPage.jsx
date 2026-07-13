@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useCan, useAuth } from '../auth/AuthContext.jsx';
 import { useBodyLock } from '../hooks/useBodyLock.js';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import {
   PlusCircle, Search, User, Calendar, MapPin, Car, Bike,
   MoreVertical, Eye, Pencil, Trash2, X, CheckCircle2,
@@ -45,6 +46,7 @@ export const LOST_REASONS = [
 // Mini modal shown when user changes status to "Lost"
 function LostReasonModal({ statusName, onConfirm, onCancel }) {
   useBodyLock();
+  useEscapeClose(onCancel);
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 
@@ -54,7 +56,7 @@ function LostReasonModal({ statusName, onConfirm, onCancel }) {
   }
 
   return (
-    <div className="lr-backdrop" onClick={onCancel}>
+    <div className="lr-backdrop">
       <div className="lr-modal" onClick={e => e.stopPropagation()}>
         <div className="lr-header">
           <span className="lr-title">Why is this lead lost?</span>
@@ -326,8 +328,9 @@ function ActionMenu({ lead, canEdit, canDelete, onView, onEdit, onDelete }) {
 }
 
 // ── View Lead Modal ───────────────────────────────────────────────────────────
-function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
+function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLeadLoaded }) {
   useBodyLock();
+  useEscapeClose(onClose);
   const { user: currentUser } = useAuth();
   const [lead, setLead] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -346,9 +349,12 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
   useEffect(() => {
     setLoading(true);
     api(`/api/leads/${leadId}`)
-      .then(r => setLead(r.item))
+      .then(r => { setLead(r.item); onLeadLoaded?.(r.item); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onLeadLoaded intentionally
+    // not tracked: it's a stable callback used to sync the URL once, not a data
+    // dependency; adding it would risk re-fetching on every parent re-render.
   }, [leadId]);
 
   // Load notes + activities + follow-ups once lead is fetched
@@ -455,7 +461,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
     : (lead?.mobile?.slice(-2) ?? '??');
 
   return (
-    <div className="lp-modal-backdrop" onClick={onClose}>
+    <div className="lp-modal-backdrop">
       <div className="lp-modal lp-modal--lg lp-view-modal" onClick={e => e.stopPropagation()}>
 
         {/* ── Header ── */}
@@ -1016,6 +1022,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [] }) {
 // ── Edit Lead Modal ───────────────────────────────────────────────────────────
 function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = LEAD_SOURCES, onOpenConvert }) {
   useBodyLock();
+  useEscapeClose(onClose);
   // ── core form ──────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
     status: lead.status || '',
@@ -1391,7 +1398,7 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
 
   // ── render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="lp-modal-backdrop" onClick={onClose}>
+    <div className="lp-modal-backdrop">
       <div className="lp-modal lp-modal--xl" onClick={e => e.stopPropagation()}>
         <div className="lp-modal-header">
           <h3>Edit Lead</h3>
@@ -1801,6 +1808,7 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
 // ── Delete Confirmation ───────────────────────────────────────────────────────
 function DeleteModal({ lead, onClose, onConfirm }) {
   useBodyLock();
+  useEscapeClose(onClose);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   async function handleConfirm() {
@@ -1809,7 +1817,7 @@ function DeleteModal({ lead, onClose, onConfirm }) {
     catch (e) { setError(e.message); setLoading(false); }
   }
   return (
-    <div className="lp-modal-backdrop" onClick={onClose}>
+    <div className="lp-modal-backdrop">
       <div className="lp-modal lp-modal--sm" onClick={e => e.stopPropagation()}>
         <div className="lp-modal-header">
           <h3>Delete Lead</h3>
@@ -1839,6 +1847,7 @@ function DeleteModal({ lead, onClose, onConfirm }) {
 // Both can be true → both sections shown in one modal
 function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onConfirm, onCancel }) {
   useBodyLock();
+  useEscapeClose(onCancel);
   const [outcome, setOutcome] = useState('');
   const [callNotes, setCallNotes] = useState('');
   const [date, setDate] = useState('');
@@ -1884,7 +1893,7 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
       : 'Schedule Follow-up';
 
   return (
-    <div className="lr-backdrop" onClick={onCancel}>
+    <div className="lr-backdrop">
       <div className="lr-modal" onClick={e => e.stopPropagation()}>
         <div className="lr-header">
           <span className="lr-title">{title}</span>
@@ -1991,6 +2000,7 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
 // ── Reschedule Follow-up Modal ────────────────────────────────────────────────
 function RescheduleFollowUpModal({ onConfirm, onCancel }) {
   useBodyLock();
+  useEscapeClose(onCancel);
   const [date, setDate] = useState('');
   const [time, setTime] = useState('10:00');
   const [note, setNote] = useState('');
@@ -2008,7 +2018,7 @@ function RescheduleFollowUpModal({ onConfirm, onCancel }) {
   }
 
   return (
-    <div className="lr-backdrop" onClick={onCancel}>
+    <div className="lr-backdrop">
       <div className="lr-modal" onClick={e => e.stopPropagation()}>
         <div className="lr-header">
           <span className="lr-title">Reschedule Follow-up</span>
@@ -2186,6 +2196,7 @@ function ApptSelect({ value, onChange, options, placeholder = 'Select…', disab
 // ── Convert to Appointment — full modal ───────────────────────────────────────
 function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, onCancel }) {
   useBodyLock();
+  useEscapeClose(onCancel);
 
   // ── Lead data ──
   const [lead, setLead] = useState(null);
@@ -2596,7 +2607,7 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
   }
 
   return createPortal(
-    <div className="ca-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="ca-backdrop">
       <div className="ca-modal" onMouseDown={e => e.stopPropagation()}>
 
         {/* ── Header ── */}
@@ -3180,6 +3191,8 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function LeadsPage() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { token } = useParams();
   const [searchParams] = useSearchParams();
   // Lifted here so the modal survives lead-list re-renders (e.g. Chrome autofill changing search)
   const [pageConvertModal, setPageConvertModal] = useState(null); // { statusName, leadId, leadName, saveFn }
@@ -3264,10 +3277,67 @@ export default function LeadsPage() {
   const [editLead, setEditLead] = useState(null);
   const [deleteLead, setDeleteLead] = useState(null);
 
+  // ── Shareable /leads/:token URL support ──────────────────────────────────
+  // resolvedTokenRef tracks which token the currently-open lead (if any)
+  // already corresponds to, so we don't re-fetch or redundantly rewrite the
+  // URL once it's in sync.
+  const resolvedTokenRef = useRef(null);
+  // Flips true the instant the user explicitly closes the modal. Guards
+  // against a slow/late-resolving fetch (ViewLeadModal's own load, or the
+  // by-token resolver below) firing onLeadLoaded/navigate AFTER the modal
+  // has already been closed — without this, a stale response could silently
+  // re-push the token URL back into the address bar even though the modal
+  // is shut.
+  const closedRef = useRef(false);
+
+  // Opens a lead from a full row object we already have in hand (row click,
+  // ActionMenu "View", mobile card) — we already know both the numeric id
+  // and the token, so this opens instantly (no fetch) and pushes the
+  // shareable URL (push, not replace: this is a real navigation the user
+  // should be able to back out of).
+  function openLead(l) {
+    closedRef.current = false;
+    resolvedTokenRef.current = l.public_token;
+    setViewId(l.id);
+    navigate(`/leads/${l.public_token}`);
+  }
+
+  function closeLead() {
+    closedRef.current = true;
+    resolvedTokenRef.current = null;
+    navigate('/leads');
+  }
+
+  // Called once ViewLeadModal finishes loading a lead by numeric id (the
+  // path used when we only had an id, not a token — global search,
+  // notifications, the duplicate-lead-click event, follow-up drawer rows).
+  // Syncs the URL to the shareable token form after the fact, via replace
+  // so it doesn't add an extra back-button stop for what was really one
+  // navigation.
+  function handleLeadLoaded(lead) {
+    if (closedRef.current) return;
+    if (!lead?.public_token || resolvedTokenRef.current === lead.public_token) return;
+    resolvedTokenRef.current = lead.public_token;
+    navigate(`/leads/${lead.public_token}`, { replace: true });
+  }
+
+  // Landing directly on /leads/:token (typed/pasted/bookmarked link, page
+  // refresh, or browser back/forward) — resolve the token to a numeric id
+  // so ViewLeadModal can load it the same way it always has.
+  useEffect(() => {
+    if (!token) { setViewId(null); resolvedTokenRef.current = null; return; }
+    if (resolvedTokenRef.current === token) return; // already opening/open
+    closedRef.current = false;
+    resolvedTokenRef.current = token;
+    api(`/api/leads/by-token/${token}`)
+      .then(r => { if (!closedRef.current) setViewId(r.item.id); })
+      .catch(() => { resolvedTokenRef.current = null; }); // invalid/unknown token — leave modal closed
+  }, [token]);
+
   // Open a specific lead when navigated from global search
   useEffect(() => {
     const id = location.state?.openLeadId;
-    if (id) setViewId(id);
+    if (id) { closedRef.current = false; setViewId(id); }
   }, [location.state]);
 
   function showToast(msg, type = 'success') {
@@ -3288,7 +3358,7 @@ export default function LeadsPage() {
 
   // Open lead from duplicate detection click in NewLeadModal
   useEffect(() => {
-    function handleOpenLeadView(e) { setViewId(e.detail?.id); }
+    function handleOpenLeadView(e) { closedRef.current = false; setViewId(e.detail?.id); }
     window.addEventListener('open-lead-view', handleOpenLeadView);
     return () => window.removeEventListener('open-lead-view', handleOpenLeadView);
   }, []);
@@ -3753,7 +3823,7 @@ export default function LeadsPage() {
 
                   return (
                     <div key={ev.id} className="lp-fu-drawer-row"
-                      onClick={() => { setFuDrawerOpen(false); setViewId(ev.lead_id); }}
+                      onClick={() => { setFuDrawerOpen(false); closedRef.current = false; setViewId(ev.lead_id); }}
                       style={{ cursor: 'pointer' }}
                     >
                       <div className="lp-fu-avatar" style={{ background: cfg.bg, color: cfg.color, width: 38, height: 38, fontSize: 15 }}>
@@ -4294,7 +4364,7 @@ export default function LeadsPage() {
                   {leads.length === 0 ? 'No leads yet. Capture your first lead!' : 'No leads match your filters.'}
                 </td></tr>
               ) : paginated.map(l => (
-                <tr key={l.id} className={`lp-row${selectedLeads.has(l.id) ? ' lp-row--selected' : ''}`} onClick={() => setViewId(l.id)}>
+                <tr key={l.id} className={`lp-row${selectedLeads.has(l.id) ? ' lp-row--selected' : ''}`} onClick={() => openLead(l)}>
                   <td onClick={e => e.stopPropagation()}>
                     <input type="checkbox" className="lp-chk"
                       checked={selectedLeads.has(l.id)}
@@ -4416,7 +4486,7 @@ export default function LeadsPage() {
                   </td>
                   <td onClick={e => e.stopPropagation()}>
                     <ActionMenu lead={l} canEdit={canEdit} canDelete={canDelete}
-                      onView={l => setViewId(l.id)}
+                      onView={l => openLead(l)}
                       onEdit={l => setEditLead(l)}
                       onDelete={l => setDeleteLead(l)} />
                   </td>
@@ -4437,7 +4507,7 @@ export default function LeadsPage() {
             </div>
           )}
           {paginated.map(l => (
-            <div key={l.id} className="lp-mobile-card" onClick={() => setViewId(l.id)}>
+            <div key={l.id} className="lp-mobile-card" onClick={() => openLead(l)}>
               <div className="lp-mc-top">
                 <div className="lp-mc-customer">
                   <div className="lp-mc-name">{l.name || <span className="lp-muted">No name</span>}</div>
@@ -4500,7 +4570,7 @@ export default function LeadsPage() {
                 )}
                 <div onClick={e => e.stopPropagation()}>
                   <ActionMenu lead={l} canEdit={canEdit} canDelete={canDelete}
-                    onView={l => setViewId(l.id)}
+                    onView={l => openLead(l)}
                     onEdit={l => setEditLead(l)}
                     onDelete={l => setDeleteLead(l)} />
                 </div>
@@ -4564,8 +4634,9 @@ export default function LeadsPage() {
       {/* Modals */}
       {viewId && (
         <ViewLeadModal leadId={viewId} canEdit={canEdit} statusList={statusList}
-          onClose={() => setViewId(null)}
-          onEdit={l => { setViewId(null); setEditLead(l); }} />
+          onLeadLoaded={handleLeadLoaded}
+          onClose={closeLead}
+          onEdit={l => { closeLead(); setEditLead(l); }} />
       )}
       {editLead && (
         <EditLeadModal lead={editLead} statusList={statusList} leadSources={leadSources}

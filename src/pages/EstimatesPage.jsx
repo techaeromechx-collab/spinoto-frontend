@@ -1,8 +1,9 @@
 import react from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import PaginationBar from '../components/PaginationBar.jsx';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { CreateAppointmentModal } from './AppointmentsPage.jsx';
 import {
   FileText, Plus, Search, RefreshCw, X, ChevronRight,
@@ -304,8 +305,9 @@ function SearchableSelect({ value, onChange, options, placeholder = 'Select…',
 // ── Discount Mode Modal ───────────────────────────────────────────────────────
 function DiscountModeModal({ current, onSave, onClose }) {
   const [mode, setMode] = react.useState(current || 'line_item');
+  useEscapeClose(onClose);
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 380 }}>
         <div className="modal-header">
           <h3 style={{ fontSize: 15 }}>Discount Settings</h3>
@@ -403,6 +405,7 @@ function CustomerApprovalModal({ estimate, onClose, onDone }) {
   );
   const [saving, setSaving] = react.useState(false);
   const [error, setError] = react.useState(null);
+  useEscapeClose(onClose);
 
   function toggle(id) {
     setApprovals(prev => prev.map(a => a.item_id === id ? { ...a, approved: !a.approved } : a));
@@ -424,7 +427,7 @@ function CustomerApprovalModal({ estimate, onClose, onDone }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
         <div className="modal-header">
           <h3>Mark Customer Approval</h3>
@@ -500,6 +503,7 @@ function RevisionModal({ estimateId, onClose, onDone }) {
   const [saving, setSaving] = react.useState(false);
   const [error, setError] = react.useState(null);
   const taRef = react.useRef(null);
+  useEscapeClose(onClose);
 
   react.useEffect(() => { taRef.current?.focus(); }, []);
 
@@ -520,7 +524,7 @@ function RevisionModal({ estimateId, onClose, onDone }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
         <div className="modal-header">
           <h3>Request Revision</h3>
@@ -556,6 +560,7 @@ function RevisionModal({ estimateId, onClose, onDone }) {
 // ═════════════════════════════════════════════════════════════════════════════
 function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, userHubId = '', initialAppointmentId = '', initialStandaloneContext = null }) {
   const isEdit = !!editEstimate?.id;
+  useEscapeClose(onClose);
 
   // ── Standalone mode (no appointment) ──────────────────────────────────────
   // 'appointment' = the original flow (pick an existing appointment).
@@ -1238,7 +1243,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   })();
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 780, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header" style={{ flexShrink: 0 }}>
           <h3>{isEdit ? 'Edit Estimate' : 'New Estimate'}</h3>
@@ -1999,9 +2004,10 @@ function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, onCan
   const blockedByPi = hasPi && piPaid;
   const blockedByCi = hasCi && ciPaid;
   const allBlocked = (!hasPi || blockedByPi) && (!hasCi || blockedByCi);
+  useEscapeClose(onCancel, !syncBusy);
 
   return (
-    <div className="modal-backdrop" onClick={!syncBusy ? onCancel : undefined}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
         <div className="modal-header">
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2061,9 +2067,10 @@ function DeleteConfirmModal({ estimate, deleting, onCancel, onConfirm }) {
   const hasCi = !!estimate.customer_invoice_id;
   const ciPaid = estimate.customer_invoice_status === 'paid';
   const blocked = (hasPi && piPaid) || (hasCi && ciPaid);
+  useEscapeClose(onCancel, !deleting);
 
   return (
-    <div className="modal-backdrop" onClick={!deleting ? onCancel : undefined}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
         <div className="modal-header">
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2125,7 +2132,7 @@ function DeleteConfirmModal({ estimate, deleting, onCancel, onConfirm }) {
 
 // Detail Drawer
 // ═════════════════════════════════════════════════════════════════════════════
-function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = false }) {
+function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = false, onLoaded }) {
   const navigate = useNavigate();
   const { user: authUser } = useAuth();
   const isSuperAdmin = !!authUser?.is_super_admin;
@@ -2163,7 +2170,9 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
         api(`/api/estimates/${estimateId}`),
         api('/api/settings/company').catch(() => null),
       ]);
-      setEstimate(res.item || res.estimate || res);
+      const loaded = res.item || res.estimate || res;
+      setEstimate(loaded);
+      onLoaded?.(loaded);
       if (co) setCompany(co);
     } catch {
       showToast('Failed to load estimate.', 'error');
@@ -2171,7 +2180,13 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
     } finally {
       setLoading(false);
     }
-  }, [estimateId, showToast, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onClose/onLoaded
+    // intentionally not tracked: they're stable-behavior callbacks (always
+    // navigate to the same fixed route / sync the URL once), not data
+    // dependencies. Including them would recreate `load` — and re-trigger the
+    // fetch effect below — on every parent re-render (e.g. every toast shown
+    // from inside this drawer), causing a visible refetch/loading flash.
+  }, [estimateId, showToast]);
 
   react.useEffect(() => { load(); }, [load]);
 
@@ -2222,7 +2237,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
     try {
       const res = await api('/api/purchase-invoices/generate', { method: 'POST', body: { estimate_id: estimateId } });
       await load(); // refresh estimate so purchase_invoice_id appears
-      navigate('/purchase-invoices', { state: { openId: res.item.id } });
+      navigate(res.item.public_token ? `/purchase-invoices/${res.item.public_token}` : '/purchase-invoices', res.item.public_token ? undefined : { state: { openId: res.item.id } });
     } catch (err) {
       if (err.status === 409) {
         showToast('A purchase invoice already exists for this estimate.', 'error');
@@ -2239,7 +2254,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
     try {
       const res = await api('/api/customer-invoices/from-estimate', { method: 'POST', body: { estimate_id: estimateId } });
       await load(); // refresh estimate so customer_invoice_id appears
-      navigate('/customer-invoices', { state: { openId: res.item.id } });
+      navigate(res.item.public_token ? `/customer-invoices/${res.item.public_token}` : '/customer-invoices', res.item.public_token ? undefined : { state: { openId: res.item.id } });
     } catch (err) {
       if (err.status === 409) {
         showToast('Customer invoice already exists for this estimate.', 'error');
@@ -2874,7 +2889,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                   {estimate.purchase_invoice_id ? (
                     <button
                       className="btn btn-sm-outline"
-                      onClick={() => navigate('/purchase-invoices', { state: { openId: estimate.purchase_invoice_id } })}
+                      onClick={() => navigate(estimate.purchase_invoice_token ? `/purchase-invoices/${estimate.purchase_invoice_token}` : '/purchase-invoices', estimate.purchase_invoice_token ? undefined : { state: { openId: estimate.purchase_invoice_id } })}
                     >
                       <ReceiptText size={13} />
                       View Spinoto Invoice #{estimate.purchase_invoice_id}
@@ -2894,7 +2909,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                   {estimate.customer_invoice_id ? (
                     <button
                       className="btn btn-sm-outline"
-                      onClick={() => navigate('/customer-invoices', { state: { openId: estimate.customer_invoice_id } })}
+                      onClick={() => navigate(estimate.customer_invoice_token ? `/customer-invoices/${estimate.customer_invoice_token}` : '/customer-invoices', estimate.customer_invoice_token ? undefined : { state: { openId: estimate.customer_invoice_id } })}
                     >
                       <ReceiptText size={13} />
                       View Customer Invoice #{estimate.customer_invoice_id}
@@ -3044,6 +3059,7 @@ export default function EstimatesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { token } = useParams();
   const isHubUser = !!user?.hub_id;
 
   const [estimates, setEstimates] = react.useState([]);
@@ -3071,8 +3087,12 @@ export default function EstimatesPage() {
 
   // Auto-open a specific estimate if navigated here from Purchase Invoice or Customer Invoice
   const [selectedId, setSelectedId] = react.useState(() => location.state?.openId ?? null);
-  const [showCreate, setShowCreate] = react.useState(() => !!location.state?.createForAppointmentId);
-  const [createApptId, setCreateApptId] = react.useState(() => location.state?.createForAppointmentId ?? null);
+  // "Create for appointment" arrives as a query param (?createForAppointmentId=)
+  // rather than location.state, since it's a create-flow — no token exists yet
+  // for an estimate that hasn't been created.
+  const createForAppointmentIdParam = new URLSearchParams(location.search).get('createForAppointmentId');
+  const [showCreate, setShowCreate] = react.useState(() => !!createForAppointmentIdParam);
+  const [createApptId, setCreateApptId] = react.useState(() => createForAppointmentIdParam ?? null);
   // "New Customer" — direct, standalone estimate creation: no appointment
   // row is ever created. Reuses the customer + vehicle picker (steps 1 & 2
   // of the appointment wizard, in standaloneMode) then chains straight into
@@ -3083,8 +3103,52 @@ export default function EstimatesPage() {
 
   const showToast = react.useCallback((msg, type = 'success') => setToast({ msg, type }), []);
 
+  const resolvedTokenRef = react.useRef(null);
+  // Flips true the instant the user explicitly closes the detail view.
+  // Guards against a slow/late-resolving fetch (from load(), the by-token
+  // resolver, or a re-load after Approve/Save) firing its onLoaded/navigate
+  // callback AFTER the user has already navigated back to the list — without
+  // this, a stale response could silently re-push the token URL back into
+  // the address bar even though the list is showing.
+  const closedRef = react.useRef(false);
+
   // Stable close handler — avoids recreating DetailDrawer's `load` on every re-render
-  const handleCloseDetail = react.useCallback(() => setSelectedId(null), []);
+  const handleCloseDetail = react.useCallback(() => {
+    closedRef.current = true;
+    resolvedTokenRef.current = null;
+    navigate('/estimates');
+  }, [navigate]);
+
+  function openEstimate(est) {
+    closedRef.current = false;
+    resolvedTokenRef.current = est.public_token;
+    setSelectedId(est.id);
+    navigate(`/estimates/${est.public_token}`);
+  }
+
+  function handleEstimateLoaded(est) {
+    if (closedRef.current) return;
+    if (!est?.public_token || resolvedTokenRef.current === est.public_token) return;
+    resolvedTokenRef.current = est.public_token;
+    navigate(`/estimates/${est.public_token}`, { replace: true });
+  }
+
+  react.useEffect(() => {
+    if (!token) {
+      // Only clear if we were previously showing a token-resolved estimate —
+      // don't stomp on a `selectedId` that came from location.state (e.g. an
+      // inbound deep link) before it's had a chance to resolve its own token.
+      if (resolvedTokenRef.current) setSelectedId(null);
+      resolvedTokenRef.current = null;
+      return;
+    }
+    closedRef.current = false;
+    if (resolvedTokenRef.current === token) return;
+    resolvedTokenRef.current = token;
+    api(`/api/estimates/by-token/${token}`)
+      .then(r => { if (!closedRef.current) setSelectedId(r.item.id); })
+      .catch(() => { resolvedTokenRef.current = null; });
+  }, [token]);
 
   // Load hubs once for filter dropdown
   react.useEffect(() => {
@@ -3119,7 +3183,10 @@ export default function EstimatesPage() {
     setShowCreate(false);
     showToast('Estimate created.');
     fetchEstimates();
-    if (item?.id) setSelectedId(item.id);
+    if (item?.id) {
+      if (item.public_token) openEstimate(item);
+      else setSelectedId(item.id);
+    }
   }
 
   // Work status changes are now handled inside DetailDrawer directly.
@@ -3142,7 +3209,7 @@ export default function EstimatesPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
               className="btn btn-ghost"
-              onClick={() => { setSelectedId(null); fetchEstimates(); }}
+              onClick={() => { handleCloseDetail(); fetchEstimates(); }}
               style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
             >
               <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} />
@@ -3202,6 +3269,7 @@ export default function EstimatesPage() {
           onUpdated={handleDrawerUpdated}
           showToast={showToast}
           isHubUser={isHubUser}
+          onLoaded={handleEstimateLoaded}
         />
       ) : (
         <>
@@ -3347,7 +3415,7 @@ export default function EstimatesPage() {
                       <tr
                         key={est.id}
                         className="est-table-row"
-                        onClick={() => setSelectedId(est.id)}
+                        onClick={() => openEstimate(est)}
                       >
                         <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{est.id}</td>
                         <td>
@@ -3355,7 +3423,7 @@ export default function EstimatesPage() {
                             className="est-cust-link"
                             onClick={(e) => {
                               e.stopPropagation();
-                              navigate('/customers', { state: { openMobile: est.mobile } });
+                              navigate(est.customer_token ? `/customers/${est.customer_token}` : '/customers', est.customer_token ? undefined : { state: { openMobile: est.mobile } });
                             }}
                           >
                             <div>
@@ -3426,7 +3494,7 @@ export default function EstimatesPage() {
           editEstimate={null}
           initialAppointmentId={createApptId || ''}
           initialStandaloneContext={standaloneCreateCtx}
-          onClose={() => { setShowCreate(false); setCreateApptId(null); setStandaloneCreateCtx(null); }}
+          onClose={() => { setShowCreate(false); setCreateApptId(null); setStandaloneCreateCtx(null); if (createForAppointmentIdParam) navigate('/estimates', { replace: true }); }}
           onSaved={(item) => { onCreated(item); setStandaloneCreateCtx(null); }}
           isHubUser={isHubUser}
           userHubId={user?.hub_id ? String(user.hub_id) : ''}

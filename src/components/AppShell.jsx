@@ -537,12 +537,29 @@ export default function AppShell({ children }) {
             </button>
             <div className="crumbs">
               <Link to="/">Home</Link>
-              {location.pathname !== '/' && (
-                <>
-                  <ChevronRight size={12} className="mx-1" />
-                  <span className="capitalize">{location.pathname.split('/').filter(Boolean).pop()?.replace(/-/g, ' ')}</span>
-                </>
-              )}
+              {location.pathname !== '/' && (() => {
+                const segments = location.pathname.split('/').filter(Boolean);
+                // Detail views (/entity/:token) get a 3-level crumb —
+                // Home > Entity > token — so the entity name isn't lost
+                // behind the opaque token. Entity crumb links back to the list.
+                const TOKEN_ENTITIES = ['leads', 'appointments', 'estimates', 'purchase-invoices', 'customer-invoices', 'customers'];
+                if (segments.length === 2 && TOKEN_ENTITIES.includes(segments[0])) {
+                  return (
+                    <>
+                      <ChevronRight size={12} className="mx-1" />
+                      <Link to={`/${segments[0]}`} className="capitalize">{segments[0].replace(/-/g, ' ')}</Link>
+                      <ChevronRight size={12} className="mx-1" />
+                      <span className="capitalize crumb-token">{segments[1]}</span>
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    <ChevronRight size={12} className="mx-1" />
+                    <span className="capitalize">{segments.pop()?.replace(/-/g, ' ')}</span>
+                  </>
+                );
+              })()}
             </div>
           </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import {
   Users, Search, X, ChevronLeft, ChevronRight, ChevronDown,
   Phone, Calendar, Eye, Pencil, Mail, StickyNote, Check,
@@ -140,6 +141,7 @@ const TW_KW = ['two', '2w', 'bike', 'scoot', 'motor', 'moped'];
 function isTwo(name = '') { const n = name.toLowerCase(); return TW_KW.some(k => n.includes(k)); }
 
 function AddVehicleModal({ mobile, onClose, onSaved, initial = null }) {
+  useEscapeClose(onClose);
   const [form, setForm] = useState({
     vehicle_number:  initial?.vehicle_number  || '',
     vehicle_type_id: initial?.vehicle_type_id ? String(initial.vehicle_type_id) : '',
@@ -220,7 +222,7 @@ function AddVehicleModal({ mobile, onClose, onSaved, initial = null }) {
   }
 
   return (
-    <div className="aveh-backdrop" onClick={onClose}>
+    <div className="aveh-backdrop">
       <div className="aveh-modal" onClick={e => e.stopPropagation()}>
         <div className="aveh-hdr">
           <span className="aveh-title">
@@ -341,6 +343,7 @@ function AddVehicleModal({ mobile, onClose, onSaved, initial = null }) {
 
 // ── Edit Vehicle Modal ────────────────────────────────────────────────────────
 function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
+  useEscapeClose(onClose);
   const originalPlate = (vehicle.vehicle_number || '').toUpperCase();
   const [form, setForm] = useState({
     vehicle_number:  vehicle.vehicle_number || '',
@@ -432,7 +435,7 @@ function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
   }
 
   return (
-    <div className="aveh-backdrop" onClick={onClose}>
+    <div className="aveh-backdrop">
       <div className="aveh-modal" onClick={e => e.stopPropagation()}>
         <div className="aveh-hdr">
           <span className="aveh-title"><Pencil size={14}/> Edit Vehicle</span>
@@ -557,7 +560,7 @@ function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
 }
 
 // ── Customer Detail (full-page) ────────────────────────────────────────────────
-function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
+function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoaded }) {
   const navigate = useNavigate();
 
   const [data,        setData]       = useState(null);
@@ -603,6 +606,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
     api(`/api/customers/${encodeURIComponent(mobile)}`)
       .then(r => {
         setData(r.item);
+        onLoaded?.(r.item);
         setLoading(false);
         setEditForm({
           display_name: r.item.customer_name || '',
@@ -1288,7 +1292,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
                         </thead>
                         <tbody>
                           {pagedAppts.map(a => (
-                            <tr key={a.id} onClick={() => navigate('/appointments', { state: { openApptId: a.id } })}
+                            <tr key={a.id} onClick={() => navigate(a.public_token ? `/appointments/${a.public_token}` : '/appointments', a.public_token ? undefined : { state: { openApptId: a.id } })}
                               style={{ cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
                               <td style={{ padding: '9px 10px' }}>
                                 <div style={{ fontWeight: 700, fontSize: 13 }}>Appt #{a.id}</div>
@@ -1373,13 +1377,13 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
                           <div className="cust-inv-actions">
                             <button
                               className="cust-inv-action cust-inv-action--invoice"
-                              onClick={() => navigate('/customer-invoices', { state: { openId: inv.id } })}>
+                              onClick={() => navigate(inv.public_token ? `/customer-invoices/${inv.public_token}` : '/customer-invoices', inv.public_token ? undefined : { state: { openId: inv.id } })}>
                               <FileText size={11}/> View Invoice
                             </button>
                             {inv.estimate_id && (
                               <button
                                 className="cust-inv-action cust-inv-action--estimate"
-                                onClick={() => navigate('/estimates', { state: { openId: inv.estimate_id } })}>
+                                onClick={() => navigate(inv.estimate_token ? `/estimates/${inv.estimate_token}` : '/estimates', inv.estimate_token ? undefined : { state: { openId: inv.estimate_id } })}>
                                 View Estimate #EST-{String(inv.estimate_id).padStart(6, '0')}
                               </button>
                             )}
@@ -1399,7 +1403,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false }) {
                     <div
                       key={e.id}
                       className="cust-history-card"
-                      onClick={() => navigate('/estimates', { state: { openId: e.id } })}
+                      onClick={() => navigate(e.public_token ? `/estimates/${e.public_token}` : '/estimates', e.public_token ? undefined : { state: { openId: e.id } })}
                       style={{ cursor: 'pointer' }}
                       title={`Open Estimate #${e.id}`}
                     >
@@ -1509,10 +1513,60 @@ export default function CustomersPage() {
   const [page,          setPage]          = useState(1);
   const [pageSize,      setPageSize]      = useState(10);
 
+  const navigate = useNavigate();
   const location = useLocation();
+  const { token } = useParams();
   const [selectedMobile, setSelectedMobile] = useState(() => location.state?.openMobile ?? null);
   const [detailEdit,     setDetailEdit]     = useState(false);
   const searchTimer = useRef(null);
+
+  const resolvedTokenRef = useRef(null);
+  // Flips true the instant the user explicitly closes the detail view.
+  // Guards against a slow/late-resolving fetch (CustomerDetail's own load,
+  // or the by-token resolver below) firing onLoaded/navigate AFTER the user
+  // has already navigated back to the list — without this, a stale response
+  // could silently re-push the token URL back into the address bar even
+  // though the list is showing.
+  const closedRef = useRef(false);
+
+  function openCustomer(c, edit = false) {
+    closedRef.current = false;
+    resolvedTokenRef.current = c.public_token;
+    setDetailEdit(edit);
+    setSelectedMobile(c.mobile);
+    if (c.public_token) navigate(`/customers/${c.public_token}`);
+  }
+
+  function closeCustomer() {
+    closedRef.current = true;
+    resolvedTokenRef.current = null;
+    navigate('/customers');
+  }
+
+  function handleCustomerLoaded(item) {
+    if (closedRef.current) return;
+    if (!item?.public_token || resolvedTokenRef.current === item.public_token) return;
+    resolvedTokenRef.current = item.public_token;
+    navigate(`/customers/${item.public_token}`, { replace: true });
+  }
+
+  useEffect(() => {
+    if (!token) {
+      // Only clear if we were previously showing a token-resolved customer —
+      // don't stomp on a `selectedMobile` that came from location.state
+      // (e.g. an inbound deep link) before it's had a chance to resolve its
+      // own token via handleCustomerLoaded.
+      if (resolvedTokenRef.current) setSelectedMobile(null);
+      resolvedTokenRef.current = null;
+      return;
+    }
+    closedRef.current = false;
+    if (resolvedTokenRef.current === token) return;
+    resolvedTokenRef.current = token;
+    api(`/api/customers/by-token/${token}`)
+      .then(r => { if (!closedRef.current) setSelectedMobile(r.item.mobile); })
+      .catch(() => { resolvedTokenRef.current = null; });
+  }, [token]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -1540,8 +1594,9 @@ export default function CustomersPage() {
         <CustomerDetail
           mobile={selectedMobile}
           startEditing={detailEdit}
-          onBack={() => { setSelectedMobile(null); setDetailEdit(false); }}
+          onBack={() => { closeCustomer(); setDetailEdit(false); }}
           onRefresh={load}
+          onLoaded={handleCustomerLoaded}
         />
       </>
     );
@@ -1613,7 +1668,7 @@ export default function CustomersPage() {
                 const initial = (c.customer_name || c.mobile || '?')[0].toUpperCase();
                 return (
                   <tr key={c.mobile} style={{ cursor: 'pointer' }}
-                    onClick={() => { setDetailEdit(false); setSelectedMobile(c.mobile); }}>
+                    onClick={() => openCustomer(c)}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div className="cust-avatar"
@@ -1656,11 +1711,11 @@ export default function CustomersPage() {
                           <MessageCircle size={13}/>
                         </a>
                         <button className="cust-row-btn cust-row-btn--edit" title="Edit customer"
-                          onClick={() => { setDetailEdit(true); setSelectedMobile(c.mobile); }}>
+                          onClick={() => openCustomer(c, true)}>
                           <Pencil size={13}/>
                         </button>
                         <button className="cust-row-btn cust-row-btn--view" title="View profile"
-                          onClick={() => { setDetailEdit(false); setSelectedMobile(c.mobile); }}>
+                          onClick={() => openCustomer(c)}>
                           <Eye size={13}/>
                           <span>View</span>
                         </button>

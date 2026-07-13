@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { api } from '../api/client.js';
 import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import {
   Plus, Search, Edit2, Trash2, UploadCloud, Download,
   AlertCircle, CheckCircle2, X, ChevronDown, ChevronUp,
@@ -604,6 +605,7 @@ export default function VehiclesPage() {
 // ═════════════════════════════════════════════════════════════════════════════
 function VehicleModal({ vehicle, refTypes, refMakes, refSegments, refBodyTypes, defaultTypeClass, onClose, onSaved }) {
   const isEdit = !!vehicle?.id;
+  useEscapeClose(onClose);
 
   // Pre-fill vehicle type for new records based on which tab is active
   const defaultTypeName = !isEdit && defaultTypeClass
@@ -755,7 +757,7 @@ function VehicleModal({ vehicle, refTypes, refMakes, refSegments, refBodyTypes, 
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="modal-overlay">
       <div className="modal-box">
         <div className="modal-header">
           <h3>{isEdit ? 'Edit Vehicle' : 'Add Vehicle'}</h3>
@@ -989,8 +991,9 @@ function VehicleModal({ vehicle, refTypes, refMakes, refSegments, refBodyTypes, 
 // Delete Confirmation
 // ═════════════════════════════════════════════════════════════════════════════
 function DeleteConfirm({ vehicle, onCancel, onConfirm }) {
+  useEscapeClose(onCancel);
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
+    <div className="modal-overlay">
       <div className="modal-box modal-box--sm">
         <div className="modal-header">
           <h3>Delete Vehicle</h3>
@@ -1273,6 +1276,8 @@ function CCCategoriesPanel({ canManage = false }) {
   const [form,    setForm]    = useState({ name: '', min_cc: '', max_cc: '', description: '' });
   const [formErr, setFormErr] = useState('');
 
+  useEscapeClose(() => setModal(null), modal !== null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -1410,7 +1415,7 @@ function CCCategoriesPanel({ canManage = false }) {
 
       {/* ── Add / Edit Modal ───────────────────────────────────────────────── */}
       {modal !== null && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setModal(null)}>
+        <div className="modal-overlay">
           <div className="modal-box modal-box--sm">
             <div className="modal-header">
               <h3>{modal?.id ? 'Edit CC Category' : 'Add CC Category'}</h3>

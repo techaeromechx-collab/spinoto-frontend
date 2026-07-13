@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { api } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { getRoundingFunction } from '../lib/math.js';
 import {
   Receipt, Search, RefreshCw, X, Eye, Trash2,
@@ -235,6 +236,7 @@ function VehicleHistoryModal({ onClose }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState('');
+  useEscapeClose(onClose);
 
   async function search(e) {
     e?.preventDefault();
@@ -259,7 +261,7 @@ function VehicleHistoryModal({ onClose }) {
   const grandTotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 620 }}>
         <div className="modal-header">
           <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -366,7 +368,7 @@ function VehicleHistoryModal({ onClose }) {
 }
 
 // ── Detail Drawer ─────────────────────────────────────────────────────────────
-function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
+function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isHubUser = !!user?.hub_id;
@@ -417,6 +419,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
         api('/api/settings/company').catch(() => null),
       ]);
       setInv(res.item || res);
+      onLoaded?.(res.item || res);
       if (co) setCompany(co);
     } catch {
       showToast('Failed to load customer invoice.', 'error');
@@ -424,7 +427,13 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
     } finally {
       setLoading(false);
     }
-  }, [invoiceId, showToast, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onClose/onLoaded
+    // intentionally not tracked: they're stable-behavior callbacks (always
+    // navigate to the same fixed route / sync the URL once), not data
+    // dependencies. Including them would recreate `load` — and re-trigger the
+    // fetch effect below — on every parent re-render (e.g. every toast shown
+    // from inside this drawer), causing a visible refetch/loading flash.
+  }, [invoiceId, showToast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -944,7 +953,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
             <div className="ci-internal" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
               {inv.estimate_id && (
                 <button
-                  onClick={() => navigate('/estimates', { state: { openId: inv.estimate_id } })}
+                  onClick={() => navigate(inv.estimate_token ? `/estimates/${inv.estimate_token}` : '/estimates', inv.estimate_token ? undefined : { state: { openId: inv.estimate_id } })}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 7,
                     padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
@@ -958,7 +967,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList }) {
               )}
               {inv.linked_purchase_invoice_id && (
                 <button
-                  onClick={() => navigate('/purchase-invoices', { state: { openId: inv.linked_purchase_invoice_id } })}
+                  onClick={() => navigate(inv.linked_purchase_invoice_token ? `/purchase-invoices/${inv.linked_purchase_invoice_token}` : '/purchase-invoices', inv.linked_purchase_invoice_token ? undefined : { state: { openId: inv.linked_purchase_invoice_id } })}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 7,
                     padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
@@ -1077,6 +1086,7 @@ export default function CustomerInvoicesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { token } = useParams();
   const isHubUser = !!user?.hub_id;
 
   const [items, setItems] = useState([]);
@@ -1098,6 +1108,52 @@ export default function CustomerInvoicesPage() {
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((msg, type = 'success') => setToast({ msg, type }), []);
+
+  const resolvedTokenRef = useRef(null);
+  // Flips true the instant the user explicitly closes the detail view.
+  // Guards against a slow/late-resolving fetch (from load(), the by-token
+  // resolver, or a re-load after Approve/Save) firing its onLoaded/navigate
+  // callback AFTER the user has already navigated back to the list — without
+  // this, a stale response could silently re-push the token URL back into
+  // the address bar even though the list is showing.
+  const closedRef = useRef(false);
+
+  function openInvoice(inv) {
+    closedRef.current = false;
+    resolvedTokenRef.current = inv.public_token;
+    setSelectedId(inv.id);
+    navigate(`/customer-invoices/${inv.public_token}`);
+  }
+
+  function closeInvoice() {
+    closedRef.current = true;
+    resolvedTokenRef.current = null;
+    navigate('/customer-invoices');
+  }
+
+  function handleInvoiceLoaded(inv) {
+    if (closedRef.current) return;
+    if (!inv?.public_token || resolvedTokenRef.current === inv.public_token) return;
+    resolvedTokenRef.current = inv.public_token;
+    navigate(`/customer-invoices/${inv.public_token}`, { replace: true });
+  }
+
+  useEffect(() => {
+    if (!token) {
+      // Only clear if we were previously showing a token-resolved invoice —
+      // don't stomp on a `selectedId` that came from location.state (e.g. an
+      // inbound deep link) before it's had a chance to resolve its own token.
+      if (resolvedTokenRef.current) setSelectedId(null);
+      resolvedTokenRef.current = null;
+      return;
+    }
+    closedRef.current = false;
+    if (resolvedTokenRef.current === token) return;
+    resolvedTokenRef.current = token;
+    api(`/api/customer-invoices/by-token/${token}`)
+      .then(r => { if (!closedRef.current) setSelectedId(r.item.id); })
+      .catch(() => { resolvedTokenRef.current = null; });
+  }, [token]);
 
   useEffect(() => {
     api('/api/hubs?is_active=true&limit=100')
@@ -1135,7 +1191,7 @@ export default function CustomerInvoicesPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
               className="btn btn-ghost"
-              onClick={() => setSelectedId(null)}
+              onClick={closeInvoice}
               style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
             >
               <ChevronLeft size={16} />
@@ -1175,9 +1231,10 @@ export default function CustomerInvoicesPage() {
         /* ── Full-page Detail View ── */
         <DetailDrawer
           invoiceId={selectedId}
-          onClose={() => setSelectedId(null)}
+          onClose={closeInvoice}
           showToast={showToast}
           onRefreshList={fetchInvoices}
+          onLoaded={handleInvoiceLoaded}
         />
       ) : (
         <>
@@ -1323,14 +1380,14 @@ export default function CustomerInvoicesPage() {
                       const pd = parseFloat(inv.amount_paid ?? 0);
                       const bal = Math.max(0, gt - pd);
                       return (
-                        <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedId(inv.id)}>
+                        <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => openInvoice(inv)}>
                           <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{inv.id}</td>
                           <td>
                             <div
                               className="ci-cust-link"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigate('/customers', { state: { openMobile: inv.mobile } });
+                                navigate(inv.customer_token ? `/customers/${inv.customer_token}` : '/customers', inv.customer_token ? undefined : { state: { openMobile: inv.mobile } });
                               }}
                             >
                               <div>

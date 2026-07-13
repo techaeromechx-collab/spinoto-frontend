@@ -1027,7 +1027,7 @@ export default function DashboardPage() {
                   }[statusKey] || { bg: '#f3f4f6', color: '#6b7280', label: statusKey };
                   return (
                     <div key={inv.id} className="db-inv-row"
-                      onClick={() => navigate('/customer-invoices', { state: { openId: inv.id } })}>
+                      onClick={() => navigate(inv.public_token ? `/customer-invoices/${inv.public_token}` : '/customer-invoices', inv.public_token ? undefined : { state: { openId: inv.id } })}>
                       <div className="db-inv-icon"><FileText size={14} style={{ color: '#10b981' }} /></div>
                       <div className="db-inv-info">
                         <div className="db-inv-name">{inv.customer_name || inv.mobile}</div>
@@ -1072,7 +1072,7 @@ export default function DashboardPage() {
                   const pill = statusMap[est.status] || statusMap.draft;
                   return (
                     <div key={est.id} className="db-inv-row"
-                      onClick={() => navigate('/estimates', { state: { openId: est.id } })}>
+                      onClick={() => navigate(est.public_token ? `/estimates/${est.public_token}` : '/estimates', est.public_token ? undefined : { state: { openId: est.id } })}>
                       <div className="db-inv-icon"><ClipboardList size={14} style={{ color: '#8b5cf6' }} /></div>
                       <div className="db-inv-info">
                         <div className="db-inv-name">{est.customer_name || est.mobile || `EST-${String(est.id).padStart(6,'0')}`}</div>
@@ -1152,7 +1152,7 @@ export default function DashboardPage() {
                     const total = Number(pi.grand_total || 0);
                     const due   = total - Number(pi.amount_paid || 0);
                     return (
-                      <div key={pi.id} className="db-inv-row" onClick={() => navigate('/purchase-invoices')}>
+                      <div key={pi.id} className="db-inv-row" onClick={() => navigate(pi.public_token ? `/purchase-invoices/${pi.public_token}` : '/purchase-invoices', pi.public_token ? undefined : { state: { openId: pi.id } })}>
                         <div className="db-inv-icon"><FileText size={14} style={{ color: '#f59e0b' }} /></div>
                         <div className="db-inv-info">
                           <div className="db-inv-name">{pi.hub_name || `PI #${pi.id}`}</div>
@@ -1199,7 +1199,7 @@ export default function DashboardPage() {
                       cancelled:  { bg:'#fee2e2', color:'#991b1b' },
                     }[statusKey] || { bg:'#dbeafe', color:'#1e40af' };
                     return (
-                      <div key={a.id} className="db-inv-row" onClick={() => navigate('/appointments')}>
+                      <div key={a.id} className="db-inv-row" onClick={() => navigate(a.public_token ? `/appointments/${a.public_token}` : '/appointments', a.public_token ? undefined : { state: { openApptId: a.id } })}>
                         <div className="db-appt-time-badge">{timeStr}</div>
                         <div className="db-inv-info">
                           <div className="db-inv-name">{a.customer_name || a.mobile || `Appt #${a.id}`}</div>
@@ -1229,7 +1229,7 @@ export default function DashboardPage() {
               ) : (
                 <div className="db-inv-list">
                   {customers.slice(0, 5).map((c, i) => (
-                    <div key={c.mobile || i} className="db-inv-row" onClick={() => navigate('/customers')}>
+                    <div key={c.mobile || i} className="db-inv-row" onClick={() => navigate(c.public_token ? `/customers/${c.public_token}` : '/customers', c.public_token ? undefined : { state: { openMobile: c.mobile } })}>
                       <div className="db-cust-av">{(c.customer_name || c.mobile || '?').charAt(0).toUpperCase()}</div>
                       <div className="db-inv-info">
                         <div className="db-inv-name">{c.customer_name || c.mobile}</div>
