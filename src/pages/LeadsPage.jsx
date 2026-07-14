@@ -5,6 +5,8 @@ import { api } from '../api/client.js';
 import { useCan, useAuth } from '../auth/AuthContext.jsx';
 import { useBodyLock } from '../hooks/useBodyLock.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
+import { readListState, writeListState } from '../lib/listStatePersist.js';
+import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import {
   PlusCircle, Search, User, Calendar, MapPin, Car, Bike,
   MoreVertical, Eye, Pencil, Trash2, X, CheckCircle2,
@@ -3210,7 +3212,14 @@ export default function LeadsPage() {
   // Follow-up Compliance: visible to managers/admins or those managing follow-ups
   const showCompliancePanel = canViewReports || canManageFollowUps || canViewTeam;
 
-  const [pageSize, setPageSize] = useState(10);
+  // Remember page/pageSize/filters across a full navigation away and back
+  // (e.g. opening a linked appointment/estimate, then clicking "Leads" in
+  // the sidebar) — sessionStorage survives the unmount a route change to a
+  // different page causes; plain useState does not.
+  const listStateRef = useRef(readListState('sp_leads_list_v1'));
+  const ls = listStateRef.current;
+
+  const [pageSize, setPageSize] = useState(ls.pageSize ?? 10);
 
   const [leads, setLeads] = useState([]);
   const [leadsScope, setLeadsScope] = useState('all');
@@ -3232,28 +3241,40 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(ls.page ?? 1);
 
-  // Basic filters — seed from global search URL param (?search=)
-  const [search, setSearch] = useState(() => searchParams.get('search') || '');
-  const [statusFilters, setStatusFilters] = useState([]); // multi-select array
-  const [createdByFilter, setCreatedByFilter] = useState('');
-  const [creatorFilter, setCreatorFilter] = useState('');
+  // Basic filters — seed from global search URL param (?search=) first, then
+  // fall back to the last-persisted value for this page.
+  const [search, setSearch] = useState(() => searchParams.get('search') || ls.search || '');
+  const [statusFilters, setStatusFilters] = useState(ls.statusFilters ?? []); // multi-select array
+  const [createdByFilter, setCreatedByFilter] = useState(ls.createdByFilter ?? '');
+  const [creatorFilter, setCreatorFilter] = useState(ls.creatorFilter ?? '');
   const [statusDDOpen, setStatusDDOpen] = useState(false);
 
   const statusDDRef = useRef(null);
 
   // Advanced filters panel
   const [showAdv, setShowAdv] = useState(false);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [fState, setFState] = useState('');
-  const [fCity, setFCity] = useState('');
-  const [fArea, setFArea] = useState('');
-  const [fVType, setFVType] = useState('');
-  const [fMake, setFMake] = useState('');
-  const [fModel, setFModel] = useState('');
-  const [fSource, setFSource] = useState('');
+  const [dateFrom, setDateFrom] = useState(ls.dateFrom ?? '');
+  const [dateTo, setDateTo] = useState(ls.dateTo ?? '');
+  const [fState, setFState] = useState(ls.fState ?? '');
+  const [fCity, setFCity] = useState(ls.fCity ?? '');
+  const [fArea, setFArea] = useState(ls.fArea ?? '');
+  const [fVType, setFVType] = useState(ls.fVType ?? '');
+  const [fMake, setFMake] = useState(ls.fMake ?? '');
+  const [fModel, setFModel] = useState(ls.fModel ?? '');
+  const [fSource, setFSource] = useState(ls.fSource ?? '');
+
+  // Persist whenever any of these change
+  useEffect(() => {
+    writeListState('sp_leads_list_v1', {
+      page, pageSize, search, statusFilters, createdByFilter, creatorFilter,
+      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource,
+    });
+  }, [page, pageSize, search, statusFilters, createdByFilter, creatorFilter,
+      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
+
+  useListScrollRestore('sp_leads_list_v1', !loading);
 
   // Reference data for advanced filters
   const [states, setStates] = useState([]);
@@ -3520,8 +3541,14 @@ export default function LeadsPage() {
     return true;
   });
 
-  // Reset to page 1 whenever filters change
-  useEffect(() => { setPage(1); }, [search, statusFilters, createdByFilter, creatorFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
+  // Reset to page 1 whenever filters change — but not on the initial mount,
+  // otherwise this would immediately stomp on a page number just restored
+  // from sessionStorage (see listStateRef above).
+  const skipFirstPageReset = useRef(true);
+  useEffect(() => {
+    if (skipFirstPageReset.current) { skipFirstPageReset.current = false; return; }
+    setPage(1);
+  }, [search, statusFilters, createdByFilter, creatorFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
 
   // Status counts — scoped to selected assignee if one is active
   const leadsForCounts = createdByFilter

@@ -4,6 +4,8 @@ import { api } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import PaginationBar from '../components/PaginationBar.jsx';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
+import { readListState, writeListState } from '../lib/listStatePersist.js';
+import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { CreateAppointmentModal } from './AppointmentsPage.jsx';
 import {
   FileText, Plus, Search, RefreshCw, X, ChevronRight,
@@ -3320,20 +3322,34 @@ export default function EstimatesPage() {
   const [total, setTotal] = react.useState(0);
   const [loading, setLoading] = react.useState(true);
 
-  const [page, setPage] = react.useState(1);
-  const [pageSize, setPageSize] = react.useState(10);
+  // Remember page/pageSize/filters across a full navigation away and back
+  // (e.g. opening a linked Customer Invoice, then clicking "Estimates" in
+  // the sidebar) — sessionStorage survives the unmount that a route change
+  // to a different page causes; plain useState does not.
+  const listStateRef = react.useRef(readListState('sp_estimates_list_v1'));
+  const ls = listStateRef.current;
 
-  const [searchInput, setSearchInput] = react.useState(''); // what the user types
-  const [search, setSearch] = react.useState('');           // debounced value used for fetching
-  const [statusFilter, setStatusFilter] = react.useState('');
-  const [vehicleTypeFilter, setVehicleTypeFilter] = react.useState('');
+  const [page, setPage] = react.useState(ls.page ?? 1);
+  const [pageSize, setPageSize] = react.useState(ls.pageSize ?? 10);
+
+  const [searchInput, setSearchInput] = react.useState(ls.searchInput ?? ''); // what the user types
+  const [search, setSearch] = react.useState(ls.search ?? '');           // debounced value used for fetching
+  const [statusFilter, setStatusFilter] = react.useState(ls.statusFilter ?? '');
+  const [vehicleTypeFilter, setVehicleTypeFilter] = react.useState(ls.vehicleTypeFilter ?? '');
 
   // Debounce: wait 300ms after the last keystroke before hitting the API
   react.useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 300);
     return () => clearTimeout(t);
   }, [searchInput]);
-  const [hubFilter, setHubFilter] = react.useState(() => user?.hub_id ? [String(user.hub_id)] : []);
+  const [hubFilter, setHubFilter] = react.useState(() => ls.hubFilter ?? (user?.hub_id ? [String(user.hub_id)] : []));
+
+  // Persist whenever any of these change
+  react.useEffect(() => {
+    writeListState('sp_estimates_list_v1', { page, pageSize, searchInput, search, statusFilter, vehicleTypeFilter, hubFilter });
+  }, [page, pageSize, searchInput, search, statusFilter, vehicleTypeFilter, hubFilter]);
+
+  useListScrollRestore('sp_estimates_list_v1', !loading);
   const [showHubDropdown, setShowHubDropdown] = react.useState(false);
 
   const [hubs, setHubs] = react.useState([]);

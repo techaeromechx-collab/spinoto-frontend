@@ -5,6 +5,8 @@ import { api } from '../api/client.js';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import PaginationBar from '../components/PaginationBar.jsx';
+import { readListState, writeListState } from '../lib/listStatePersist.js';
+import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import {
   Calendar, Search, Eye, X, AlertCircle, CheckCircle2,
   ChevronLeft, ChevronRight, Clock, Car, Bike, Network,
@@ -2813,17 +2815,30 @@ export default function AppointmentsPage() {
   const [hubs, setHubs] = useState([]);
   const [usersList, setUsersList] = useState([]);
 
-  const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  // Remember page/pageSize/filters across a full navigation away and back —
+  // sessionStorage survives the unmount a route change to a different page
+  // causes; plain useState does not.
+  const listStateRef = useRef(readListState('sp_appointments_list_v1'));
+  const ls = listStateRef.current;
+
+  const [search, setSearch] = useState(ls.search ?? '');
+  const [filterStatus, setFilterStatus] = useState(ls.filterStatus ?? '');
   // Hub users are locked to their own hub — pre-fill from user object.
   // Multi-select like the Estimates page's hub filter — array of hub-id strings.
-  const [filterHub, setFilterHub] = useState(() => user?.hub_id ? [String(user.hub_id)] : []);
+  const [filterHub, setFilterHub] = useState(() => ls.filterHub ?? (user?.hub_id ? [String(user.hub_id)] : []));
   const [showHubDropdown, setShowHubDropdown] = useState(false);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [filterCreatedBy, setFilterCreatedBy] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [dateFrom, setDateFrom] = useState(ls.dateFrom ?? '');
+  const [dateTo, setDateTo] = useState(ls.dateTo ?? '');
+  const [filterCreatedBy, setFilterCreatedBy] = useState(ls.filterCreatedBy ?? '');
+  const [page, setPage] = useState(ls.page ?? 1);
+  const [pageSize, setPageSize] = useState(ls.pageSize ?? 10);
+
+  // Persist whenever any of these change
+  useEffect(() => {
+    writeListState('sp_appointments_list_v1', { page, pageSize, search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy });
+  }, [page, pageSize, search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy]);
+
+  useListScrollRestore('sp_appointments_list_v1', !loading);
 
   const [showFilters, setShowFilters] = useState(true); // mobile funnel toggle
   const [modal, setModal] = useState(null); // null | { mode: 'view', appt }
@@ -2995,6 +3010,7 @@ export default function AppointmentsPage() {
           <div className="appt-search-wrap">
             <Search size={14} className="appt-search-icon" />
             <input className="appt-search" placeholder="Search customer, vehicle, mobile no…"
+              defaultValue={search}
               onChange={e => handleSearchChange(e.target.value)} />
           </div>
           <button

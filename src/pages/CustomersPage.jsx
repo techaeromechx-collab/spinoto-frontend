@@ -9,6 +9,8 @@ import {
   IndianRupee, BarChart3, Wallet, AlertCircle,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
+import { readListState, writeListState } from '../lib/listStatePersist.js';
+import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import '../styles/CustomersPage.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1509,9 +1511,23 @@ export default function CustomersPage() {
   const [total,         setTotal]         = useState(0);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState('');
-  const [search,        setSearch]        = useState('');
-  const [page,          setPage]          = useState(1);
-  const [pageSize,      setPageSize]      = useState(10);
+
+  // Remember page/pageSize/search across a full navigation away and back —
+  // sessionStorage survives the unmount a route change to a different page
+  // causes; plain useState does not.
+  const listStateRef = useRef(readListState('sp_customers_list_v1'));
+  const ls = listStateRef.current;
+
+  const [search,        setSearch]        = useState(ls.search ?? '');
+  const [page,          setPage]          = useState(ls.page ?? 1);
+  const [pageSize,      setPageSize]      = useState(ls.pageSize ?? 10);
+
+  // Persist whenever any of these change
+  useEffect(() => {
+    writeListState('sp_customers_list_v1', { page, pageSize, search });
+  }, [page, pageSize, search]);
+
+  useListScrollRestore('sp_customers_list_v1', !loading);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -1624,6 +1640,7 @@ export default function CustomersPage() {
         <div className="cust-search-wrap">
           <Search size={14} className="cust-search-icon"/>
           <input className="cust-search" placeholder="Search by name or mobile…"
+            defaultValue={search}
             onChange={e => handleSearchChange(e.target.value)} />
         </div>
       </div>

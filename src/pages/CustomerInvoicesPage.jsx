@@ -5,6 +5,8 @@ import { api } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { getRoundingFunction } from '../lib/math.js';
+import { readListState, writeListState } from '../lib/listStatePersist.js';
+import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import {
   Receipt, Search, RefreshCw, X, Eye, Trash2,
   AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Car, ChevronDown, Pencil,
@@ -1386,15 +1388,29 @@ export default function CustomerInvoicesPage() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
 
-  const [search, setSearch] = useState('');
-  const [hubFilter, setHubFilter] = useState(() => user?.hub_id ? [String(user.hub_id)] : []);
+  // Remember page/pageSize/filters across a full navigation away and back —
+  // sessionStorage survives the unmount a route change to a different page
+  // causes; plain useState does not.
+  const listStateRef = useRef(readListState('sp_customer_invoices_list_v1'));
+  const ls = listStateRef.current;
+
+  const [page, setPage] = useState(ls.page ?? 1);
+  const [pageSize, setPageSize] = useState(ls.pageSize ?? 10);
+
+  const [search, setSearch] = useState(ls.search ?? '');
+  const [hubFilter, setHubFilter] = useState(() => ls.hubFilter ?? (user?.hub_id ? [String(user.hub_id)] : []));
   const [showHubDropdown, setShowHubDropdown] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [vehicleTypeFilter, setVehicleTypeFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState(ls.statusFilter ?? '');
+  const [vehicleTypeFilter, setVehicleTypeFilter] = useState(ls.vehicleTypeFilter ?? '');
   const [hubs, setHubs] = useState([]);
+
+  // Persist whenever any of these change
+  useEffect(() => {
+    writeListState('sp_customer_invoices_list_v1', { page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter });
+  }, [page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter]);
+
+  useListScrollRestore('sp_customer_invoices_list_v1', !loading);
 
   // Auto-open a specific invoice if navigated here from Estimates page
   const [selectedId, setSelectedId] = useState(() => location.state?.openId ?? null);

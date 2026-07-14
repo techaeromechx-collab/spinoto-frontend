@@ -4,7 +4,7 @@ import {
   Tag, IndianRupee, Pencil, Trash2, X, Check, AlertCircle,
   CheckCircle2, ToggleLeft, ToggleRight, ChevronLeft, ChevronRight as ChRight,
   UploadCloud, FileSpreadsheet, File, Info, ChevronUp, AlertTriangle, SlidersHorizontal,
-  Car, FileText, Download, Hash, GripVertical,
+  Car, FileText, Download, Hash, GripVertical, ShieldCheck, Undo2,
 } from 'lucide-react';
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -1003,6 +1003,179 @@ export default function ServicesPage() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// SERVICE COVERAGE — effective warranty/guarantee tags with quick exclusion
+// ══════════════════════════════════════════════════════════════════════════
+const COVERAGE_META = {
+  warranty:  { icon: '🛡', label: 'Warranty',  bg: '#dcfce7', color: '#166534', border: '#86efac' },
+  guarantee: { icon: '✔', label: 'Guarantee', bg: '#e0e7ff', color: '#3730a3', border: '#c7d2fe' },
+};
+
+function ServiceCoverage({ svc, showToast }) {
+  const canManage = useCan('MANAGE_WARRANTIES', 'CREATE_WARRANTY', 'EDIT_WARRANTY', 'MANAGE_MASTER_DATA');
+  const [data, setData]     = useState(null);
+  const [working, setWorking] = useState(false);
+  const [confirm, setConfirm] = useState(null); // { kind: 'exclude'|'deactivate'|'restore', rule }
+
+  const load = useCallback(async () => {
+    try {
+      const r = await api(`/api/warranty-master/effective?service_id=${svc.id}&category_id=${svc.category_id || ''}`);
+      setData(r);
+    } catch {
+      setData({ service_rules: [], category_rules: [] });
+    }
+  }, [svc.id, svc.category_id]);
+
+  useEffect(() => { setData(null); load(); }, [load]);
+  useSync('warranties', load);
+
+  if (!data) return null;
+
+  const svcRules = data.service_rules  || [];
+  const catRules = data.category_rules || [];
+
+  // A category rule is inherited unless a service-level rule (incl. an
+  // exclusion) already occupies the same promise_type + vehicle-type slot
+  // (a NULL-vt service rule covers every slot of that type).
+  const isOverridden = (catRule) => svcRules.some(sr =>
+    sr.promise_type === catRule.promise_type &&
+    (sr.vehicle_type_id == null || catRule.vehicle_type_id == null || sr.vehicle_type_id === catRule.vehicle_type_id)
+  );
+
+  const ownRules   = svcRules.filter(r => !r.is_exclusion);
+  const exclusions = svcRules.filter(r => r.is_exclusion);
+  const inherited  = catRules.filter(r => !isOverridden(r));
+
+  if (ownRules.length === 0 && exclusions.length === 0 && inherited.length === 0) return null;
+
+  async function runAction() {
+    const { kind, rule } = confirm;
+    setWorking(true);
+    try {
+      if (kind === 'exclude') {
+        await api('/api/warranty-master', { method: 'POST', body: {
+          name: `Excluded — ${svc.name}`,
+          promise_type: rule.promise_type,
+          applies_to: 'service',
+          ref_id: svc.id,
+          vehicle_type_id: rule.vehicle_type_id ?? null,
+          is_exclusion: true,
+        }});
+        showToast(`${svc.name} excluded from the category's ${rule.promise_type}.`);
+      } else if (kind === 'deactivate') {
+        await api(`/api/warranty-master/${rule.id}`, { method: 'PATCH', body: { is_active: false } });
+        showToast(`${rule.promise_type === 'guarantee' ? 'Guarantee' : 'Warranty'} deactivated for ${svc.name}.`);
+      } else if (kind === 'restore') {
+        await api(`/api/warranty-master/${rule.id}`, { method: 'DELETE' });
+        showToast(`Exclusion removed — ${svc.name} inherits the category's ${rule.promise_type} again.`);
+      }
+      setConfirm(null);
+      await load();
+    } catch (err) {
+      showToast(err.message || 'Action failed.', 'error');
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const vtSuffix = (r) => r.vehicle_type_name ? ` · ${r.vehicle_type_name}` : '';
+
+  const chip = (r, source) => {
+    const m = COVERAGE_META[r.promise_type] || COVERAGE_META.warranty;
+    return (
+      <span key={`${source}-${r.id}`} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 99,
+        background: m.bg, color: m.color, border: `1px solid ${m.border}`,
+      }}>
+        {m.icon} {m.label}: {r.label}{vtSuffix(r)}
+        <span style={{ fontWeight: 400, fontSize: 10.5, opacity: 0.8 }}>
+          {source === 'category' ? '· from category' : '· this service'}
+        </span>
+        {canManage && (
+          <button
+            type="button"
+            title={source === 'category'
+              ? `Exclude ${svc.name} from this category ${r.promise_type}`
+              : `Deactivate this ${r.promise_type} rule`}
+            onClick={() => setConfirm({ kind: source === 'category' ? 'exclude' : 'deactivate', rule: r })}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', display: 'flex', padding: 0, opacity: 0.7 }}
+          >
+            <X size={12} />
+          </button>
+        )}
+      </span>
+    );
+  };
+
+  return (
+    <div className="sp-ov-section">
+      <div className="sp-ov-section-label"><ShieldCheck size={13} /> Warranty &amp; Guarantee</div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        {ownRules.map(r => chip(r, 'service'))}
+        {inherited.map(r => chip(r, 'category'))}
+        {exclusions.map(r => (
+          <span key={`ex-${r.id}`} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 99,
+            background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5',
+          }}>
+            🚫 {r.promise_type === 'guarantee' ? 'Guarantee' : 'Warranty'} excluded{vtSuffix(r)}
+            {canManage && (
+              <button
+                type="button"
+                title={`Remove the exclusion — inherit the category's ${r.promise_type} again`}
+                onClick={() => setConfirm({ kind: 'restore', rule: r })}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', display: 'flex', padding: 0, opacity: 0.8 }}
+              >
+                <Undo2 size={12} />
+              </button>
+            )}
+          </span>
+        ))}
+      </div>
+
+      {/* Confirmation popup */}
+      {confirm && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={() => !working && setConfirm(null)}
+        >
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--bg, #fff)', borderRadius: 14, maxWidth: 440, width: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <h3 style={{ margin: 0, fontSize: 15 }}>
+              {confirm.kind === 'exclude' && `Exclude from category ${confirm.rule.promise_type}?`}
+              {confirm.kind === 'deactivate' && `Deactivate this ${confirm.rule.promise_type}?`}
+              {confirm.kind === 'restore' && 'Remove exclusion?'}
+            </h3>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              {confirm.kind === 'exclude' && (
+                <>New estimates for <strong>{svc.name}</strong> will carry <strong>no {confirm.rule.promise_type}</strong>{confirm.rule.vehicle_type_name ? ` for ${confirm.rule.vehicle_type_name}` : ''}, even though its category ({svc.category_name}) has one. Other services in the category are unaffected. Existing estimates/invoices keep what was already promised.</>
+              )}
+              {confirm.kind === 'deactivate' && (
+                <>The rule "<strong>{confirm.rule.name}</strong>" ({confirm.rule.label}) stops applying to new estimates. It stays in the Warranty &amp; Guarantee master as inactive — you can reactivate it there.</>
+              )}
+              {confirm.kind === 'restore' && (
+                <><strong>{svc.name}</strong> will inherit the category's {confirm.rule.promise_type} again on new estimates.</>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" disabled={working} onClick={() => setConfirm(null)}>Cancel</button>
+              <button
+                className={confirm.kind === 'restore' ? 'btn btn-primary' : 'btn btn-danger'}
+                disabled={working}
+                onClick={runAction}
+              >
+                {working ? 'Working…' : confirm.kind === 'exclude' ? 'Exclude' : confirm.kind === 'deactivate' ? 'Deactivate' : 'Restore'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // OVERVIEW TAB
 // ══════════════════════════════════════════════════════════════════════════
 function OverviewTab({ service: svc, perms: P, showToast, onEdit, onDelete, onToggle }) {
@@ -1069,6 +1242,9 @@ function OverviewTab({ service: svc, perms: P, showToast, onEdit, onDelete, onTo
           {svc.description || <span className="sp-ov-empty">No description provided for this service.</span>}
         </p>
       </div>
+
+      {/* ── Warranty & Guarantee coverage ── */}
+      <ServiceCoverage svc={svc} showToast={showToast} />
 
       {/* ── Info chips row ── */}
       <div className="sp-ov-info-row">

@@ -153,24 +153,19 @@ export default function App() {
                 <Route path="/leads/:token?"     element={<RequirePermission codes={['VIEW_LEAD','CREATE_LEAD']}><LeadsPage /></RequirePermission>} />
 
                 {/* Appointments */}
-                <Route path="/appointments"     element={<RequirePermission codes={['VIEW_APPOINTMENT','CREATE_APPOINTMENT','EDIT_APPOINTMENT']}><AppointmentsPage /></RequirePermission>} />
-                <Route path="/appointments/:token" element={<RequirePermission codes={['VIEW_APPOINTMENT','CREATE_APPOINTMENT','EDIT_APPOINTMENT']}><AppointmentsPage /></RequirePermission>} />
+                <Route path="/appointments/:token?" element={<RequirePermission codes={['VIEW_APPOINTMENT','CREATE_APPOINTMENT','EDIT_APPOINTMENT']}><AppointmentsPage /></RequirePermission>} />
 
                 {/* Customers */}
-                <Route path="/customers"        element={<RequirePermission codes={['VIEW_CUSTOMER','VIEW_LEAD']}><CustomersPage /></RequirePermission>} />
-                <Route path="/customers/:token" element={<RequirePermission codes={['VIEW_CUSTOMER','VIEW_LEAD']}><CustomersPage /></RequirePermission>} />
+                <Route path="/customers/:token?" element={<RequirePermission codes={['VIEW_CUSTOMER','VIEW_LEAD']}><CustomersPage /></RequirePermission>} />
 
                 {/* Estimates */}
-                <Route path="/estimates"        element={<RequirePermission codes={['VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE']}><EstimatesPage /></RequirePermission>} />
-                <Route path="/estimates/:token" element={<RequirePermission codes={['VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE']}><EstimatesPage /></RequirePermission>} />
+                <Route path="/estimates/:token?" element={<RequirePermission codes={['VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE']}><EstimatesPage /></RequirePermission>} />
 
                 {/* Purchase Invoices */}
-                <Route path="/purchase-invoices" element={<RequirePermission codes={['VIEW_INVOICE','VIEW_HUB','MANAGE_HUBS']}><PurchaseInvoicesPage /></RequirePermission>} />
-                <Route path="/purchase-invoices/:token" element={<RequirePermission codes={['VIEW_INVOICE','VIEW_HUB','MANAGE_HUBS']}><PurchaseInvoicesPage /></RequirePermission>} />
+                <Route path="/purchase-invoices/:token?" element={<RequirePermission codes={['VIEW_INVOICE','VIEW_HUB','MANAGE_HUBS']}><PurchaseInvoicesPage /></RequirePermission>} />
 
                 {/* Customer Invoices */}
-                <Route path="/customer-invoices" element={<RequirePermission codes={['VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE','ADD_INVOICE_PAYMENT']}><CustomerInvoicesPage /></RequirePermission>} />
-                <Route path="/customer-invoices/:token" element={<RequirePermission codes={['VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE','ADD_INVOICE_PAYMENT']}><CustomerInvoicesPage /></RequirePermission>} />
+                <Route path="/customer-invoices/:token?" element={<RequirePermission codes={['VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE','ADD_INVOICE_PAYMENT']}><CustomerInvoicesPage /></RequirePermission>} />
 
                 {/* Hub Payouts Dashboard — no detail view of its own (per the
                     shareable-urls audit: every Payouts link targets Purchase
