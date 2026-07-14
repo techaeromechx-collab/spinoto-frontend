@@ -9,7 +9,7 @@ import {
   Calendar, Search, Eye, X, AlertCircle, CheckCircle2,
   ChevronLeft, ChevronRight, Clock, Car, Bike, Network,
   User, Phone, MapPin, Wrench, IndianRupee, ChevronDown,
-  FileText, MessageCircle, Plus, Pencil, Filter, Copy, Check,
+  FileText, MessageCircle, Plus, Pencil, Filter, Copy, Check, Trash2,
 } from 'lucide-react';
 import '../styles/AppointmentsPage.css';
 
@@ -484,7 +484,7 @@ function RescheduleModal({ appt, onConfirm, onCancel }) {
 }
 
 // ── View Modal ────────────────────────────────────────────────────────────────
-function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
+function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onDeleted }) {
   useEscapeClose(onClose);
   const rawNavigate = useNavigate();
   const { user } = useAuth();
@@ -492,6 +492,38 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
   const navigate = user?.hub_id ? () => {} : rawNavigate;
   const canEditAppt = useCan('EDIT_APPOINTMENT');
   const canCreateInv = useCan('CREATE_INVOICE');
+  const canDeleteAppt = useCan('DELETE_APPOINTMENT');
+
+  // Delete flow: preview → warning popup → confirmed delete
+  const [delPreview, setDelPreview] = useState(null);
+  const [delLoading, setDelLoading] = useState(false);
+  const [deleting, setDeleting]     = useState(false);
+  const [delError, setDelError]     = useState(null);
+
+  async function openDeletePreview() {
+    setDelLoading(true); setDelError(null);
+    try {
+      const p = await api(`/api/appointments/${appt.id}/delete-preview`);
+      setDelPreview(p);
+    } catch (e) {
+      setDelError(e.message || 'Failed to check what would be deleted.');
+      setDelPreview({ blockers: [], deletable: false, error_only: true });
+    } finally {
+      setDelLoading(false);
+    }
+  }
+
+  async function confirmDelete() {
+    setDeleting(true); setDelError(null);
+    try {
+      await api(`/api/appointments/${appt.id}`, { method: 'DELETE' });
+      setDelPreview(null);
+      onDeleted?.(appt.id);
+    } catch (e) {
+      setDelError(e.message || 'Delete failed.');
+      setDeleting(false);
+    }
+  }
 
   // Full record with services — fetched on open so services always show
   const [appt, setAppt] = useState(apptProp);
@@ -581,6 +613,17 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
               target="_blank" rel="noreferrer" className="apptv-wa-btn" title="WhatsApp customer">
               <MessageCircle size={13} />
             </a>
+            {canDeleteAppt && (
+              <button
+                className="appt-icon-btn"
+                title="Delete appointment permanently"
+                disabled={delLoading}
+                onClick={openDeletePreview}
+                style={{ color: '#dc2626' }}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
             <button className="appt-icon-btn" onClick={onClose}><X size={15} /></button>
           </div>
         </div>
@@ -718,6 +761,80 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
               onConfirm={saveReschedule}
               onCancel={() => setShowRescheduleModal(false)}
             />
+          )}
+
+          {/* ── Delete confirmation popup ── */}
+          {delPreview && (
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+              onClick={() => !deleting && setDelPreview(null)}
+            >
+              <div
+                onClick={e => e.stopPropagation()}
+                style={{ background: 'var(--bg, #fff)', borderRadius: 14, maxWidth: 500, width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                  <h3 style={{ margin: 0, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Trash2 size={16} style={{ color: '#dc2626' }} />
+                    Delete Appointment {appt.appointment_code || `#${appt.id}`}
+                  </h3>
+                  <button className="appt-icon-btn" onClick={() => !deleting && setDelPreview(null)}><X size={15} /></button>
+                </div>
+                <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+                  {delPreview.blockers?.length > 0 ? (
+                    <>
+                      <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#991b1b' }}>
+                        <div style={{ fontWeight: 700, marginBottom: 6 }}>⚠ Deletion blocked — this job has financial history</div>
+                        {delPreview.blockers.map((b, i) => <div key={i} style={{ marginTop: 2 }}>• {b}</div>)}
+                        <div style={{ marginTop: 8, fontWeight: 600 }}>Cancel the appointment instead of deleting it.</div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button className="btn btn-ghost" onClick={() => setDelPreview(null)}>Close</button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#92400e' }}>
+                        <div style={{ fontWeight: 700, marginBottom: 6 }}>⚠ This will PERMANENTLY delete everything below — it cannot be undone.</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                          <div>📅 Appointment <strong>{appt.appointment_code || `#${appt.id}`}</strong> and its service lines</div>
+                          {delPreview.estimate && (
+                            <div>📄 Estimate <strong>#{delPreview.estimate.id}</strong> ({(delPreview.estimate.status || '').replace(/_/g, ' ')}) and all its items</div>
+                          )}
+                          {delPreview.purchase_invoice && (
+                            <div>🧾 Purchase Invoice <strong>{delPreview.purchase_invoice.code}</strong> ({(delPreview.purchase_invoice.status || '').replace(/_/g, ' ')})</div>
+                          )}
+                          {delPreview.customer_invoice && (
+                            <div>🧾 Customer Invoice <strong>{delPreview.customer_invoice.code}</strong> ({(delPreview.customer_invoice.status || '').replace(/_/g, ' ')})</div>
+                          )}
+                          {(delPreview.claims || []).map(c => (
+                            <div key={c.id}>🛡 Claim <strong>{c.code}</strong> ({(c.status || '').replace(/_/g, ' ')})</div>
+                          ))}
+                        </div>
+                      </div>
+                      {(delPreview.lead_revert || delPreview.redo_claim_reset) && (
+                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          {delPreview.lead_revert && <div>↩ The linked lead will return to the pipeline (this was its only appointment).</div>}
+                          {delPreview.redo_claim_reset && <div>↩ This is a warranty-redo job — its claim goes back to Approved so a new redo can be created.</div>}
+                        </div>
+                      )}
+                      {delError && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#dc2626', fontSize: 13, background: '#fef2f2', padding: '10px 14px', borderRadius: 8 }}>
+                          <AlertCircle size={14} style={{ flexShrink: 0 }} /> {delError}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                        <button className="btn btn-ghost" disabled={deleting} onClick={() => setDelPreview(null)}>Cancel</button>
+                        <button className="btn btn-danger" disabled={deleting} onClick={confirmDelete}>
+                          {deleting ? 'Deleting…' : 'Delete Permanently'}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* ── Services ── */}
@@ -3292,6 +3409,11 @@ export default function AppointmentsPage() {
           onClose={closeAppt}
           onUpdated={handleUpdated}
           onEdit={appt => setEditAppt(appt)}
+          onDeleted={(id) => {
+            setAppts(prev => prev.filter(a => a.id !== id));
+            closeAppt();
+            load(); // refresh counts/pagination
+          }}
         />
       )}
 

@@ -145,7 +145,7 @@ function InfoRow({ label, value }) {
 
 // ── Add Payment Form ──────────────────────────────────────────────────────────
 function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
-  const [form, setForm] = useState({ amount: '', method: 'cash', reference_no: '', notes: '' });
+  const [form, setForm] = useState({ amount: '', method: 'cash', reference_no: '', notes: '', paid_at: '' });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
 
@@ -165,9 +165,10 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
           method: form.method,
           reference_no: form.reference_no.trim() || undefined,
           notes: form.notes.trim() || undefined,
+          paid_at: form.paid_at || undefined, // blank = now
         },
       });
-      setForm({ amount: '', method: 'cash', reference_no: '', notes: '' });
+      setForm({ amount: '', method: 'cash', reference_no: '', notes: '', paid_at: '' });
       showToast('Payment recorded.');
       onSuccess();
     } catch (ex) {
@@ -227,6 +228,17 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
             placeholder="UTR / Txn ID…"
             value={form.reference_no}
             onChange={field('reference_no')}
+          />
+        </div>
+        <div style={{ flex: '0 0 150px' }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Payment Date</label>
+          <input
+            className="form-input"
+            type="date"
+            max={new Date().toISOString().slice(0, 10)}
+            title="Leave empty for today — set for backdated entries"
+            value={form.paid_at}
+            onChange={field('paid_at')}
           />
         </div>
         <div style={{ flex: '1 1 140px' }}>
@@ -408,6 +420,8 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   const [loading, setLoading] = useState(true);
   const [deletingPayId, setDeletingPayId] = useState(null);
   const [confirmDeletePay, setConfirmDeletePay] = useState(null); // payment pending confirmation (paid invoices)
+  const [editingPay, setEditingPay] = useState(null); // { id, date } — inline payment-date editor
+  const [savingPayDate, setSavingPayDate] = useState(false);
   const [approving, setApproving] = useState(false);
   // generatingPI removed — PI is now created BEFORE CI in the new flow
   const [company, setCompany] = useState(null);
@@ -558,6 +572,25 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   // Once the hub has actually been PAID for this job, deletion is blocked —
   // the backend enforces it too; here it drives the warning + disabled button.
   const hubAlreadyPaid = parseFloat(inv?.linked_pi_amount_paid || 0);
+  const canEditPayDate = useCan('EDIT_INVOICE_PAYMENT');
+
+  async function savePaymentDate() {
+    if (!editingPay?.date) return;
+    setSavingPayDate(true);
+    try {
+      await api(`/api/customer-invoices/${invoiceId}/payments/${editingPay.id}`, {
+        method: 'PATCH', body: { paid_at: editingPay.date },
+      });
+      showToast('Payment date updated — payout schedule re-synced.');
+      setEditingPay(null);
+      await load();
+      onRefreshList();
+    } catch (err) {
+      showToast(err.message || 'Failed to update payment date.', 'error');
+    } finally {
+      setSavingPayDate(false);
+    }
+  }
 
   return (
     <div className="card est-detail-view">
@@ -1160,7 +1193,42 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                   <tbody>
                     {payments.map(pay => (
                       <tr key={pay.id}>
-                        <td style={{ fontSize: 12 }}>{fmtDate(pay.paid_at || pay.created_at)}</td>
+                        <td style={{ fontSize: 12 }}>
+                          {editingPay?.id === pay.id ? (
+                            <span className="ci-internal" style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                              <input
+                                className="form-input"
+                                type="date"
+                                max={new Date().toISOString().slice(0, 10)}
+                                style={{ padding: '3px 6px', fontSize: 12, width: 135 }}
+                                value={editingPay.date}
+                                onChange={e => setEditingPay(p => ({ ...p, date: e.target.value }))}
+                              />
+                              <button className="icon-action" title="Save date" disabled={savingPayDate} onClick={savePaymentDate}>
+                                <CheckCircle2 size={13} style={{ color: '#16a34a' }} />
+                              </button>
+                              <button className="icon-action" title="Cancel" disabled={savingPayDate} onClick={() => setEditingPay(null)}>
+                                <X size={13} />
+                              </button>
+                            </span>
+                          ) : (
+                            <span style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+                              {fmtDate(pay.paid_at || pay.created_at)}
+                              {canEditPayDate && (
+                                <button
+                                  className="icon-action ci-internal"
+                                  title="Change payment date"
+                                  onClick={() => setEditingPay({
+                                    id: pay.id,
+                                    date: (pay.paid_at || pay.created_at || '').slice(0, 10),
+                                  })}
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                              )}
+                            </span>
+                          )}
+                        </td>
                         <td><MethodBadge method={pay.method} /></td>
                         <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                           <div>{pay.reference_no || '—'}</div>

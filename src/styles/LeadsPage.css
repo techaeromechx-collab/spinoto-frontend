@@ -4749,6 +4749,7 @@
   border-right: 1px solid var(--border);
   background: var(--bg-soft);
   overflow-y: auto;
+  min-height: 0;
   padding: 8px 6px;
   display: flex;
   flex-direction: column;
@@ -4768,7 +4769,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 500;
   cursor: pointer;
   color: var(--text-muted);
