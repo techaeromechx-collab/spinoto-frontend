@@ -12,7 +12,6 @@ import {
   Users,
   UserCog,
   Users2,
-  PlusCircle,
   UploadCloud,
   BarChart3,
   LogOut,
@@ -86,12 +85,20 @@ import '../styles/AppShell.css';
 // Each nav item declares the permissions it requires (any of). An empty
 // `permissions` array means "any authenticated user". Sub-items inherit
 // visibility from their own `permissions` field.
+// Fixed section order for the grouped sidebar — a section header only
+// renders if at least one of its items survives permission filtering.
+const NAV_SECTIONS = ['OVERVIEW', 'WORKFLOW', 'SALES', 'ACCOUNTING', 'CUSTOMERS', 'SYSTEM'];
+
 const NAV_ITEMS = [
-  { label: 'Dashboard',    to: '/',           permissions: [],                            icon: LayoutDashboard },
+  // ── Overview ──────────────────────────────────────────────────────────────
+  { label: 'Dashboard',    to: '/',           permissions: [],                            icon: LayoutDashboard, section: 'OVERVIEW' },
+
+  // ── Workflow ──────────────────────────────────────────────────────────────
   {
     label: 'Master Data',
     permissions: ['MANAGE_MASTER_DATA','VIEW_VEHICLE','VIEW_SERVICE','VIEW_PRICING_RULE','MANAGE_PARTS','MANAGE_DISCOUNTS','CREATE_PART','EDIT_PART','CREATE_DISCOUNT','EDIT_DISCOUNT','CREATE_SERVICE','UPDATE_SERVICE','CREATE_VEHICLE','UPDATE_VEHICLE'],
     icon: Database,
+    section: 'WORKFLOW',
     children: [
       { label: 'Locations',          to: '/master/locations',     permissions: ['MANAGE_MASTER_DATA'],                                          icon: MapPin    },
       { label: 'Vehicles',           to: '/master/vehicles',      permissions: ['VIEW_VEHICLE','CREATE_VEHICLE','UPDATE_VEHICLE','MANAGE_MASTER_DATA'], icon: Car       },
@@ -103,20 +110,28 @@ const NAV_ITEMS = [
       { label: 'Warranty & Guarantee', to: '/master/warranties',  permissions: ['MANAGE_WARRANTIES','CREATE_WARRANTY','EDIT_WARRANTY','DELETE_WARRANTY','MANAGE_MASTER_DATA'], icon: ShieldCheck },
     ],
   },
-  { label: 'HUBs',         to: '/hubs',         permissions: ['VIEW_HUB','MANAGE_HUBS','CREATE_HUB','EDIT_HUB'], icon: Network },
-  { label: 'Leads',        to: '/leads',        permissions: ['VIEW_LEAD','VIEW_TEAM_LEADS','VIEW_OWN_LEADS','CREATE_LEAD'], icon: Users },
-  { label: 'Appointments', to: '/appointments', permissions: ['VIEW_APPOINTMENT','VIEW_LEAD','CREATE_APPOINTMENT'], icon: Calendar },
-  { label: 'Estimates',          to: '/estimates',         permissions: ['VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE'],     icon: FileText    },
-  { label: 'Purchase Invoices', to: '/purchase-invoices', permissions: ['VIEW_PURCHASE_INVOICE','CREATE_PURCHASE_INVOICE','APPROVE_PURCHASE_INVOICE'], icon: ReceiptText },
-  { label: 'Customer Invoices', to: '/customer-invoices', permissions: ['VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE'],         icon: Receipt     },
-  { label: 'Claims',            to: '/warranty-claims',   permissions: ['VIEW_CLAIM','CREATE_CLAIM','APPROVE_CLAIM','RESOLVE_CLAIM','MANAGE_CLAIMS'], icon: ShieldCheck },
-  { label: 'Hub Payouts',       to: '/payouts',           permissions: ['VIEW_PURCHASE_INVOICE','VIEW_HUB','MANAGE_HUBS'],       icon: Wallet      },
-  { label: 'Customers',         to: '/customers',         permissions: ['VIEW_CUSTOMER','VIEW_LEAD','CREATE_LEAD'],              icon: Users2      },
-  { label: 'Bulk Upload', to: '/bulk-upload', permissions: ['BULK_UPLOAD'],             icon: UploadCloud },
-  { label: 'Reports',     to: '/reports',     permissions: ['VIEW_REPORTS'],            icon: BarChart3 },
-  { label: 'Users',        to: '/users',        permissions: ['MANAGE_USERS'],                                          icon: UserCog },
-  { label: 'My Team',     to: '/users',        permissions: ['VIEW_TEAM_LEADS'], excludePermissions: ['MANAGE_USERS'], icon: Users2  },
-  { label: 'Super Admins', to: '/super-admins', superAdminOnly: true,                                                   icon: Shield  },
+  { label: 'HUBs',         to: '/hubs',         permissions: ['VIEW_HUB','MANAGE_HUBS','CREATE_HUB','EDIT_HUB'], icon: Network, section: 'WORKFLOW' },
+  { label: 'Leads',        to: '/leads',        permissions: ['VIEW_LEAD','VIEW_TEAM_LEADS','VIEW_OWN_LEADS','CREATE_LEAD'], icon: Users, section: 'WORKFLOW' },
+  { label: 'Appointments', to: '/appointments', permissions: ['VIEW_APPOINTMENT','VIEW_LEAD','CREATE_APPOINTMENT'], icon: Calendar, section: 'WORKFLOW' },
+
+  // ── Sales ─────────────────────────────────────────────────────────────────
+  { label: 'Estimates',          to: '/estimates',         permissions: ['VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE'],     icon: FileText, section: 'SALES' },
+  { label: 'Customer Invoices', to: '/customer-invoices', permissions: ['VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE'],         icon: Receipt, section: 'SALES' },
+
+  // ── Accounting ────────────────────────────────────────────────────────────
+  { label: 'Purchase Invoices', to: '/purchase-invoices', permissions: ['VIEW_PURCHASE_INVOICE','CREATE_PURCHASE_INVOICE','APPROVE_PURCHASE_INVOICE'], icon: ReceiptText, section: 'ACCOUNTING' },
+  { label: 'Hub Payouts',       to: '/payouts',           permissions: ['VIEW_PURCHASE_INVOICE','VIEW_HUB','MANAGE_HUBS'],       icon: Wallet, section: 'ACCOUNTING' },
+
+  // ── Customers ─────────────────────────────────────────────────────────────
+  { label: 'Customers',         to: '/customers',         permissions: ['VIEW_CUSTOMER','VIEW_LEAD','CREATE_LEAD'],              icon: Users2, section: 'CUSTOMERS' },
+  { label: 'Claims',            to: '/warranty-claims',   permissions: ['VIEW_CLAIM','CREATE_CLAIM','APPROVE_CLAIM','RESOLVE_CLAIM','MANAGE_CLAIMS'], icon: ShieldCheck, section: 'CUSTOMERS' },
+
+  // ── System ────────────────────────────────────────────────────────────────
+  { label: 'Bulk Upload', to: '/bulk-upload', permissions: ['BULK_UPLOAD'],             icon: UploadCloud, section: 'SYSTEM' },
+  { label: 'Reports',     to: '/reports',     permissions: ['VIEW_REPORTS'],            icon: BarChart3, section: 'SYSTEM' },
+  { label: 'Users',        to: '/users',        permissions: ['MANAGE_USERS'],                                          icon: UserCog, section: 'SYSTEM' },
+  { label: 'My Team',     to: '/users',        permissions: ['VIEW_TEAM_LEADS'], excludePermissions: ['MANAGE_USERS'], icon: Users2, section: 'SYSTEM'  },
+  { label: 'Super Admins', to: '/super-admins', superAdminOnly: true,                                                   icon: Shield, section: 'SYSTEM'  },
 ];
 
 export default function AppShell({ children }) {
@@ -388,6 +403,15 @@ export default function AppShell({ children }) {
     })
     .filter(Boolean);
 
+  // Group the permission-filtered nav into fixed sections, dropping any
+  // section that has no visible items.
+  const groupedNav = NAV_SECTIONS
+    .map((section) => ({
+      section,
+      items: filteredNav.filter((item) => item.section === section),
+    }))
+    .filter((g) => g.items.length);
+
   const userBadge = user?.is_super_admin ? 'super admin' : 'user';
 
   return (
@@ -408,61 +432,58 @@ export default function AppShell({ children }) {
           )}
         </div>
         <nav>
-          {filteredNav.map((item) => {
-            if (item.children) {
-              return (
-                <div key={item.label} className="nav-group">
-                  <button
-                    className={`nav-group-header ${masterOpen ? 'open' : ''} ${location.pathname.startsWith('/master') ? 'active-parent' : ''}`}
-                    onClick={() => setMasterOpen(!masterOpen)}
-                  >
-                    <div className="label-wrap">
-                      <item.icon size={18} strokeWidth={2} />
-                      {!effectiveCollapsed && item.label}
-                    </div>
-                    {!effectiveCollapsed && (masterOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
-                  </button>
-                  <AnimatePresence>
-                    {masterOpen && !effectiveCollapsed && (
-                      <motion.div 
-                        className="nav-group-children"
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
+          {groupedNav.map((group) => (
+            <div key={group.section} className="nav-section">
+              {!effectiveCollapsed && <div className="nav-section-label">{group.section}</div>}
+              {group.items.map((item) => {
+                if (item.children) {
+                  return (
+                    <div key={item.label} className="nav-group">
+                      <button
+                        className={`nav-group-header ${masterOpen ? 'open' : ''} ${location.pathname.startsWith('/master') ? 'active-parent' : ''}`}
+                        onClick={() => setMasterOpen(!masterOpen)}
                       >
-                        {item.children.map(child => (
-                          <NavLink key={child.to} to={child.to} className={({ isActive }) => isActive ? 'active' : ''}>
-                            <child.icon size={16} strokeWidth={2} />
-                            {child.label}
-                          </NavLink>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            }
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => isActive ? 'active' : ''}
-                end={item.to === '/'}
-              >
-                <item.icon size={18} strokeWidth={2} />
-                {!effectiveCollapsed && item.label}
-              </NavLink>
-            );
-          })}
-
-          {/* New Lead Action Button — only for users who can create leads */}
-          {can('CREATE_LEAD') && (
-            <button className="sidebar-action-btn" onClick={() => setLeadModalOpen(true)} title="New Lead">
-              <PlusCircle size={18} />
-              {!effectiveCollapsed && <span>New Lead</span>}
-            </button>
-          )}
+                        <div className="label-wrap">
+                          <item.icon size={18} strokeWidth={2} />
+                          {!effectiveCollapsed && item.label}
+                        </div>
+                        {!effectiveCollapsed && (masterOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
+                      </button>
+                      <AnimatePresence>
+                        {masterOpen && !effectiveCollapsed && (
+                          <motion.div
+                            className="nav-group-children"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            {item.children.map(child => (
+                              <NavLink key={child.to} to={child.to} className={({ isActive }) => isActive ? 'active' : ''}>
+                                <child.icon size={16} strokeWidth={2} />
+                                {child.label}
+                              </NavLink>
+                            ))}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                }
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) => isActive ? 'active' : ''}
+                    end={item.to === '/'}
+                  >
+                    <item.icon size={18} strokeWidth={2} />
+                    {!effectiveCollapsed && item.label}
+                  </NavLink>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* ── Sidebar profile card ── */}

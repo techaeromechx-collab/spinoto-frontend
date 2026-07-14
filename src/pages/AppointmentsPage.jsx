@@ -137,7 +137,14 @@ function ApptStatusSelect({
   showToast,
 }) {
   const canEdit = useCan('EDIT_APPOINTMENT');
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
+  const { user } = useAuth();
+  // Inside the Hub Portal (HubDashboardPage), this component is rendered
+  // outside the main app's route tree — /estimates, /customers etc. only
+  // exist under the admin-only branch of App.jsx, which hub-linked users are
+  // blocked from. Navigating there just bounces them back to /hub. So for
+  // hub users, neutralize navigate() entirely rather than let that happen.
+  const navigate = user?.hub_id ? () => {} : rawNavigate;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
@@ -479,7 +486,10 @@ function RescheduleModal({ appt, onConfirm, onCancel }) {
 // ── View Modal ────────────────────────────────────────────────────────────────
 function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
   useEscapeClose(onClose);
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
+  const { user } = useAuth();
+  // See the note in ApptStatusSelect above — same reasoning applies here.
+  const navigate = user?.hub_id ? () => {} : rawNavigate;
   const canEditAppt = useCan('EDIT_APPOINTMENT');
   const canCreateInv = useCan('CREATE_INVOICE');
 
@@ -2661,11 +2671,18 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AppointmentsPage() {
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
   const location = useLocation();
   const { token } = useParams();
   const { user } = useAuth();
   const isHubUser = !!user?.hub_id;          // hub portal user
+  // Hub Portal renders this page as a plain tab (no nested routing), and its
+  // own admin-only routes are off-limits to hub users (App.jsx's RequireAdmin
+  // bounces them straight back to /hub). So every navigate() call in this
+  // file — opening this page's own detail view, or linking across to
+  // Estimates/Customers/Invoices — has to be a no-op for hub users; the
+  // detail view itself still opens fine via local state either way.
+  const navigate = isHubUser ? () => {} : rawNavigate;
   const canEdit = useCan('EDIT_APPOINTMENT');
   // Fix #20: split into two separate permission checks — they gate unrelated actions
   // canCreate is kept for future "New Appointment" button; canCreateInv is used in ViewModal
@@ -2754,6 +2771,13 @@ export default function AppointmentsPage() {
   function closeAppt() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
+    // Clear the modal directly rather than relying solely on the
+    // `[token]` effect below reacting to the URL change — inside the Hub
+    // Portal, `token` never exists in the first place (the whole page is
+    // just a plain tab, not a routed /appointments/:token), and navigate()
+    // is a no-op there for hub users, so nothing would ever trigger that
+    // effect. This way Close/back works the same in both contexts.
+    setModal(null);
     navigate('/appointments');
   }
 

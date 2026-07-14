@@ -224,7 +224,12 @@ function InfoRow({ label, value }) {
 
 // ── Detail Drawer ─────────────────────────────────────────────────────────────
 function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser = false, onLoaded }) {
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
+  // Hub Portal renders this drawer as a plain tab with no nested routing, and
+  // its admin-only routes (Estimates/Customers/Invoices) bounce hub users
+  // straight back to /hub (App.jsx's RequireAdmin). So navigate() has to be
+  // a no-op here for hub users — the drawer itself still opens fine locally.
+  const navigate = isHubUser ? () => {} : rawNavigate;
   const [inv, setInv] = useState(null);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
@@ -437,7 +442,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
           <div style={{ fontWeight: 800, fontSize: 15, color: '#111' }}>
             {isHubUser ? 'SELL INVOICE' : 'PURCHASE INVOICE'}
           </div>
-          {inv && <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>PI-{String(inv.id).padStart(6, '0')}</div>}
+          {inv && <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>{isHubUser ? 'SI' : 'PI'}-{String(inv.id).padStart(6, '0')}</div>}
           {inv && <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>{fmtDate(inv.created_at)}</div>}
         </div>
       </div>
@@ -457,7 +462,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
             onClick={() => {
               const o = document.title;
               if (inv) {
-                const invId = `PI-${String(inv.id).padStart(6, '0')}`;
+                const invId = `${isHubUser ? 'SI' : 'PI'}-${String(inv.id).padStart(6, '0')}`;
                 const vNum = inv.vehicle_number || '';
                 const vModel = inv.model_name || '';
                 document.title = [invId, vNum, vModel].filter(Boolean).join('_');
@@ -571,7 +576,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                   </div>
                 )}
                 {[
-                  { label: 'Invoice No.', value: `PI-${String(inv.id).padStart(6, '0')}` },
+                  { label: 'Invoice No.', value: `${isHubUser ? 'SI' : 'PI'}-${String(inv.id).padStart(6, '0')}` },
                   { label: 'Date', value: fmtDate(inv.created_at) },
                   { label: 'Status', node: <StatusBadge status={inv.status} /> },
                 ].map(({ label, value, node }) => (
@@ -613,7 +618,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                     {inv?.rate_mode === 'tech_rate' && (
                       <th style={{ textAlign: 'right', color: '#dc2626' }}>Discount</th>
                     )}
-                    <th style={{ textAlign: 'right' }}>Hub Rate</th>
+                    <th style={{ textAlign: 'right' }}>{isHubUser ? 'Your Rate' : 'Hub Rate'}</th>
                     <th style={{ textAlign: 'right' }}>CGST %</th>
                     <th style={{ textAlign: 'right' }}>SGST %</th>
                     <th style={{ textAlign: 'right' }}>Tax Amt</th>
@@ -670,8 +675,8 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
             </div>
             <p className="pi-no-print" style={{ margin: '8px 0 0', fontSize: 12, fontStyle: 'italic', color: 'var(--text-muted)' }}>
               {inv?.rate_mode === 'tech_rate'
-                ? 'Discount = Customer Rate × Take Rate%  |  Hub Rate = Customer Rate − Discount  (services use Service Take Rate, parts use Parts Take Rate)'
-                : 'Hub Rate = Customer Rate × (1 − Commission%)'}
+                ? `Discount = Customer Rate × Take Rate%  |  ${isHubUser ? 'Your Rate' : 'Hub Rate'} = Customer Rate − Discount  (services use Service Take Rate, parts use Parts Take Rate)`
+                : `${isHubUser ? 'Your Rate' : 'Hub Rate'} = Customer Rate × (1 − Commission%)`}
             </p>
           </div>
 
@@ -695,7 +700,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 
               {/* Subtotal */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6b7280', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
-                <span>Subtotal (hub ex-GST)</span>
+                <span>{isHubUser ? 'Subtotal (ex-GST)' : 'Subtotal (hub ex-GST)'}</span>
                 <span style={{ fontWeight: 600, color: '#374151', minWidth: 110, textAlign: 'right' }}>{fmt(subtotal)}</span>
               </div>
 
@@ -723,7 +728,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 
               {/* Grand Total */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, color: '#16b994', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
-                <span>Grand Total Payable to Hub</span>
+                <span>{isHubUser ? 'Grand Total Receivable' : 'Grand Total Payable to Hub'}</span>
                 <span style={{ minWidth: 110, textAlign: 'right' }}>{fmt(grandTotal)}</span>
               </div>
 
@@ -731,7 +736,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
               {inv.status === 'approved' && (
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#16a34a', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
-                    <span style={{ fontWeight: 500 }}>Paid to Hub</span>
+                    <span style={{ fontWeight: 500 }}>{isHubUser ? 'Paid to You' : 'Paid to Hub'}</span>
                     <span style={{ fontWeight: 600, minWidth: 110, textAlign: 'right' }}>{fmt(paid)}</span>
                   </div>
                   <div style={{
@@ -1195,10 +1200,16 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 // ═════════════════════════════════════════════════════════════════════════════
 export default function PurchaseInvoicesPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
   const location = useLocation();
   const { token } = useParams();
   const isHubUser = !!user?.hub_id;
+  // Hub Portal renders this page as a plain tab (no nested routing), and its
+  // own admin-only routes are off-limits to hub users (App.jsx's RequireAdmin
+  // bounces them straight back to /hub). So every navigate() call here — this
+  // page's own detail view or cross-links to Estimates/Customer Invoices —
+  // has to be a no-op for hub users; the detail view still opens via local state.
+  const navigate = isHubUser ? () => {} : rawNavigate;
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -1238,6 +1249,11 @@ export default function PurchaseInvoicesPage() {
   function closeInvoice() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
+    // Clear directly rather than relying solely on the `[token]` effect —
+    // inside the Hub Portal, `token` never exists (plain tab, not a routed
+    // /purchase-invoices/:token) and navigate() is a no-op there for hub
+    // users, so that effect would never fire on close.
+    setSelectedId(null);
     navigate('/purchase-invoices');
   }
 
@@ -1466,8 +1482,8 @@ export default function PurchaseInvoicesPage() {
                       <th>#</th>
                       <th>Customer / Vehicle</th>
                       <th>Hub</th>
-                      <th style={{ textAlign: 'right' }}>Rate Mode</th>
-                      <th style={{ textAlign: 'right' }}>Items</th>
+                      <th>{isHubUser ? 'SI # / CI #' : 'PI # / CI #'}</th>
+                      <th>Date</th>
                       <th style={{ textAlign: 'right' }}>Grand Total</th>
                       <th>Status</th>
                       <th>Payment</th>
@@ -1528,12 +1544,17 @@ export default function PurchaseInvoicesPage() {
                           </div>
                         </td>
                         <td style={{ fontSize: 13 }}>{inv.hub_name || inv.hub?.name || '—'}</td>
-                        <td style={{ textAlign: 'right', fontSize: 13 }}>
-                          {inv.rate_mode === 'tech_rate'
-                            ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#fef3c7', color: '#92400e' }}>Take Rate</span>
-                            : inv.commission_percent != null ? `${inv.commission_percent}%` : '—'}
+                        <td>
+                          <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--primary)' }}>
+                            {isHubUser ? 'SI' : 'PI'}-{String(inv.id).padStart(6, '0')}
+                          </div>
+                          {inv.customer_invoice_id && (
+                            <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                              CI-{String(inv.customer_invoice_id).padStart(6, '0')}
+                            </div>
+                          )}
                         </td>
-                        <td style={{ textAlign: 'right', fontSize: 13 }}>{inv.item_count ?? '—'}</td>
+                        <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{fmtDate(inv.created_at)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmt(inv.grand_total)}</td>
                         <td><StatusBadge status={inv.status} /></td>
                         <td>

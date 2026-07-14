@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../auth/AuthContext.jsx';
+import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { api } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
@@ -395,13 +395,19 @@ function VehicleHistoryModal({ onClose }) {
 
 // ── Detail Drawer ─────────────────────────────────────────────────────────────
 function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }) {
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
   const { user } = useAuth();
   const isHubUser = !!user?.hub_id;
+  // Hub Portal renders this drawer as a plain tab with no nested routing, and
+  // its admin-only routes (Estimates/Customers/Purchase Invoices) bounce hub
+  // users straight back to /hub (App.jsx's RequireAdmin). So navigate() has
+  // to be a no-op here for hub users — the drawer still opens fine locally.
+  const navigate = isHubUser ? () => {} : rawNavigate;
 
   const [inv, setInv] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deletingPayId, setDeletingPayId] = useState(null);
+  const [confirmDeletePay, setConfirmDeletePay] = useState(null); // payment pending confirmation (paid invoices)
   const [approving, setApproving] = useState(false);
   // generatingPI removed — PI is now created BEFORE CI in the new flow
   const [company, setCompany] = useState(null);
@@ -544,7 +550,14 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
 
   const canApprove = !isHubUser && inv?.status === 'generated';
   const canAddPayment = inv && (inv.status === 'approved' || inv.status === 'partially_paid');
-  const canDeletePay = inv && inv.status !== 'paid' && inv.status !== 'cancelled';
+  // Payments are deletable even on PAID invoices (with a confirm) — the
+  // backend walks back the paid side effects (appointment, payout, claim).
+  // Gated by its own permission since it can un-pay a settled invoice.
+  const hasDeletePayPerm = useCan('DELETE_INVOICE_PAYMENT');
+  const canDeletePay = inv && inv.status !== 'cancelled' && hasDeletePayPerm;
+  // Once the hub has actually been PAID for this job, deletion is blocked —
+  // the backend enforces it too; here it drives the warning + disabled button.
+  const hubAlreadyPaid = parseFloat(inv?.linked_pi_amount_paid || 0);
 
   return (
     <div className="card est-detail-view">
@@ -1164,7 +1177,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                               className="icon-action icon-action--danger"
                               title="Delete payment"
                               disabled={deletingPayId === pay.id}
-                              onClick={() => deletePayment(pay.id)}
+                              onClick={() => (inv.status === 'paid' || hubAlreadyPaid > 0) ? setConfirmDeletePay(pay) : deletePayment(pay.id)}
                             >
                               <Trash2 size={13} />
                             </button>
@@ -1216,6 +1229,69 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
             )}
           </div>
 
+          {/* ── Confirm: delete payment off a PAID invoice ── */}
+          {confirmDeletePay && (
+            <div className="modal-backdrop" style={{ zIndex: 1100 }} onClick={() => setConfirmDeletePay(null)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+                <div className="modal-header">
+                  <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Trash2 size={16} style={{ color: '#dc2626' }} /> Delete Payment
+                  </h3>
+                  <button className="modal-close" onClick={() => setConfirmDeletePay(null)}><X size={18} /></button>
+                </div>
+                <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {hubAlreadyPaid > 0 ? (
+                    <div style={{
+                      background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8,
+                      padding: '12px 14px', fontSize: 13, color: '#991b1b',
+                    }}>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>⚠ Deletion blocked — hub already paid</div>
+                      A hub payout of <strong>{fmt(hubAlreadyPaid)}</strong> has already been made for this job.
+                      Deleting the customer payment would not bring that money back. To correct this,
+                      reverse the hub payment on the Purchase Invoice first.
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8,
+                      padding: '10px 14px', fontSize: 13, color: '#991b1b', fontWeight: 600,
+                    }}>
+                      This invoice is fully PAID — deleting {fmt(confirmDeletePay.amount)} ({confirmDeletePay.method}) will undo that.
+                    </div>
+                  )}
+                  {hubAlreadyPaid <= 0 && (
+                    <div style={{ fontSize: 13, color: 'var(--text)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {[
+                        ['🧾', 'Invoice becomes unpaid / partially paid'],
+                        ['📅', 'Appointment reopens (Closed → Invoice Approved)'],
+                        ['💸', 'Hub payout is pulled from the payout queue'],
+                        ...(inv?.warranty_claim_id ? [['🛡', 'Linked warranty claim moves back to Approved']] : []),
+                      ].map(([icon, text], i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 15 }}>{icon}</span>
+                          <span>{text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+                    <button className="btn btn-ghost" onClick={() => setConfirmDeletePay(null)}>
+                      {hubAlreadyPaid > 0 ? 'Close' : 'Cancel'}
+                    </button>
+                    {hubAlreadyPaid <= 0 && (
+                      <button
+                        className="btn btn-danger"
+                        disabled={deletingPayId === confirmDeletePay.id}
+                        onClick={async () => { const pid = confirmDeletePay.id; setConfirmDeletePay(null); await deletePayment(pid); }}
+                      >
+                        {deletingPayId === confirmDeletePay.id ? 'Deleting…' : 'Delete Payment'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       )}
     </div>
@@ -1227,10 +1303,17 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
 // ═════════════════════════════════════════════════════════════════════════════
 export default function CustomerInvoicesPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
   const location = useLocation();
   const { token } = useParams();
   const isHubUser = !!user?.hub_id;
+  // Hub Portal renders this page as a plain tab (no nested routing), and its
+  // own admin-only routes are off-limits to hub users (App.jsx's RequireAdmin
+  // bounces them straight back to /hub). So every navigate() call here — this
+  // page's own detail view or cross-links to Estimates/Purchase Invoices/
+  // Customers — has to be a no-op for hub users; the detail view still opens
+  // via local state either way.
+  const navigate = isHubUser ? () => {} : rawNavigate;
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -1271,6 +1354,11 @@ export default function CustomerInvoicesPage() {
   function closeInvoice() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
+    // Clear directly rather than relying solely on the `[token]` effect —
+    // inside the Hub Portal, `token` never exists (plain tab, not a routed
+    // /customer-invoices/:token) and navigate() is a no-op there for hub
+    // users, so that effect would never fire on close.
+    setSelectedId(null);
     navigate('/customer-invoices');
   }
 

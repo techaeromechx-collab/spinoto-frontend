@@ -679,6 +679,10 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     hub_id: editEstimate?.hub_id ? String(editEstimate.hub_id) : (isHubUser ? userHubId : ''),
     notes: editEstimate?.notes || '',
   });
+  // Hub reassignment confirmation: { message, flags } after a 409 from PATCH
+  const [hubConfirm, setHubConfirm] = react.useState(null);
+  // Edit mode: hub field stays locked until the user explicitly clicks Change
+  const [hubUnlocked, setHubUnlocked] = react.useState(false);
   const [items, setItems] = react.useState(() =>
     (editEstimate?.items || []).map(it => {
       // DB stores ex-GST rate as customer_rate; back-calc inc_rate for display
@@ -1227,8 +1231,8 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   const totalDiscount = discountMode === 'line_item' ? lineDiscount : txDiscountAmount;
   const hasDiscount = discountMode === 'line_item';
 
-  async function submit(e) {
-    e.preventDefault();
+  async function submit(e, extraFlags = {}) {
+    e?.preventDefault?.();
     if (mode === 'appointment' && !form.appointment_id) { setError('Please select an appointment.'); return; }
     if (mode === 'standalone' && !standaloneCtx?.customer?.mobile) { setError('Please pick a customer and vehicle.'); return; }
     if (!form.hub_id) { setError('Please select a hub.'); return; }
@@ -1307,11 +1311,44 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
         }
       }
 
+      // Hub-reassignment confirmation flags (set when the user confirms in
+      // the HubChangeConfirm modal after a 409 from the backend)
+      Object.assign(payload, extraFlags);
+
       const res = isEdit
         ? await api(`/api/estimates/${editEstimate.id}`, { method: 'PATCH', body: payload })
         : await api('/api/estimates', { method: 'POST', body: payload });
-      onSaved(res.item || res.estimate || res);
+
+      // Hub was reassigned and the old PI deleted → immediately regenerate a
+      // fresh PI against the new hub's rates (it lands as pending_approval).
+      let hubInfo = null;
+      if (res.hub_reassigned) {
+        hubInfo = { ...res.hub_reassigned, piDeleted: res.pi_deleted, piRegenerated: false, regenError: null };
+        if (res.pi_deleted) {
+          try {
+            await api('/api/purchase-invoices/generate', { method: 'POST', body: { estimate_id: editEstimate.id } });
+            hubInfo.piRegenerated = true;
+          } catch (regenErr) {
+            hubInfo.regenError = regenErr.message || 'PI regeneration failed';
+          }
+        }
+      }
+      onSaved(res.item || res.estimate || res, hubInfo);
     } catch (err) {
+      // Hub reassignment needs an explicit confirmation — show our own modal
+      // with the backend's message instead of failing.
+      if (err.status === 409 && ['PI_EXISTS', 'REDO_COST_BEARER'].includes(err.data?.code)) {
+        setHubConfirm({
+          message: err.data.error,
+          flags: {
+            ...extraFlags,
+            ...(err.data.code === 'PI_EXISTS'        ? { confirm_regenerate_pi: true }       : {}),
+            ...(err.data.code === 'REDO_COST_BEARER' ? { confirm_cost_bearer_company: true } : {}),
+          },
+        });
+        setSaving(false);
+        return;
+      }
       setError(err.message || 'Something went wrong.');
       setSaving(false);
     }
@@ -1393,6 +1430,38 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
             <button className="modal-close" onClick={onClose}><X size={18} /></button>
           </div>
         </div>
+        {/* Hub reassignment confirmation */}
+        {hubConfirm && (
+          <div className="modal-backdrop" style={{ zIndex: 1200 }} onClick={() => setHubConfirm(null)}>
+            <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+              <div className="modal-header">
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <AlertCircle size={17} style={{ color: '#d97706' }} /> Confirm Hub Change
+                </h3>
+                <button className="modal-close" onClick={() => setHubConfirm(null)}><X size={18} /></button>
+              </div>
+              <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{
+                  background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8,
+                  padding: '12px 14px', fontSize: 13, color: '#92400e', lineHeight: 1.6,
+                }}>
+                  {hubConfirm.message}
+                </div>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn-ghost" onClick={() => setHubConfirm(null)}>Cancel</button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => { const flags = hubConfirm.flags; setHubConfirm(null); submit(null, flags); }}
+                  >
+                    Confirm &amp; Continue
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showDiscountSettings && (
           <DiscountModeModal
             current={discountMode}
@@ -1512,17 +1581,46 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                     readOnly
                     style={{ background: 'var(--bg-soft)', color: 'var(--text-muted)', cursor: 'not-allowed' }}
                   />
+                ) : isEdit && !hubUnlocked ? (
+                  /* Edit mode: hub is locked behind an explicit Change button —
+                     reassignment has real consequences (PI regeneration), so
+                     it should never happen by an accidental dropdown click. */
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      className="form-input"
+                      style={{ flex: 1, background: 'var(--bg-soft)', color: 'var(--text-muted)', cursor: 'default' }}
+                      value={hubs.find(h => String(h.id) === String(form.hub_id))?.hub_name || '—'}
+                      readOnly
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ flexShrink: 0, fontSize: 12, fontWeight: 600 }}
+                      title="Reassign this estimate to a different hub"
+                      onClick={() => setHubUnlocked(true)}
+                    >
+                      <Pencil size={13} /> Change
+                    </button>
+                  </div>
                 ) : (
-                  <SearchableSelect
-                    value={form.hub_id}
-                    onChange={val => setForm(f => ({ ...f, hub_id: val }))}
-                    placeholder="Select hub…"
-                    searchPlaceholder="Search hub…"
-                    options={[
-                      { value: '', label: 'Select hub…' },
-                      ...hubs.map(h => ({ value: h.id, label: `${h.hub_name}${h.city_name ? ' — ' + h.city_name : ''}` })),
-                    ]}
-                  />
+                  <>
+                    <SearchableSelect
+                      value={form.hub_id}
+                      onChange={val => setForm(f => ({ ...f, hub_id: val }))}
+                      placeholder="Select hub…"
+                      searchPlaceholder="Search hub…"
+                      options={[
+                        { value: '', label: 'Select hub…' },
+                        ...hubs.map(h => ({ value: h.id, label: `${h.hub_name}${h.city_name ? ' — ' + h.city_name : ''}` })),
+                      ]}
+                    />
+                    {isEdit && hubUnlocked && (
+                      <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#92400e' }}>
+                        ⚠ Changing the hub moves this estimate (and its invoices) to the new hub.
+                        If a purchase invoice exists, it will be deleted and regenerated with the new hub's rates — you'll be asked to confirm on save.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -2261,7 +2359,12 @@ function DeleteConfirmModal({ estimate, deleting, onCancel, onConfirm }) {
 // Detail Drawer
 // ═════════════════════════════════════════════════════════════════════════════
 function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = false, onLoaded }) {
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
+  // Hub Portal renders this drawer as a plain tab with no nested routing, and
+  // its admin-only routes (Estimates/Customers/Invoices) bounce hub users
+  // straight back to /hub (App.jsx's RequireAdmin). So navigate() has to be
+  // a no-op here for hub users — the drawer itself still opens fine locally.
+  const navigate = isHubUser ? () => {} : rawNavigate;
   const { user: authUser } = useAuth();
   const isSuperAdmin = !!authUser?.is_super_admin;
   const [estimate, setEstimate] = react.useState(null);
@@ -3119,9 +3222,20 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           <EstimateModal
             editEstimate={estimate}
             onClose={() => setShowEdit(false)}
-            onSaved={async () => {
+            onSaved={async (item, hubInfo) => {
               setShowEdit(false);
               await load();
+              if (hubInfo) {
+                // Hub reassignment — spell out exactly what happened
+                if (hubInfo.piDeleted && hubInfo.piRegenerated) {
+                  showToast(`Hub changed to ${hubInfo.to}. ${hubInfo.piDeleted} was deleted and a new purchase invoice was generated with ${hubInfo.to}'s rates — it needs approval in Purchase Invoices.`);
+                } else if (hubInfo.piDeleted && !hubInfo.piRegenerated) {
+                  showToast(`Hub changed to ${hubInfo.to} and ${hubInfo.piDeleted} was deleted, but regenerating the new PI failed (${hubInfo.regenError}). Generate it manually from this estimate.`, 'error');
+                } else {
+                  showToast(`Hub changed from ${hubInfo.from} to ${hubInfo.to}.`);
+                }
+                return;
+              }
               // If PI or CI exist, show sync warning
               if (estimate.purchase_invoice_id || estimate.customer_invoice_id) {
                 setShowSyncWarning(true);
@@ -3191,10 +3305,16 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
 // ═════════════════════════════════════════════════════════════════════════════
 export default function EstimatesPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const rawNavigate = useNavigate();
   const location = useLocation();
   const { token } = useParams();
   const isHubUser = !!user?.hub_id;
+  // Hub Portal renders this page as a plain tab (no nested routing), and its
+  // own admin-only routes are off-limits to hub users (App.jsx's RequireAdmin
+  // bounces them straight back to /hub). So every navigate() call here — this
+  // page's own detail view or cross-links to Customers/Invoices — has to be
+  // a no-op for hub users; the detail view itself still opens via local state.
+  const navigate = isHubUser ? () => {} : rawNavigate;
 
   const [estimates, setEstimates] = react.useState([]);
   const [total, setTotal] = react.useState(0);
@@ -3250,6 +3370,11 @@ export default function EstimatesPage() {
   const handleCloseDetail = react.useCallback(() => {
     closedRef.current = true;
     resolvedTokenRef.current = null;
+    // Clear directly rather than relying solely on the `[token]` effect
+    // below — inside the Hub Portal, `token` never exists (this page is
+    // just a plain tab, not a routed /estimates/:token) and navigate() is a
+    // no-op there for hub users, so that effect would never fire on close.
+    setSelectedId(null);
     navigate('/estimates');
   }, [navigate]);
 
@@ -3539,7 +3664,7 @@ export default function EstimatesPage() {
                       <th>Appointment</th>
                       <th>Hub</th>
                       <th style={{ textAlign: 'right' }}>Items</th>
-                      <th style={{ textAlign: 'right' }}>Grand Total</th>
+                      <th>Totals</th>
                       <th>Status</th>
                       <th>Created</th>
                     </tr>
@@ -3608,7 +3733,42 @@ export default function EstimatesPage() {
                         </td>
                         <td style={{ fontSize: 13 }}>{est.hub_full_name || est.hub_name || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
                         <td style={{ textAlign: 'right', fontSize: 13 }}>{est.item_count ?? (est.items?.length ?? '—')}</td>
-                        <td style={{ textAlign: 'right', fontSize: 13, fontWeight: 700 }}>{fmt(est.grand_total)}</td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11, minWidth: 100 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                              <span style={{ color: 'var(--text-muted)' }}>Estimate:</span>
+                              <span style={{ fontWeight: 600 }}>{fmt(est.grand_total)}</span>
+                            </div>
+                            {est.purchase_invoice_id && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                                <span
+                                  style={{ color: '#4f46e5', cursor: 'pointer', textDecoration: 'underline' }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigate(est.purchase_invoice_token ? `/purchase-invoices/${est.purchase_invoice_token}` : '/purchase-invoices', est.purchase_invoice_token ? undefined : { state: { openId: est.purchase_invoice_id } });
+                                  }}
+                                >
+                                  Purchase:
+                                </span>
+                                <span style={{ fontWeight: 600 }}>{fmt(est.purchase_invoice_total)}</span>
+                              </div>
+                            )}
+                            {est.customer_invoice_id && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                                <span
+                                  style={{ color: '#0f766e', cursor: 'pointer', textDecoration: 'underline' }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigate(est.customer_invoice_token ? `/customer-invoices/${est.customer_invoice_token}` : '/customer-invoices', est.customer_invoice_token ? undefined : { state: { openId: est.customer_invoice_id } });
+                                  }}
+                                >
+                                  Customer:
+                                </span>
+                                <span style={{ fontWeight: 700, color: '#0f766e' }}>{fmt(est.customer_invoice_total)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </td>
                         <td><StatusBadge status={est.status} /></td>
                         <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                           {est.created_at ? new Date(est.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}

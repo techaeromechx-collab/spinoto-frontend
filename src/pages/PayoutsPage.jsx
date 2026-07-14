@@ -822,13 +822,13 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                       </td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <button onClick={()=>navigate(pi.purchase_invoice_token ? `/purchase-invoices/${pi.purchase_invoice_token}` : '/purchase-invoices', pi.purchase_invoice_token ? undefined : { state:{ openId:pi.id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
+                          <button onClick={()=>navigate(pi.purchase_invoice_token ? `/purchase-invoices/${pi.purchase_invoice_token}` : '/purchase-invoices', pi.purchase_invoice_token ? undefined : { state:{ openId:pi.id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:12, color:'var(--primary)', fontFamily:'inherit' }}>
                             PI-{String(pi.id).padStart(6,'0')}
                           </button>
                           {isOverdue && <span style={{ fontSize:10, fontWeight:700, background:'#fee2e2', color:'#991b1b', padding:'1px 6px', borderRadius:99 }}>OVERDUE</span>}
                         </div>
                         {pi.customer_invoice_id && (
-                          <button onClick={()=>navigate(pi.customer_invoice_token ? `/customer-invoices/${pi.customer_invoice_token}` : '/customer-invoices', pi.customer_invoice_token ? undefined : { state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, marginTop:2, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--text-muted)', fontFamily:'inherit' }}>
+                          <button onClick={()=>navigate(pi.customer_invoice_token ? `/customer-invoices/${pi.customer_invoice_token}` : '/customer-invoices', pi.customer_invoice_token ? undefined : { state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, marginTop:2, cursor:'pointer', fontWeight:700, fontSize:11, color:'var(--text-muted)', fontFamily:'inherit' }}>
                             CI-{String(pi.customer_invoice_id).padStart(6,'0')}
                           </button>
                         )}

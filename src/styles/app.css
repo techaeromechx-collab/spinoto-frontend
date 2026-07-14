@@ -112,8 +112,7 @@ a:hover {
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -169,6 +168,21 @@ a:hover {
   flex-direction: column;
   gap: 4px;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.sidebar nav::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+/* Profile card stays pinned at the bottom of the sidebar; only the
+   nav list above it scrolls. */
+.sidebar-profile {
+  flex-shrink: 0;
 }
 
 .sidebar nav a {
