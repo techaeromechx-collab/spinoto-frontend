@@ -22,6 +22,32 @@ function fmtDate(d) {
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+// Older redo invoices stored "Warranty Redo — " inside the item description;
+// the redo marker now lives in a banner instead, so strip the legacy prefix.
+function cleanItemName(s) {
+  return (s || '').replace(/^Warranty Redo\s*—\s*/i, '');
+}
+
+// Customer-facing promise labels from the snapshot stored on the invoice item.
+// custom text wins; else "6 Months / 5,000 KM (whichever is earlier)".
+function promiseLabel(text, months, days, km) {
+  if (text) return text;
+  const parts = [];
+  if (months) parts.push(`${months} Month${months > 1 ? 's' : ''}`);
+  if (days)   parts.push(`${days} Day${days > 1 ? 's' : ''}`);
+  if (km)     parts.push(`${Number(km).toLocaleString('en-IN')} KM`);
+  if (parts.length === 0) return null;
+  return parts.length > 1 ? `${parts.join(' / ')} (whichever is earlier)` : parts[0];
+}
+
+function warrantyLabel(it) {
+  return promiseLabel(it.warranty_text, it.warranty_months, it.warranty_days, it.warranty_km);
+}
+
+function guaranteeLabel(it) {
+  return promiseLabel(it.guarantee_text, it.guarantee_months, it.guarantee_days, it.guarantee_km);
+}
+
 function amountToWords(amount) {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
     'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
@@ -692,6 +718,17 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                   { label: 'Invoice No.', value: `CI-${String(inv.id).padStart(6, '0')}` },
                   { label: 'Date', value: fmtDate(inv.created_at) },
                   { label: 'Status', node: <StatusBadge status={inv.status} /> },
+                  ...(inv.warranty_claim_id ? [{
+                    label: 'Invoice Type',
+                    node: (
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99,
+                        background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap',
+                      }}>
+                        🛡 Warranty Redo{inv.warranty_claim_code ? ` — Claim ${inv.warranty_claim_code}` : ''}
+                      </span>
+                    ),
+                  }] : []),
                 ].map(({ label, value, node }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>{label}</span>
@@ -715,6 +752,21 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
             </div>
           )}
 
+
+          {/* Warranty redo banner — prints, so the customer sees why it's ₹0 */}
+          {inv.warranty_claim_id && (
+            <div style={{
+              background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10,
+              padding: '10px 16px', fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: 15 }}>🛡</span>
+              <span>
+                <strong>Warranty Redo{inv.warranty_claim_code ? ` — Claim ${inv.warranty_claim_code}` : ''}.</strong>{' '}
+                This work was carried out under warranty against a previous invoice
+                {parseFloat(inv.grand_total) <= 0 ? ' — free of charge.' : '.'}
+              </span>
+            </div>
+          )}
 
           {/* Line items */}
           <div>
@@ -760,7 +812,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                       <tr key={i}>
                         <td style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{i + 1}</td>
                         <td style={{ maxWidth: 220 }}>
-                          <div className="ci-item-name" style={{ fontWeight: 600, fontSize: 13, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }} title={it.description || it.name}>{it.description || it.name || '—'}</div>
+                          <div className="ci-item-name" style={{ fontWeight: 600, fontSize: 13, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }} title={cleanItemName(it.description || it.name)}>{cleanItemName(it.description || it.name) || '—'}</div>
                           <span className="ci-item-type-badge" style={{
                             fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4,
                             background: it.item_type === 'service' ? '#dbeafe' : '#dcfce7',
@@ -982,8 +1034,95 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
             </div>
           )}
 
-          {/* Payments section */}
-          <div>
+          {/* ── Warranty & Guarantee + Payments — side by side ── */}
+          <div className="ci-wg-pay-row" style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+
+            {/* Left — Warranty & Guarantee coverage table */}
+            {(() => {
+              const groups = [];
+              const gmap = new Map();
+              for (const it of (inv.items || [])) {
+                for (const [ptype, label] of [['Warranty', warrantyLabel(it)], ['Guarantee', guaranteeLabel(it)]]) {
+                  if (!label) continue;
+                  const key = `${ptype}|${label}`;
+                  if (!gmap.has(key)) { const g = { ptype, label, names: [] }; gmap.set(key, g); groups.push(g); }
+                  gmap.get(key).names.push(cleanItemName(it.description || it.name));
+                }
+              }
+              if (groups.length === 0) return null;
+              const claimables = (inv.items || []).filter(it => warrantyLabel(it) || guaranteeLabel(it));
+              return (
+                <div style={{ flex: '1.2 1 340px', minWidth: 300 }}>
+                  <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Warranty &amp; Guarantee</h4>
+                  <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
+                    <table className="ci-table ci-coverage-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '45%' }}>Service / Package</th>
+                          <th style={{ width: '22%' }}>Type</th>
+                          <th style={{ width: '33%' }}>Coverage / Validity</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groups.map((g, i) => (
+                          <tr key={i}>
+                            <td style={{ fontSize: 12, fontWeight: 500 }}>{g.names.join(', ')}</td>
+                            <td style={{ fontSize: 12, whiteSpace: 'nowrap', fontWeight: 600, color: g.ptype === 'Guarantee' ? '#3730a3' : '#166534' }}>
+                              {g.ptype === 'Guarantee' ? '✔' : '🛡'} {g.ptype}
+                            </td>
+                            <td style={{ fontSize: 12 }}>{g.label}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6, fontStyle: 'italic' }}>
+                    Warranty / guarantee is valid from the date of invoice.
+                  </div>
+                  {/* Claim actions — internal, never printed */}
+                  <div className="ci-internal" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+                    {/* Existing claims — one chip per claim, linking to it */}
+                    {claimables.filter(it => it.claim_id).map((it, i) => (
+                      <button
+                        key={it.id || i}
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/warranty-claims?claim=${it.claim_id}`); }}
+                        title={`${cleanItemName(it.description || it.name)} — open this ${it.claim_type || 'warranty'} claim`}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 99,
+                          background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {it.claim_type === 'guarantee' ? '✔' : '🛡'} {it.claim_code || `Claim #${it.claim_id}`}
+                        <span style={{ fontWeight: 500, color: '#3b82f6' }}>· {(it.claim_status || '').replace(/_/g, ' ')}</span>
+                      </button>
+                    ))}
+                    {/* One entry point for new claims — the register modal
+                        already lists this customer's claimable items */}
+                    {inv.status === 'paid' && claimables.some(it => !it.claim_id) && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/warranty-claims?register_mobile=${encodeURIComponent(inv.mobile || '')}`); }}
+                        title="Register a warranty/guarantee claim for an item on this invoice"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          fontSize: 11, fontWeight: 700, padding: '5px 14px', borderRadius: 8,
+                          background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d', cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        🛡 Register a Claim
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Right — Payments */}
+            <div style={{ flex: '1 1 320px', minWidth: 280 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Payments</h4>
               <span style={{
@@ -1037,7 +1176,9 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                 </table>
               </div>
             )}
-          </div>
+
+            </div>{/* /right column */}
+          </div>{/* /side-by-side row */}
 
           {/* Add payment form — screen only */}
           {canAddPayment && (
@@ -1058,17 +1199,19 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
           <div className="ci-invoice-footer" style={{
             marginTop: 8,
             borderTop: '1px solid #e5e7eb',
-            paddingTop: 16,
+            paddingTop: 14,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             gap: 4,
           }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Thank you for your business.</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>Thank you for your business.</div>
             <div style={{ fontSize: 10, color: '#9ca3af' }}>This is a computer generated invoice and does not require a physical signature.</div>
             {(company?.phone || company?.email) && (
-              <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
-                {[company.phone && `📞 ${company.phone}`, company.email && `✉ ${company.email}`].filter(Boolean).join('   ·   ')}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 11, color: '#6b7280', fontWeight: 500, marginTop: 4 }}>
+                {company.phone && <span>📞 {company.phone}</span>}
+                {company.phone && company.email && <span style={{ color: '#d1d5db' }}>|</span>}
+                {company.email && <span>✉ {company.email}</span>}
               </div>
             )}
           </div>
@@ -1364,10 +1507,10 @@ export default function CustomerInvoicesPage() {
                   <thead>
                     <tr>
                       <th>#</th>
+                      <th>Date</th>
                       <th>Customer</th>
                       <th>Vehicle</th>
                       <th>Hub</th>
-                      <th>Date</th>
                       <th style={{ textAlign: 'right' }}>Grand Total</th>
                       <th style={{ textAlign: 'right' }}>Paid</th>
                       <th style={{ textAlign: 'right' }}>Balance</th>
@@ -1381,7 +1524,20 @@ export default function CustomerInvoicesPage() {
                       const bal = Math.max(0, gt - pd);
                       return (
                         <tr key={inv.id} style={{ cursor: 'pointer' }} onClick={() => openInvoice(inv)}>
-                          <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{inv.id}</td>
+                          <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>
+                            {inv.id}
+                            {inv.warranty_claim_id && (
+                              <div title="Warranty redo invoice" style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: '#fef3c7', color: '#92400e', marginTop: 2, whiteSpace: 'nowrap', display: 'inline-block' }}>
+                                🛡 REDO
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                            <div>{fmtDate(inv.created_at)}</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', marginTop: 2 }}>
+                              CI-{String(inv.id).padStart(6, '0')}
+                            </div>
+                          </td>
                           <td>
                             <div
                               className="ci-cust-link"
@@ -1447,7 +1603,6 @@ export default function CustomerInvoicesPage() {
                             </div>
                           </td>
                           <td style={{ fontSize: 12 }}>{inv.hub_full_name || inv.hub_name || inv.hub?.name || '—'}</td>
-                          <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{fmtDate(inv.created_at)}</td>
                           <td style={{ textAlign: 'right', fontWeight: 350, fontSize: 13 }}>{fmt(gt)}</td>
                           <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 300 }}>{fmt(pd)}</td>
                           <td style={{

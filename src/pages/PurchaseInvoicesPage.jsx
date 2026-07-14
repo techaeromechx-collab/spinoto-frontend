@@ -1480,7 +1480,14 @@ export default function PurchaseInvoicesPage() {
                         style={{ cursor: 'pointer' }}
                         onClick={() => openInvoice(inv)}
                       >
-                        <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{inv.id}</td>
+                        <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>
+                          {inv.id}
+                          {inv.warranty_claim_id && (
+                            <div title="Warranty redo invoice" style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: '#fef3c7', color: '#92400e', marginTop: 2, whiteSpace: 'nowrap', display: 'inline-block' }}>
+                              🛡 REDO
+                            </div>
+                          )}
+                        </td>
                         <td>
                           <div
                             className="pi-cust-link"

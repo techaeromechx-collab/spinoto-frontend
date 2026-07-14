@@ -15,6 +15,8 @@ import AppointmentsPage      from './pages/AppointmentsPage.jsx';
 import CustomersPage         from './pages/CustomersPage.jsx';
 import PartsPage from './pages/PartsPage.jsx';
 import DiscountMasterPage from './pages/DiscountMasterPage.jsx';
+import WarrantyMasterPage from './pages/WarrantyMasterPage.jsx';
+import ClaimsPage from './pages/ClaimsPage.jsx';
 import EstimatesPage from './pages/EstimatesPage.jsx';
 import PurchaseInvoicesPage from './pages/PurchaseInvoicesPage.jsx';
 import CustomerInvoicesPage from './pages/CustomerInvoicesPage.jsx';
@@ -105,6 +107,7 @@ export default function App() {
                 <Route path="/master/departments"   element={<RequirePermission codes={['CREATE_LEAD','VIEW_LEAD','VIEW_TEAM_LEADS','VIEW_OWN_LEADS','VIEW_APPOINTMENT','CREATE_APPOINTMENT','EDIT_APPOINTMENT','MANAGE_MASTER_DATA']}><DepartmentsPage /></RequirePermission>} />
                 <Route path="/master/parts"        element={<RequirePermission codes={['MANAGE_MASTER_DATA','VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE','VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE']}><PartsPage /></RequirePermission>} />
                 <Route path="/master/discounts"    element={<RequirePermission codes={['MANAGE_MASTER_DATA','VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE','VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE','VIEW_LEAD','CREATE_LEAD']}><DiscountMasterPage /></RequirePermission>} />
+                <Route path="/master/warranties"   element={<RequirePermission codes={['MANAGE_WARRANTIES','CREATE_WARRANTY','EDIT_WARRANTY','DELETE_WARRANTY','MANAGE_MASTER_DATA','VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE','VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE','VIEW_LEAD','CREATE_LEAD']}><WarrantyMasterPage /></RequirePermission>} />
 
                 {/* Pricing is now embedded in ServicesPage — redirect old URL */}
                 <Route path="/master/pricing"   element={<Navigate to="/master/services" replace />} />
@@ -140,9 +143,14 @@ export default function App() {
                   wired up ahead of each page's own migration.
                 */}
 
-                {/* Leads */}
-                <Route path="/leads"            element={<RequirePermission codes={['VIEW_LEAD','CREATE_LEAD']}><LeadsPage /></RequirePermission>} />
-                <Route path="/leads/:token"     element={<RequirePermission codes={['VIEW_LEAD','CREATE_LEAD']}><LeadsPage /></RequirePermission>} />
+                {/* Leads — single route with an optional :token segment so that
+                    opening/closing a lead's detail view (or switching from
+                    viewing to editing it) only changes the route param, never
+                    which Route matches — switching between two separate sibling
+                    Routes for the same component would unmount/remount LeadsPage
+                    on every open/close, wiping any state set in the same tick
+                    (this was the cause of the "Edit doesn't open" bug). */}
+                <Route path="/leads/:token?"     element={<RequirePermission codes={['VIEW_LEAD','CREATE_LEAD']}><LeadsPage /></RequirePermission>} />
 
                 {/* Appointments */}
                 <Route path="/appointments"     element={<RequirePermission codes={['VIEW_APPOINTMENT','CREATE_APPOINTMENT','EDIT_APPOINTMENT']}><AppointmentsPage /></RequirePermission>} />
@@ -168,6 +176,7 @@ export default function App() {
                     shareable-urls audit: every Payouts link targets Purchase
                     Invoices or Customer Invoices), so no :token route here. */}
                 <Route path="/payouts" element={<RequirePermission codes={['VIEW_HUB','MANAGE_HUBS','VIEW_INVOICE']}><PayoutsPage /></RequirePermission>} />
+                <Route path="/warranty-claims" element={<RequirePermission codes={['VIEW_CLAIM','CREATE_CLAIM','APPROVE_CLAIM','RESOLVE_CLAIM','MANAGE_CLAIMS']}><ClaimsPage /></RequirePermission>} />
 
                 {/* Legacy invoices page — redirect to customer invoices */}
                 <Route path="/invoices"     element={<Navigate to="/customer-invoices" replace />} />

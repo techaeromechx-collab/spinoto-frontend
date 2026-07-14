@@ -55,6 +55,7 @@ import {
   Shield,
   Zap,
   Percent,
+  ShieldCheck,
 } from 'lucide-react';
 
 // ── Notification type → { icon, bg, color, label } ────────────────────────
@@ -99,6 +100,7 @@ const NAV_ITEMS = [
       { label: 'Departments',        to: '/master/departments',   permissions: ['MANAGE_MASTER_DATA'],                                          icon: Building2 },
       { label: 'Parts',              to: '/master/parts',         permissions: ['MANAGE_PARTS','CREATE_PART','EDIT_PART','DELETE_PART','MANAGE_MASTER_DATA'], icon: Package   },
       { label: 'Discounts',          to: '/master/discounts',     permissions: ['MANAGE_DISCOUNTS','CREATE_DISCOUNT','EDIT_DISCOUNT','DELETE_DISCOUNT','MANAGE_MASTER_DATA'], icon: Percent   },
+      { label: 'Warranty & Guarantee', to: '/master/warranties',  permissions: ['MANAGE_WARRANTIES','CREATE_WARRANTY','EDIT_WARRANTY','DELETE_WARRANTY','MANAGE_MASTER_DATA'], icon: ShieldCheck },
     ],
   },
   { label: 'HUBs',         to: '/hubs',         permissions: ['VIEW_HUB','MANAGE_HUBS','CREATE_HUB','EDIT_HUB'], icon: Network },
@@ -107,6 +109,7 @@ const NAV_ITEMS = [
   { label: 'Estimates',          to: '/estimates',         permissions: ['VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE'],     icon: FileText    },
   { label: 'Purchase Invoices', to: '/purchase-invoices', permissions: ['VIEW_PURCHASE_INVOICE','CREATE_PURCHASE_INVOICE','APPROVE_PURCHASE_INVOICE'], icon: ReceiptText },
   { label: 'Customer Invoices', to: '/customer-invoices', permissions: ['VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE'],         icon: Receipt     },
+  { label: 'Claims',            to: '/warranty-claims',   permissions: ['VIEW_CLAIM','CREATE_CLAIM','APPROVE_CLAIM','RESOLVE_CLAIM','MANAGE_CLAIMS'], icon: ShieldCheck },
   { label: 'Hub Payouts',       to: '/payouts',           permissions: ['VIEW_PURCHASE_INVOICE','VIEW_HUB','MANAGE_HUBS'],       icon: Wallet      },
   { label: 'Customers',         to: '/customers',         permissions: ['VIEW_CUSTOMER','VIEW_LEAD','CREATE_LEAD'],              icon: Users2      },
   { label: 'Bulk Upload', to: '/bulk-upload', permissions: ['BULK_UPLOAD'],             icon: UploadCloud },

@@ -36,6 +36,52 @@ function StatusBadge({ status }) {
   );
 }
 
+// ── Warranty label ────────────────────────────────────────────────────────────
+// Builds the customer-facing warranty text from an item's snapshot fields.
+// Custom text wins; else "6 Months / 5,000 KM (whichever is earlier)".
+function promiseLabel(text, months, days, km) {
+  if (text) return text;
+  const parts = [];
+  if (months) parts.push(`${months} Month${months > 1 ? 's' : ''}`);
+  if (days)   parts.push(`${days} Day${days > 1 ? 's' : ''}`);
+  if (km)     parts.push(`${Number(km).toLocaleString('en-IN')} KM`);
+  if (parts.length === 0) return null;
+  return parts.length > 1 ? `${parts.join(' / ')} (whichever is earlier)` : parts[0];
+}
+
+function itemWarrantyLabel(it) {
+  return promiseLabel(it.warranty_text, it.warranty_months, it.warranty_days, it.warranty_km);
+}
+
+function itemGuaranteeLabel(it) {
+  return promiseLabel(it.guarantee_text, it.guarantee_months, it.guarantee_days, it.guarantee_km);
+}
+
+// Shows a warranty chip and/or a guarantee chip — an item can carry both.
+function WarrantyChip({ it }) {
+  const wLabel = itemWarrantyLabel(it);
+  const gLabel = itemGuaranteeLabel(it);
+  if (!wLabel && !gLabel) return null;
+  const chip = (emoji, label, bg, color, title) => (
+    <span
+      style={{
+        fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+        background: bg, color, whiteSpace: 'nowrap',
+        maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block',
+      }}
+      title={title}
+    >
+      {emoji} {label}
+    </span>
+  );
+  return (
+    <>
+      {wLabel && chip('🛡', wLabel, '#dcfce7', '#166534', `Warranty: ${wLabel}`)}
+      {gLabel && chip('✔', gLabel, '#e0e7ff', '#3730a3', `Guarantee: ${gLabel}`)}
+    </>
+  );
+}
+
 // ── Work status badge ─────────────────────────────────────────────────────────
 const WS_STYLE = {
   pending: { bg: '#f3f4f6', color: '#6b7280', border: '#d1d5db', label: 'Pending' },
@@ -653,6 +699,16 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
         discount_type: it.discount_type || null,
         discount_value: parseFloat(it.discount_value) || 0,
         discount_source: it.discount_source || null,
+        warranty_months: it.warranty_months ?? null,
+        warranty_days:   it.warranty_days   ?? null,
+        warranty_km:     it.warranty_km     ?? null,
+        warranty_text:   it.warranty_text   || null,
+        warranty_source: it.warranty_source || null,
+        guarantee_months: it.guarantee_months ?? null,
+        guarantee_days:   it.guarantee_days   ?? null,
+        guarantee_km:     it.guarantee_km     ?? null,
+        guarantee_text:   it.guarantee_text   || null,
+        guarantee_source: it.guarantee_source || null,
       };
     })
   );
@@ -875,8 +931,8 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
           // Auto-lookup discount (uses already-loaded services list from closure)
           let discount_type = null, discount_value = 0, discount_source = null;
+          const fullSvc = services.find(sv => String(sv.id) === String(s.service_id));
           try {
-            const fullSvc = services.find(sv => String(sv.id) === String(s.service_id));
             const params = new URLSearchParams({ service_id: s.service_id });
             if (fullSvc?.category_id) params.set('category_id', fullSvc.category_id);
             const disc = await api(`/api/discount-master/lookup?${params}`);
@@ -886,6 +942,13 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
               discount_source = 'master';
             }
           } catch { /* silently ignore */ }
+
+          // Auto-lookup warranty from warranty master (snapshot fields)
+          const warranty = await lookupItemWarranty({
+            serviceId: s.service_id,
+            categoryId: fullSvc?.category_id || null,
+            vehicleTypeId: ctx?.vehicle_type_id || null,
+          });
 
           return {
             _key: Math.random(),
@@ -901,6 +964,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
             discount_type,
             discount_value,
             discount_source,
+            ...warranty,
           };
         }));
 
@@ -927,8 +991,8 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
     // Auto-lookup discount from discount master
     let discount_type = null, discount_value = 0, discount_source = null;
+    const fullSvc = services.find(s => String(s.id) === String(svc.id));
     try {
-      const fullSvc = services.find(s => String(s.id) === String(svc.id));
       const params = new URLSearchParams({ service_id: svc.id });
       if (fullSvc?.category_id) params.set('category_id', fullSvc.category_id);
       const disc = await api(`/api/discount-master/lookup?${params}`);
@@ -938,6 +1002,13 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
         discount_source = 'master';
       }
     } catch { /* silently ignore — discount is optional */ }
+
+    // Auto-lookup warranty from warranty master (snapshot fields)
+    const warranty = await lookupItemWarranty({
+      serviceId: svc.id,
+      categoryId: fullSvc?.category_id || svc.category_id || null,
+      vehicleTypeId: vehicleCtx?.vehicle_type_id || null,
+    });
 
     setItems(prev => [...prev, {
       _key: Math.random(),
@@ -953,6 +1024,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       discount_type,
       discount_value,
       discount_source,
+      ...warranty,
     }]);
     setServiceSearch('');
   }
@@ -974,6 +1046,12 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       }
     } catch { /* silently ignore */ }
 
+    // Auto-lookup warranty from warranty master (snapshot fields)
+    const warranty = await lookupItemWarranty({
+      partId: part.id,
+      vehicleTypeId: vehicleCtx?.vehicle_type_id || null,
+    });
+
     setItems(prev => [...prev, {
       _key: Math.random(),
       type: 'part',
@@ -988,8 +1066,47 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       discount_type,
       discount_value,
       discount_source,
+      ...warranty,
     }]);
     setPartSearch('');
+  }
+
+  // ── Warranty lookup helper ────────────────────────────────────────────────
+  // Resolves the best-matching warranty from the warranty master and returns
+  // snapshot fields for the line item. Priority (backend): part+vt > part >
+  // service+vt > service > category+vt > category. Silently returns empty
+  // fields on any failure — warranty is optional.
+  async function lookupItemWarranty({ serviceId = null, partId = null, categoryId = null, vehicleTypeId = null }) {
+    const empty = {
+      warranty_months: null, warranty_days: null, warranty_km: null, warranty_text: null, warranty_source: null,
+      guarantee_months: null, guarantee_days: null, guarantee_km: null, guarantee_text: null, guarantee_source: null,
+    };
+    try {
+      const params = new URLSearchParams();
+      if (serviceId)     params.set('service_id',      serviceId);
+      if (partId)        params.set('part_id',         partId);
+      if (categoryId)    params.set('category_id',     categoryId);
+      if (vehicleTypeId) params.set('vehicle_type_id', vehicleTypeId);
+      if ([...params].length === 0) return empty;
+      const r = await api(`/api/warranty-master/lookup?${params}`);
+      if (!r.matched) return empty;
+      const w = r.warranty  || null; // best warranty match, if any
+      const g = r.guarantee || null; // best guarantee match, if any
+      return {
+        warranty_months: w?.duration_months ?? null,
+        warranty_days:   w?.duration_days   ?? null,
+        warranty_km:     w?.duration_km     ?? null,
+        warranty_text:   w?.custom_text     || null,
+        warranty_source: w ? 'master' : null,
+        guarantee_months: g?.duration_months ?? null,
+        guarantee_days:   g?.duration_days   ?? null,
+        guarantee_km:     g?.duration_km     ?? null,
+        guarantee_text:   g?.custom_text     || null,
+        guarantee_source: g ? 'master' : null,
+      };
+    } catch {
+      return empty;
+    }
   }
 
   // ── Pricing lookup helper ─────────────────────────────────────────────────
@@ -1155,6 +1272,16 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
             discount_value: forceZero ? 0 : (it.discount_value || 0),
             discount_amount: forceZero ? 0 : discountAmount,
             discount_source: forceZero ? null : (it.discount_source || null),
+            warranty_months: it.warranty_months ?? null,
+            warranty_days:   it.warranty_days   ?? null,
+            warranty_km:     it.warranty_km     ?? null,
+            warranty_text:   it.warranty_text   || null,
+            warranty_source: it.warranty_source || null,
+            guarantee_months: it.guarantee_months ?? null,
+            guarantee_days:   it.guarantee_days   ?? null,
+            guarantee_km:     it.guarantee_km     ?? null,
+            guarantee_text:   it.guarantee_text   || null,
+            guarantee_source: it.guarantee_source || null,
           };
         }),
       };
@@ -1548,6 +1675,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                                   {it.is_fixed && (
                                     <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: '#fef3c7', color: '#92400e' }}>Fixed</span>
                                   )}
+                                  <WarrantyChip it={it} />
                                 </div>
                               </div>
                             </td>
@@ -2397,6 +2525,11 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             <FileText size={18} style={{ color: 'var(--primary)' }} />
             <span style={{ fontWeight: 700, fontSize: 16 }}>Estimate #{estimate.id}</span>
             <StatusBadge status={status} />
+            {estimate.warranty_claim_id && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap' }}>
+                🛡 Warranty Redo
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {estimate.is_b2b && (
@@ -2635,6 +2768,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                               {it.is_fixed_from_appointment && (
                                 <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: '#fef3c7', color: '#92400e' }}>Fixed</span>
                               )}
+                              <WarrantyChip it={it} />
                             </div>
                           </td>
                           <td style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{it.hsn_sac || '—'}</td>
@@ -3417,7 +3551,14 @@ export default function EstimatesPage() {
                         className="est-table-row"
                         onClick={() => openEstimate(est)}
                       >
-                        <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>{est.id}</td>
+                        <td style={{ fontWeight: 600, color: 'var(--text-muted)', fontSize: 12 }}>
+                          {est.id}
+                          {est.warranty_claim_id && (
+                            <div title="Warranty redo estimate" style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: '#fef3c7', color: '#92400e', marginTop: 2, whiteSpace: 'nowrap', display: 'inline-block' }}>
+                              🛡 REDO
+                            </div>
+                          )}
+                        </td>
                         <td>
                           <div
                             className="est-cust-link"

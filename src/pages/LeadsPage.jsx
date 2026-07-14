@@ -472,7 +472,7 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
           </div>
           <div className="lp-vm-header-actions">
             {canEdit && lead && !lead.is_converted && (
-              <button className="lp-vm-edit-btn" onClick={() => { onClose(); onEdit(lead); }}>
+              <button className="lp-vm-edit-btn" onClick={() => onEdit(lead)}>
                 <Pencil size={14} /> Edit
               </button>
             )}
@@ -4636,7 +4636,7 @@ export default function LeadsPage() {
         <ViewLeadModal leadId={viewId} canEdit={canEdit} statusList={statusList}
           onLeadLoaded={handleLeadLoaded}
           onClose={closeLead}
-          onEdit={l => { closeLead(); setEditLead(l); }} />
+          onEdit={l => { setViewId(null); setEditLead(l); }} />
       )}
       {editLead && (
         <EditLeadModal lead={editLead} statusList={statusList} leadSources={leadSources}

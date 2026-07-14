@@ -559,6 +559,11 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit }) {
               {appt.appointment_code && <CopyButton text={appt.appointment_code} />}
             </span>
             {appt.lead_id && <span className="apptv-lead-chip">Lead #{appt.lead_id}</span>}
+            {appt.is_warranty_redo && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap' }}>
+                🛡 Warranty Redo
+              </span>
+            )}
             {status && <StatusBadge name={status.name} color={status.color} bg={status.bg_color} />}
           </div>
           <div className="apptv-hdr-right">
@@ -999,6 +1004,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
     scheduled_date: appt.scheduled_date?.slice(0, 10) || '',
     scheduled_time: appt.scheduled_time?.slice(0, 5) || '',
     notes: appt.notes || '',
+    odometer_km: appt.odometer_km != null ? String(appt.odometer_km) : '',
     pickup_required: appt.pickup_required || false,
     pickup_address_line1: appt.pickup_address_line1 || '',
     pickup_address_line2: appt.pickup_address_line2 || '',
@@ -1305,6 +1311,7 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
           ...(dateChanged ? { scheduled_date: form.scheduled_date } : {}),
           ...(timeChanged ? { scheduled_time: form.scheduled_time || null } : {}),
           notes: form.notes.trim() || null,
+          odometer_km: form.odometer_km !== '' ? parseInt(form.odometer_km, 10) : null,
           pickup_required: form.pickup_required,
           pickup_address_line1: form.pickup_required ? (form.pickup_address_line1.trim() || null) : null,
           pickup_address_line2: form.pickup_required ? (form.pickup_address_line2.trim() || null) : null,
@@ -1486,6 +1493,11 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
                 <label>Time</label>
                 <input type="time" className="ea-input" value={form.scheduled_time} onChange={f('scheduled_time')} />
               </div>
+            </div>
+            <div className="ea-field" style={{ marginTop: 10 }}>
+              <label>Odometer (KM)</label>
+              <input type="number" min="0" step="1" className="ea-input" value={form.odometer_km} onChange={f('odometer_km')}
+                placeholder="Current odometer reading" />
             </div>
             <div className="ea-field" style={{ marginTop: 10 }}>
               <label>Notes</label>
@@ -1681,7 +1693,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
   // ── Step 3: Appointment details ───────────────────────────────────────────
   const [apptForm, setApptForm] = useState({
     hub_id: '', scheduled_date: '', scheduled_time: '',
-    notes: '',
+    notes: '', odometer_km: '',
     pickup_required: false, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '',
     pickup_scheduled_date: '', pickup_scheduled_time: '',
     drop_required: false, drop_address_line1: '', drop_address_line2: '', drop_city: '', drop_pincode: '', drop_maps_link: '',
@@ -2070,6 +2082,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
         scheduled_date: apptForm.scheduled_date,
         scheduled_time: apptForm.scheduled_time || null,
         notes: apptForm.notes.trim() || null,
+        odometer_km: apptForm.odometer_km !== '' ? parseInt(apptForm.odometer_km, 10) : null,
         pickup_required: apptForm.pickup_required,
         pickup_address_line1: apptForm.pickup_required ? apptForm.pickup_address_line1.trim() : null,
         pickup_address_line2: apptForm.pickup_required ? (apptForm.pickup_address_line2.trim() || null) : null,
@@ -2467,7 +2480,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
               {/* Date + Time */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label className="ca-lbl">Date <span style={{ color: '#dc2626' }}>*</span></label>
+                  <label className="ca-lbl">Appointment Schedule Date <span style={{ color: '#dc2626' }}>*</span></label>
                   <input type="date" className="ca-input" value={apptForm.scheduled_date}
                     onChange={e => setApptForm(f => ({ ...f, scheduled_date: e.target.value }))} />
                 </div>
@@ -2497,20 +2510,6 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
 
                 {apptForm.pickup_required && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 4 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <div>
-                        <label className="ca-lbl">Pickup Date</label>
-                        <input type="date" className="ca-input"
-                          value={apptForm.pickup_scheduled_date}
-                          onChange={e => setApptForm(f => ({ ...f, pickup_scheduled_date: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className="ca-lbl">Pickup Time</label>
-                        <input type="time" className="ca-input"
-                          value={apptForm.pickup_scheduled_time}
-                          onChange={e => setApptForm(f => ({ ...f, pickup_scheduled_time: e.target.value }))} />
-                      </div>
-                    </div>
                     <div>
                       <label className="ca-lbl">Address Line 1 <span style={{ color: '#dc2626' }}>*</span></label>
                       <input className="ca-input" placeholder="Flat / Building / Street"
@@ -2617,6 +2616,15 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
                   </div>
                 </div>
               )}
+
+              {/* Odometer */}
+              <div>
+                <label className="ca-lbl">Odometer (KM, optional)</label>
+                <input className="ca-input" type="number" min="0" step="1"
+                  placeholder="Current odometer reading — used for warranty KM validation"
+                  value={apptForm.odometer_km}
+                  onChange={e => setApptForm(f => ({ ...f, odometer_km: e.target.value }))} />
+              </div>
 
               {/* Notes */}
               <div>
@@ -3016,6 +3024,11 @@ export default function AppointmentsPage() {
                     onClick={() => openAppt(a)}>
                     <td>
                       <span className="appt-id-badge">{a.id}</span>
+                      {a.is_warranty_redo && (
+                        <span title="Warranty redo appointment" style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: '#fef3c7', color: '#92400e', marginLeft: 6, whiteSpace: 'nowrap', display: 'inline-block' }}>
+                          🛡 REDO
+                        </span>
+                      )}
                       {a.lead_id && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Lead #{a.lead_id}</div>}
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{fmtDate(a.created_at)}</div>
                     </td>

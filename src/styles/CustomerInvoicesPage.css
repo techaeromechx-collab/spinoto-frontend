@@ -372,10 +372,12 @@
     font-size: 9px !important;
   }
 
-  /* Totals row */
+  /* Totals row — kept together, never split across a page break */
   .ci-totals-row {
     font-size: 10px !important;
     gap: 12px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   /* Payments section */
@@ -393,18 +395,53 @@
     padding: 4px 5px !important;
   }
 
-  /* Footer — fixed at bottom of every printed page */
+  /* Payments table — don't split it mid-way across a page break */
+  .ci-payments-table {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Warranty & Guarantee coverage — compact for print. An invoice can
+     list a warranty/guarantee line for every item, which at screen
+     sizing eats a lot of vertical space and pushes totals/payments
+     onto a second page. Shrink it down and keep it from splitting
+     across a page break. */
+  .ci-warranty-box {
+    padding: 6px 10px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .ci-warranty-box>div:first-child {
+    font-size: 7px !important;
+    margin-bottom: 3px !important;
+  }
+
+  .ci-warranty-list {
+    gap: 2px !important;
+  }
+
+  .ci-warranty-row {
+    font-size: 8px !important;
+  }
+
+  /* Footer — flows naturally after Payments (its actual position in
+     the markup) instead of being pinned to the bottom of every page.
+     It used to be `position: fixed`, which meant Chrome repeated it on
+     every printed page at a fixed spot — so on a 2-page invoice it
+     rendered at the bottom of page 1 too, overlapping/appearing before
+     content (tax breakdown, Grand Total, Payments) that had overflowed
+     onto page 2. Letting it sit in normal flow means it only ever
+     appears once, right after Payments, on whichever page that lands on. */
   .ci-invoice-footer {
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    margin: 0 !important;
+    margin-top: 10px !important;
     padding: 8px 10mm 6px !important;
     border-top: 1px solid #e5e7eb !important;
     background: #fff !important;
     text-align: center !important;
     font-size: 9px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -435,6 +472,47 @@
 
 .ci-payments-table {
   min-width: 420px;
+}
+
+/* ── Warranty & Guarantee + Payments side-by-side row ─────────────────────── */
+/* The coverage table lives in a ~half-width column — the global .ci-table
+   min-width (680px) would overflow it onto the payments column. */
+.ci-coverage-table {
+  min-width: 0 !important;
+  width: 100%;
+  table-layout: fixed;
+}
+.ci-coverage-table td {
+  word-break: break-word;
+}
+.ci-wg-pay-row .ci-payments-table {
+  min-width: 0 !important;
+  width: 100%;
+}
+
+@media print {
+  .ci-wg-pay-row {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 16px !important;
+    /* Never cut this section across pages — if it doesn't fit, the whole
+       block (coverage + payments) moves to the next page together. */
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  .ci-wg-pay-row > div {
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+  .ci-coverage-table tr,
+  .ci-wg-pay-row .ci-payments-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .ci-invoice-footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
 
 /* ── Mobile: 768px ────────────────────────────────────────────────────────── */
