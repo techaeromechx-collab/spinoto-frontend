@@ -1318,11 +1318,11 @@ export default function ReportsPage() {
                         <li><b>Collected</b> = SUM(customer_invoice.amount_paid)</li>
                         <li><b>Total PI Amount</b> = SUM(linked purchase_invoice.grand_total) — the latest PI per estimate, regardless of its status or payments</li>
                         <li><b>Outstanding to Hub</b> = for each of those same Purchase Invoices, take what's owed minus what's already been paid, and add that up (never counting less than zero for any single one)</li>
-                        <li><b>Our take</b> = Billed revenue − Total PI Amount</li>
+                        <li><b>Our take</b> = same formula as the Payouts page's "Total Take Rate": for every item on an approved, tech-rate purchase invoice, (customer rate − hub rate) × quantity, summed up. Commission-mode jobs contribute ₹0 here, same as on Payouts.</li>
                         <li><b>Customer invoices</b> = COUNT of customer invoices in that set</li>
                       </ul>
                       <div style={{ marginTop: 6 }}>
-                        All grouped by hub, scoped to the date range above (based on the customer invoice's created date). Note: this can differ from the Payouts page, which only counts approved &amp; unpaid PIs and has no date filter.
+                        Revenue/Collected/Total PI Amount/Outstanding are grouped by the customer invoice's hub and scoped to the date range above (invoice created date). Our take is grouped by the purchase invoice's own hub and scoped by the PI's created date. Unlike Payouts, this report still respects the date range and hub filter above.
                       </div>
                     </div>
                   )}
@@ -1377,7 +1377,7 @@ export default function ReportsPage() {
                   </div>
                   <div>
                     <div style={{ fontSize: 20, fontWeight: 800, color: '#7c3aed' }}>{inr(hubRev.total.our_take)}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Our take (revenue − total PI amount)</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Our take (same formula as Payouts)</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 20, fontWeight: 700 }}>{hubRev.total.invoice_count}</div>
