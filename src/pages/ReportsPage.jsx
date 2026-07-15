@@ -7,7 +7,7 @@ import {
 import {
   LayoutDashboard, Users, TrendingUp, IndianRupee,
   ChevronUp, ChevronDown, Minus, RefreshCw, Calendar, FileDown,
-  X, CheckCircle2, Clock, AlertCircle, Phone, ChevronRight, Search,
+  X, CheckCircle2, Clock, AlertCircle, Phone, ChevronRight, Search, Info,
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { jsPDF } from 'jspdf';
@@ -116,11 +116,14 @@ function KpiCard({ label, value, icon: Icon, accent = '#3b82f6', sub, trend, pre
 
 // ══════════════════════════════════════════════════════════════════════════════
 export default function ReportsPage() {
-  const [tab, setTab] = useState('overview');   // 'overview' | 'leads' | 'by-user' | 'analytics'
+  const [tab, setTab] = useState('overview');   // 'overview' | 'leads' | 'by-user' | 'analytics' | 'hub-revenue'
   const [revTrend, setRevTrend] = useState([]);
   const [funnel, setFunnel] = useState([]);
   const [topPerf, setTopPerf] = useState({ top_hubs: [], top_services: [] });
   const [anlLoading, setAnlLoading] = useState(false);
+  const [hubRev, setHubRev] = useState({ items: [], total: { revenue: 0, collected: 0, hub_payable: 0, our_take: 0, outstanding_to_hub: 0, invoice_count: 0 } });
+  const [hubRevLoading, setHubRevLoading] = useState(false);
+  const [showHubRevInfo, setShowHubRevInfo] = useState(false);
   const [preset, setPreset] = useState(30);           // days; 0 = all
   const [dateRange, setDateRange] = useState(getPresetDates(30));
 
@@ -294,6 +297,20 @@ export default function ReportsPage() {
       setFunnel(fn.funnel || []);
       setTopPerf({ top_hubs: tp.top_hubs || [], top_services: tp.top_services || [] });
     }).finally(() => setAnlLoading(false));
+  }, [tab, dateRange, hubId]); // eslint-disable-line
+
+  // ── Load hub revenue when tab is hub-revenue or date/hub changes ──────────
+  useEffect(() => {
+    if (tab !== 'hub-revenue') return;
+    setHubRevLoading(true);
+    const params = new URLSearchParams();
+    if (dateRange.from) { params.set('from', dateRange.from); params.set('to', dateRange.to); }
+    if (hubId) params.set('hub_id', hubId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    api(`/api/reports/hub-revenue${qs}`)
+      .then(r => setHubRev({ items: r.items || [], total: r.total || { revenue: 0, collected: 0, hub_payable: 0, our_take: 0, outstanding_to_hub: 0, invoice_count: 0 } }))
+      .catch(() => setHubRev({ items: [], total: { revenue: 0, collected: 0, hub_payable: 0, our_take: 0, outstanding_to_hub: 0, invoice_count: 0 } }))
+      .finally(() => setHubRevLoading(false));
   }, [tab, dateRange, hubId]); // eslint-disable-line
 
   // ── Date preset handler ───────────────────────────────────────────────────
@@ -595,6 +612,10 @@ export default function ReportsPage() {
         <button className={`rp-tab${tab === 'analytics' ? ' rp-tab--on' : ''}`}
           onClick={() => setTab('analytics')}>
           <TrendingUp size={14} /> Analytics
+        </button>
+        <button className={`rp-tab${tab === 'hub-revenue' ? ' rp-tab--on' : ''}`}
+          onClick={() => setTab('hub-revenue')}>
+          <IndianRupee size={14} /> Hub Revenue
         </button>
       </div>
 
@@ -1252,6 +1273,172 @@ export default function ReportsPage() {
                       <Bar dataKey="revenue" fill="#8b5cf6" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          HUB REVENUE TAB — actual billed revenue (customer invoice totals),
+          NOT hub payouts (PI) and NOT quoted values (estimates/leads)
+      ══════════════════════════════════════════════════════════════════════ */}
+      {tab === 'hub-revenue' && (
+        <div className="anl-wrap">
+          {hubRevLoading ? (
+            <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)', fontSize: 14 }}>Loading hub revenue…</div>
+          ) : (
+            <>
+              {/* Grand total */}
+              <div className="anl-card">
+                <div className="anl-card-hd" style={{ flexWrap: 'wrap', gap: 10, position: 'relative' }}>
+                  <IndianRupee size={15} style={{ color: '#16a34a' }} />
+                  Total Revenue{hubId ? ` — ${hubs.find(h => String(h.id) === String(hubId))?.hub_name || 'Selected hub'}` : ' — All Hubs'}
+                  <button
+                    type="button"
+                    onClick={() => setShowHubRevInfo(s => !s)}
+                    title="How this is calculated"
+                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, border: 'none', borderRadius: '50%', background: showHubRevInfo ? 'var(--primary)' : 'var(--bg-soft, #f1f5f9)', color: showHubRevInfo ? '#fff' : 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                  >
+                    <Info size={12} />
+                  </button>
+                  {showHubRevInfo && (
+                    <div
+                      style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 20, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: '12px 14px', width: 420, maxWidth: '90vw', fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 400 }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text)' }}>How this is calculated</div>
+                        <button type="button" onClick={() => setShowHubRevInfo(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
+                          <X size={13} />
+                        </button>
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+                        <li><b>Billed revenue</b> = SUM(customer_invoice.grand_total), excluding cancelled invoices</li>
+                        <li><b>Collected</b> = SUM(customer_invoice.amount_paid)</li>
+                        <li><b>Total PI Amount</b> = SUM(linked purchase_invoice.grand_total) — the latest PI per estimate, regardless of its status or payments</li>
+                        <li><b>Outstanding to Hub</b> = for each of those same Purchase Invoices, take what's owed minus what's already been paid, and add that up (never counting less than zero for any single one)</li>
+                        <li><b>Our take</b> = Billed revenue − Total PI Amount</li>
+                        <li><b>Customer invoices</b> = COUNT of customer invoices in that set</li>
+                      </ul>
+                      <div style={{ marginTop: 6 }}>
+                        All grouped by hub, scoped to the date range above (based on the customer invoice's created date). Note: this can differ from the Payouts page, which only counts approved &amp; unpaid PIs and has no date filter.
+                      </div>
+                    </div>
+                  )}
+                  {/* Editable date range — two-way bound to the page-level
+                      filter, so changing it here updates every tab and the
+                      header presets update this too. */}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontWeight: 400 }}>
+                    <input
+                      type="date"
+                      className="form-input"
+                      style={{ padding: '4px 8px', fontSize: 12, width: 138 }}
+                      value={dateRange.from || ''}
+                      max={dateRange.to || undefined}
+                      onChange={e => { setPreset(null); setDateRange(d => ({ from: e.target.value, to: d.to || new Date().toISOString().slice(0, 10) })); }}
+                    />
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>→</span>
+                    <input
+                      type="date"
+                      className="form-input"
+                      style={{ padding: '4px 8px', fontSize: 12, width: 138 }}
+                      value={dateRange.to || ''}
+                      min={dateRange.from || undefined}
+                      onChange={e => { setPreset(null); setDateRange(d => ({ from: d.from || e.target.value, to: e.target.value })); }}
+                    />
+                    <button
+                      type="button"
+                      className="rp-preset-btn"
+                      style={{ fontSize: 11.5 }}
+                      title="Clear dates — show all time"
+                      onClick={() => applyPreset(0)}
+                    >
+                      {dateRange.from ? 'All time' : '✓ All time'}
+                    </button>
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', padding: '14px 4px 6px', alignItems: 'baseline' }}>
+                  <div>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: '#16a34a' }}>{inr(hubRev.total.revenue)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Billed revenue (invoice totals)</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{inr(hubRev.total.collected)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Collected (payments received)</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#dc2626' }}>{inr(hubRev.total.hub_payable)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Total PI Amount (gross, all statuses)</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#ea580c' }}>{inr(hubRev.total.outstanding_to_hub)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Outstanding to Hub (not yet paid out)</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#7c3aed' }}>{inr(hubRev.total.our_take)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Our take (revenue − total PI amount)</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{hubRev.total.invoice_count}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Customer invoice{hubRev.total.invoice_count !== 1 ? 's' : ''}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Per-hub breakdown */}
+              <div className="anl-card">
+                <div className="anl-card-hd">
+                  <TrendingUp size={15} style={{ color: '#3b82f6' }} />
+                  Revenue by Hub
+                </div>
+                {hubRev.items.length === 0 ? (
+                  <div className="anl-empty">No customer invoices in this period.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 12 }}>
+                          <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>Hub</th>
+                          <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Revenue</th>
+                          <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Collected</th>
+                          <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Total PI Amount</th>
+                          <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#ea580c' }}>Outstanding to Hub</th>
+                          <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#7c3aed' }}>Our Take</th>
+                          <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Invoices</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {hubRev.items.map((row, i) => {
+                          return (
+                            <tr key={row.hub_id ?? `none-${i}`}>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>
+                                {row.hub_name}
+                              </td>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', fontWeight: 700 }}>
+                                {inr(row.revenue)}
+                              </td>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: 'var(--text-muted)' }}>
+                                {inr(row.collected)}
+                              </td>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#dc2626' }}>
+                                {inr(row.hub_payable)}
+                              </td>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#ea580c' }}>
+                                {inr(row.outstanding_to_hub)}
+                              </td>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', fontWeight: 700, color: '#7c3aed' }}>
+                                {inr(row.our_take)}
+                              </td>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
+                                {row.invoice_count}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             </>

@@ -617,9 +617,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                     <th style={{ textAlign: 'right' }}>
                       {inv?.rate_mode === 'tech_rate' ? 'Take Rate %' : 'Commission %'}
                     </th>
-                    {inv?.rate_mode === 'tech_rate' && (
-                      <th style={{ textAlign: 'right', color: '#dc2626' }}>Discount</th>
-                    )}
+                    <th style={{ textAlign: 'right', color: '#dc2626' }}>Discount</th>
                     <th style={{ textAlign: 'right' }}>{isHubUser ? 'Your Rate' : 'Hub Rate'}</th>
                     <th style={{ textAlign: 'right' }}>CGST %</th>
                     <th style={{ textAlign: 'right' }}>SGST %</th>
@@ -629,7 +627,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 </thead>
                 <tbody>
                   {items.length === 0 ? (
-                    <tr><td colSpan={inv?.rate_mode === 'tech_rate' ? 11 : 10} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
+                    <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
                   ) : items.map((it, i) => {
                     const custRate = parseFloat(it.customer_rate ?? 0);
                     const hubRate = parseFloat(it.hub_rate ?? 0);
@@ -659,11 +657,9 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                         }}>
                           {appliedRate > 0 ? `${appliedRate}%` : '—'}
                         </td>
-                        {inv?.rate_mode === 'tech_rate' && (
-                          <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 600, color: '#dc2626' }}>
-                            − {fmt(discountAmt / qty)}
-                          </td>
-                        )}
+                        <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 600, color: '#dc2626' }}>
+                          {discountAmt > 0 ? `− ${fmt(discountAmt / qty)}` : '—'}
+                        </td>
                         <td style={{ textAlign: 'right', fontWeight: 600, color: '#166534' }}>{fmt(hubRate)}</td>
                         <td style={{ textAlign: 'right', fontSize: 12 }}>{gstPct > 0 ? `${halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%` : '—'}</td>
                         <td style={{ textAlign: 'right', fontSize: 12 }}>{gstPct > 0 ? `${halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%` : '—'}</td>
@@ -678,7 +674,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
             <p className="pi-no-print" style={{ margin: '8px 0 0', fontSize: 12, fontStyle: 'italic', color: 'var(--text-muted)' }}>
               {inv?.rate_mode === 'tech_rate'
                 ? `Discount = Customer Rate × Take Rate%  |  ${isHubUser ? 'Your Rate' : 'Hub Rate'} = Customer Rate − Discount  (services use Service Take Rate, parts use Parts Take Rate)`
-                : `${isHubUser ? 'Your Rate' : 'Hub Rate'} = Customer Rate × (1 − Commission%)`}
+                : `Discount = Customer Rate × Commission%  |  ${isHubUser ? 'Your Rate' : 'Hub Rate'} = Customer Rate − Discount`}
             </p>
           </div>
 
@@ -699,6 +695,29 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 
             {/* Summary — right */}
             <div style={{ flex: '0 0 auto', minWidth: 260, display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+              {/* Customer value → take deduction → hub subtotal */}
+              {(() => {
+                const custValue = items.reduce((s, it) => s + (parseFloat(it.customer_rate ?? 0) * parseFloat(it.quantity ?? 1)), 0);
+                const totalTake = r2(custValue - subtotal);
+                if (totalTake <= 0.005) return null;
+                return (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6b7280', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
+                      <span>Customer Value (ex-GST)</span>
+                      <span style={{ fontWeight: 600, color: '#374151', minWidth: 110, textAlign: 'right' }}>{fmt(custValue)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
+                      <span style={{ color: '#dc2626' }}>
+                        {isHubUser
+                          ? `Discount (${inv?.rate_mode === 'tech_rate' ? 'take rate' : 'commission'})`
+                          : `Our Take (${inv?.rate_mode === 'tech_rate' ? 'take rate' : 'commission'})`}
+                      </span>
+                      <span style={{ fontWeight: 600, color: '#dc2626', minWidth: 110, textAlign: 'right' }}>− {fmt(totalTake)}</span>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Subtotal */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6b7280', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
