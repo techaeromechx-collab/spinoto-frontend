@@ -121,7 +121,7 @@ export default function ReportsPage() {
   const [funnel, setFunnel] = useState([]);
   const [topPerf, setTopPerf] = useState({ top_hubs: [], top_services: [] });
   const [anlLoading, setAnlLoading] = useState(false);
-  const [hubRev, setHubRev] = useState({ items: [], total: { revenue: 0, collected: 0, hub_payable: 0, our_take: 0, outstanding_to_hub: 0, invoice_count: 0 } });
+  const [hubRev, setHubRev] = useState({ items: [], total: { revenue: 0, collected: 0, hub_payable: 0, hub_payable_approved: 0, our_take: 0, our_take_est: 0, outstanding_to_hub: 0, invoice_count: 0 } });
   const [hubRevLoading, setHubRevLoading] = useState(false);
   const [showHubRevInfo, setShowHubRevInfo] = useState(false);
   const [preset, setPreset] = useState(30);           // days; 0 = all
@@ -308,8 +308,8 @@ export default function ReportsPage() {
     if (hubId) params.set('hub_id', hubId);
     const qs = params.toString() ? `?${params.toString()}` : '';
     api(`/api/reports/hub-revenue${qs}`)
-      .then(r => setHubRev({ items: r.items || [], total: r.total || { revenue: 0, collected: 0, hub_payable: 0, our_take: 0, outstanding_to_hub: 0, invoice_count: 0 } }))
-      .catch(() => setHubRev({ items: [], total: { revenue: 0, collected: 0, hub_payable: 0, our_take: 0, outstanding_to_hub: 0, invoice_count: 0 } }))
+      .then(r => setHubRev({ items: r.items || [], total: r.total || { revenue: 0, collected: 0, hub_payable: 0, hub_payable_approved: 0, our_take: 0, our_take_est: 0, outstanding_to_hub: 0, invoice_count: 0 } }))
+      .catch(() => setHubRev({ items: [], total: { revenue: 0, collected: 0, hub_payable: 0, hub_payable_approved: 0, our_take: 0, our_take_est: 0, outstanding_to_hub: 0, invoice_count: 0 } }))
       .finally(() => setHubRevLoading(false));
   }, [tab, dateRange, hubId]); // eslint-disable-line
 
@@ -1316,7 +1316,7 @@ export default function ReportsPage() {
                       <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
                         <li><b>Billed revenue</b> = SUM(customer_invoice.grand_total), excluding cancelled invoices</li>
                         <li><b>Collected</b> = SUM(customer_invoice.amount_paid)</li>
-                        <li><b>Total PI Amount</b> = SUM(linked purchase_invoice.grand_total) — the latest PI per estimate, regardless of its status or payments</li>
+                        <li><b>Total PI Amount</b> = SUM(linked purchase_invoice.grand_total) — the latest PI per estimate, regardless of its status or payments. The small "Approved" figure underneath is the same sum, filtered to only PIs with status = approved.</li>
                         <li><b>Outstanding to Hub</b> = for each of those same Purchase Invoices, take what's owed minus what's already been paid, and add that up (never counting less than zero for any single one)</li>
                         <li><b>Our take</b> = same formula as the Payouts page's "Total Take Rate": for every item on an approved, tech-rate purchase invoice, (customer rate − hub rate) × quantity, summed up. Commission-mode jobs contribute ₹0 here, same as on Payouts.</li>
                         <li><b>Customer invoices</b> = COUNT of customer invoices in that set</li>
@@ -1369,7 +1369,10 @@ export default function ReportsPage() {
                   </div>
                   <div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: '#dc2626' }}>{inr(hubRev.total.hub_payable)}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Total PI Amount (gross, all statuses)</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Total PI Amount (all statuses)</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                      <span style={{ color: '#16a34a', fontWeight: 700 }}>{inr(hubRev.total.hub_payable_approved)}</span> approved
+                    </div>
                   </div>
                   <div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: '#ea580c' }}>{inr(hubRev.total.outstanding_to_hub)}</div>
@@ -1403,6 +1406,7 @@ export default function ReportsPage() {
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Revenue</th>
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Collected</th>
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Total PI Amount</th>
+                          <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#16a34a' }}>Approved</th>
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#ea580c' }}>Outstanding to Hub</th>
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#7c3aed' }}>Our Take</th>
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Invoices</th>
@@ -1423,6 +1427,9 @@ export default function ReportsPage() {
                               </td>
                               <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#dc2626' }}>
                                 {inr(row.hub_payable)}
+                              </td>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#16a34a' }}>
+                                {inr(row.hub_payable_approved)}
                               </td>
                               <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#ea580c' }}>
                                 {inr(row.outstanding_to_hub)}
