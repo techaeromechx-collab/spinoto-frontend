@@ -1,19 +1,41 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { api } from '../api/client.js';
+import { usePushNotifications } from '../hooks/usePushNotifications.js';
 import {
   LayoutDashboard, Calendar, FileText, Receipt, ReceiptText,
   LogOut, Moon, Sun, Menu, Building2,
   Loader2, IndianRupee, TrendingUp,
   PanelLeftClose, PanelLeftOpen,
   Wrench, Layers, Search, ChevronDown, ChevronUp, Tag,
+  Bell, CheckCheck, Percent, Database,
 } from 'lucide-react';
 import AppointmentsPage     from './AppointmentsPage.jsx';
 import EstimatesPage        from './EstimatesPage.jsx';
 import PurchaseInvoicesPage from './PurchaseInvoicesPage.jsx';
 import CustomerInvoicesPage from './CustomerInvoicesPage.jsx';
 import '../styles/HubDashboardPage.css';
+
+// ─── Notification type → icon/color/label (mirrors AppShell.jsx's NOTIF_META,
+// trimmed to the types that ever reach a hub-portal login) ───────────────────
+const NOTIF_META = {
+  appointment_reminder:   { Icon: Bell,     bg: '#f3e8ff', color: '#7c3aed', label: 'Reminder'       },
+  pricing_changed:        { Icon: Percent,  bg: '#dcfce7', color: '#15803d', label: 'Pricing'        },
+  reference_data_changed: { Icon: Database, bg: '#e0e7ff', color: '#4338ca', label: 'Reference Data' },
+};
+function getNotifMeta(type) {
+  return NOTIF_META[type] || { Icon: Bell, bg: '#dbeafe', color: '#2563eb', label: '' };
+}
+function timeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -450,6 +472,82 @@ export default function HubDashboardPage() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('spinoto_theme') || 'light');
 
+  // Register this device for browser push (same hook AppShell uses) —
+  // the hub portal is a standalone shell, so it never mounted this before.
+  usePushNotifications(user);
+
+  // ── Notifications ──────────────────────────────────────────────────────────
+  const [notifOpen,  setNotifOpen]  = useState(false);
+  const [notifCount, setNotifCount] = useState(0);
+  const [notifItems, setNotifItems] = useState([]);
+  const notifRef = useRef(null);
+
+  const fetchCount = useCallback(async () => {
+    try {
+      const r = await api('/api/notifications/unread-count');
+      setNotifCount(r.count || 0);
+    } catch { /* silent */ }
+  }, []);
+
+  const fetchNotifs = useCallback(async () => {
+    try {
+      const r = await api('/api/notifications');
+      setNotifItems(r.items || []);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => {
+    fetchCount();
+    const iv = setInterval(fetchCount, 30000);
+    return () => clearInterval(iv);
+  }, [fetchCount]);
+
+  useEffect(() => {
+    if (notifOpen) fetchNotifs();
+  }, [notifOpen, fetchNotifs]);
+
+  useEffect(() => {
+    function onOut(e) {
+      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
+    }
+    document.addEventListener('mousedown', onOut);
+    return () => document.removeEventListener('mousedown', onOut);
+  }, []);
+
+  // Notification click routes to a hub-portal tab, not a router path
+  // (this page manages its own tab state rather than react-router routes).
+  function getNotifTab(n) {
+    if (n.type === 'appointment_reminder') return 'appointments';
+    if (n.type === 'pricing_changed' || n.type === 'reference_data_changed') return 'services-pricing';
+    return null;
+  }
+
+  async function handleMarkRead(n) {
+    try {
+      await api(`/api/notifications/${n.id}/read`, { method: 'PATCH' });
+      setNotifItems(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+      setNotifCount(c => Math.max(0, c - 1));
+      const target = getNotifTab(n);
+      if (target) { setNotifOpen(false); setTab(target); }
+    } catch { /* silent */ }
+  }
+
+  async function handleMarkAllRead() {
+    try {
+      await api('/api/notifications/read-all', { method: 'PATCH' });
+      setNotifItems(prev => prev.map(x => ({ ...x, is_read: true })));
+      setNotifCount(0);
+    } catch { /* silent */ }
+  }
+
+  async function handleClearAll() {
+    try {
+      await api('/api/notifications', { method: 'DELETE' });
+      setNotifItems([]);
+      setNotifCount(0);
+    } catch { /* silent */ }
+  }
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('spinoto_theme', theme);
@@ -609,9 +707,77 @@ export default function HubDashboardPage() {
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{hubName}</div>
               </div>
             </div>
-            <div className="user">
-              <span className="role">Hub Portal</span>
-              <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{user?.name}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* ── Notification Bell ── */}
+              <div className="notif-wrap" ref={notifRef}>
+                <button className="notif-bell" onClick={() => setNotifOpen(o => !o)} title="Notifications">
+                  <Bell size={18} />
+                  {notifCount > 0 && (
+                    <span className="notif-badge">{notifCount > 99 ? '99+' : notifCount}</span>
+                  )}
+                </button>
+
+                {notifOpen && (
+                  <div className="notif-dropdown">
+                    <div className="notif-dd-header">
+                      <span className="notif-dd-title"><Bell size={13} /> Notifications</span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {notifCount > 0 && (
+                          <button className="notif-dd-mark-all" onClick={handleMarkAllRead}>
+                            <CheckCheck size={12} /> Mark all read
+                          </button>
+                        )}
+                        {notifItems.length > 0 && (
+                          <button className="notif-dd-clear" onClick={handleClearAll}>
+                            Clear all
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="notif-dd-list">
+                      {notifItems.length === 0 && (
+                        <div className="notif-dd-empty">No notifications yet</div>
+                      )}
+                      {notifItems.map(n => {
+                        const meta = getNotifMeta(n.type);
+                        return (
+                          <div
+                            key={n.id}
+                            className={`notif-dd-item${n.is_read ? '' : ' notif-dd-item--unread'}`}
+                            onClick={() => handleMarkRead(n)}
+                          >
+                            <div className="notif-dd-icon" style={{ background: meta.bg, color: meta.color }}>
+                              <meta.Icon size={14} />
+                            </div>
+                            <div className="notif-dd-content">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div className="notif-dd-item-title">{n.title}</div>
+                                {meta.label && (
+                                  <span style={{
+                                    fontSize: 9, fontWeight: 700, padding: '1px 5px',
+                                    borderRadius: 4, background: meta.bg, color: meta.color,
+                                    whiteSpace: 'nowrap', flexShrink: 0,
+                                  }}>
+                                    {meta.label}
+                                  </span>
+                                )}
+                              </div>
+                              {n.body && <div className="notif-dd-item-body">{n.body}</div>}
+                              <div className="notif-dd-item-time">{timeAgo(n.created_at)}</div>
+                            </div>
+                            {!n.is_read && <span className="notif-dd-dot" style={{ background: meta.color }} />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="user">
+                <span className="role">Hub Portal</span>
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{user?.name}</span>
+              </div>
             </div>
           </header>
 

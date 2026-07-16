@@ -72,6 +72,8 @@ const NOTIF_META = {
   follow_up_scheduled:{ Icon: Clock,         bg: '#dbeafe', color: '#2563eb', label: 'Follow-up'    },
   note_added:         { Icon: Activity,      bg: '#fef9c3', color: '#d97706', label: 'Note Added'   },
   appointment_reminder:{ Icon: Bell,         bg: '#f3e8ff', color: '#7c3aed', label: 'Reminder'     },
+  pricing_changed:     { Icon: Percent,      bg: '#dcfce7', color: '#15803d', label: 'Pricing'      },
+  reference_data_changed:{ Icon: Database,   bg: '#e0e7ff', color: '#4338ca', label: 'Reference Data' },
 };
 
 function getNotifMeta(type) {

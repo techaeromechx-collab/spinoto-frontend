@@ -99,9 +99,27 @@ export default function LocationsPage() {
   async function addCity() { if (!newCity || !selState) return; await api('/api/locations/cities', { method: 'POST', body: { state_id: selState.id, name: newCity } }); setNewCity(''); loadCities(selState.id); }
   async function addArea() { if (!newArea.name || !selCity) return; await api('/api/locations/areas', { method: 'POST', body: { city_id: selCity.id, ...newArea } }); setNewArea({ name: '', pincode: '' }); loadAreas(selCity.id); }
 
+  // Optimistic toggle: flip instantly, reconcile via reload on success, roll
+  // back visibly on failure. (Previously a failed toggle rejected silently.)
+  const [actionError, setActionError] = useState(null);
+  useEffect(() => {
+    if (!actionError) return;
+    const t = setTimeout(() => setActionError(null), 4000);
+    return () => clearTimeout(t);
+  }, [actionError]);
+
   async function toggleStatus(type, item) {
-    await api(`/api/locations/${type}/${item.id}`, { method: 'PATCH', body: { is_active: !item.is_active } });
-    reload(type);
+    const setterFor = { states: setStates, cities: setCities, areas: setAreas };
+    const snapshot = type === 'states' ? states : type === 'cities' ? cities : areas;
+    const set = setterFor[type];
+    set(prev => prev.map(x => x.id === item.id ? { ...x, is_active: !x.is_active } : x));
+    try {
+      await api(`/api/locations/${type}/${item.id}`, { method: 'PATCH', body: { is_active: !item.is_active } });
+      reload(type); // silent reconcile with server truth
+    } catch (e) {
+      set(snapshot);
+      setActionError(`${e.message || 'Update failed'} — change reverted.`);
+    }
   }
 
   async function rename(type, id, name, pincode) {
@@ -172,6 +190,18 @@ export default function LocationsPage() {
           <p>Manage the geographic coverage of your operations.</p>
         </div>
       </header>
+
+      {/* Rollback notice for failed optimistic actions */}
+      {actionError && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+          background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 10,
+          padding: '12px 18px', color: '#991b1b', fontWeight: 500, fontSize: 14,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
+        }}>
+          {actionError}
+        </div>
+      )}
 
       <div className="master-layout">
         {/* States Pane */}

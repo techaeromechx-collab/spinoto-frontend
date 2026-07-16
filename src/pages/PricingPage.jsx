@@ -105,15 +105,20 @@ export default function PricingPage() {
     }
   }
 
+  // Optimistic: flip instantly, reconcile via reload on success, roll back
+  // visibly on failure.
   async function toggleActive(item) {
+    const snapshot = pricing;
+    setPricing(prev => prev.map(p => p.id === item.id ? { ...p, is_active: !p.is_active } : p));
     try {
       await api(`/api/pricing/${item.id}`, {
         method: 'PATCH',
         body: { is_active: !item.is_active },
       });
-      await loadAll();
+      await loadAll(); // silent reconcile with server truth
     } catch (e) {
-      setError(e.message);
+      setPricing(snapshot);
+      setError(`${e.message} — change reverted.`);
     }
   }
 

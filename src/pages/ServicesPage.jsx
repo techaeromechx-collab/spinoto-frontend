@@ -661,10 +661,19 @@ export default function ServicesPage() {
     loadCategories();
   }
 
+  // Optimistic: flip instantly, reconcile via reload on success, roll back
+  // visibly on failure.
   async function toggleCatStatus(cat, e) {
     e.stopPropagation();
-    await api(`/api/services/categories/${cat.id}`, { method: 'PATCH', body: { is_active: !cat.is_active } });
-    loadCategories();
+    const snapshot = categories;
+    setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, is_active: !c.is_active } : c));
+    try {
+      await api(`/api/services/categories/${cat.id}`, { method: 'PATCH', body: { is_active: !cat.is_active } });
+      loadCategories(); // silent reconcile with server truth
+    } catch (err) {
+      setCategories(snapshot);
+      showToast(`${err.message || 'Update failed'} — change reverted.`, 'error');
+    }
   }
 
   async function deleteCategory(cat) {
@@ -692,12 +701,28 @@ export default function ServicesPage() {
     setSvcModal(null);
   }
 
+  // Optimistic: flip instantly (list + selected panel), reconcile with the
+  // server row on success, roll back visibly on failure.
   async function toggleServiceStatus(svc, e) {
     e?.stopPropagation();
-    const r = await api(`/api/services/services/${svc.id}`, { method: 'PATCH', body: { is_active: !svc.is_active } });
-    // Preserve category_name from the original since PATCH response doesn't include the join
-    if (selService?.id === svc.id) setSelService({ ...r.item, category_name: svc.category_name });
-    refreshServices(svc.category_id);
+    const snapshotServices = services;
+    const snapshotSel = selService;
+    setServices(prev => ({
+      ...prev,
+      [svc.category_id]: (prev[svc.category_id] || []).map(s =>
+        s.id === svc.id ? { ...s, is_active: !s.is_active } : s),
+    }));
+    if (selService?.id === svc.id) setSelService({ ...selService, is_active: !svc.is_active });
+    try {
+      const r = await api(`/api/services/services/${svc.id}`, { method: 'PATCH', body: { is_active: !svc.is_active } });
+      // Preserve category_name from the original since PATCH response doesn't include the join
+      if (selService?.id === svc.id) setSelService({ ...r.item, category_name: svc.category_name });
+      refreshServices(svc.category_id); // silent reconcile
+    } catch (err) {
+      setServices(snapshotServices);
+      setSelService(snapshotSel);
+      showToast(`${err.message || 'Update failed'} — change reverted.`, 'error');
+    }
   }
 
   async function deleteService(svc) {

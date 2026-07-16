@@ -539,15 +539,20 @@ export default function WarrantyMasterPage() {
   useEffect(() => { load(); }, [load]);
   useSync('warranties', load);
 
+  // Optimistic delete: row disappears and the modal closes immediately;
+  // on failure the row comes back with a visible rollback message.
   async function handleDelete() {
+    const snapshot = items;
+    const target = modal.item;
+    setItems(prev => prev.filter(x => x.id !== target.id));
+    setModal(null);
     setDeleting(true);
     try {
-      await api(`/api/warranty-master/${modal.item.id}`, { method: 'DELETE' });
-      setItems(prev => prev.filter(x => x.id !== modal.item.id));
+      await api(`/api/warranty-master/${target.id}`, { method: 'DELETE' });
       showToast('Warranty deleted.');
-      setModal(null);
     } catch (err) {
-      showToast(err.message || 'Delete failed.', 'error');
+      setItems(snapshot);
+      showToast(`${err.message || 'Delete failed'} — "${target.name}" restored.`, 'error');
     } finally {
       setDeleting(false);
     }
@@ -562,14 +567,18 @@ export default function WarrantyMasterPage() {
     setModal(null);
   }
 
+  // Optimistic: flip instantly, reconcile with the server row on success,
+  // roll back to the snapshot (with a visible message) on failure.
   async function toggleActive(item) {
     if (!canEdit) return;
+    const snapshot = items;
+    setItems(prev => prev.map(x => x.id === item.id ? { ...x, is_active: !x.is_active } : x));
     try {
       const r = await api(`/api/warranty-master/${item.id}`, { method: 'PATCH', body: { is_active: !item.is_active } });
       setItems(prev => prev.map(x => x.id === item.id ? r.item : x));
-      showToast(r.item.is_active ? 'Warranty activated.' : 'Warranty deactivated.');
     } catch (err) {
-      showToast(err.message || 'Failed.', 'error');
+      setItems(snapshot);
+      showToast(`${err.message || 'Update failed'} — change reverted.`, 'error');
     }
   }
 
