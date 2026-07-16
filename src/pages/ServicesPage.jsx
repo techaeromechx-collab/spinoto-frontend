@@ -17,6 +17,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { api } from '../api/client.js';
 import useSync from '../hooks/useSync.js';
 import { useCan } from '../auth/AuthContext.jsx';
+import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import '../styles/ServicesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
