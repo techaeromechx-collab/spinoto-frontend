@@ -471,7 +471,7 @@ function SortableSvcRow({ svc, selService, P, canDrag, selectService, toggleServ
 function SortableCatBlock({
   cat, expanded, services, selService, selCategory, P, dndSensors, canDrag,
   toggleCat, openCategoryRules, setCatModal, toggleCatStatus, setDeleteModal,
-  selectService, toggleServiceStatus, setSvcModal, handleSvcDragEnd,
+  selectService, toggleServiceStatus, setSvcModal, handleSvcDragEnd, catSearch = '',
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: cat.id });
@@ -480,7 +480,13 @@ function SortableCatBlock({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
-  const svcList = services[cat.id] || [];
+  const term = catSearch.trim().toLowerCase();
+  // If the category's own name matched, show all its services as usual.
+  // If it's only showing up because one of its services matched, narrow
+  // the list down to just the matching service(s).
+  const catNameMatches = !term || cat.name.toLowerCase().includes(term);
+  const rawSvcList = services[cat.id] || [];
+  const svcList = catNameMatches ? rawSvcList : rawSvcList.filter(s => s.name.toLowerCase().includes(term));
 
   return (
     <div ref={setNodeRef} style={style} className="sp-cat-block">
@@ -577,6 +583,7 @@ export default function ServicesPage() {
   const [services,     setServices]     = useState({});   // { catId: [...] }
   const [catSearch,    setCatSearch]    = useState('');
   const [loadingCats,  setLoadingCats]  = useState(true);
+  const [allServices,  setAllServices]  = useState([]);   // flat list of every service — search index only
 
   // Right panel state
   const [selService,  setSelService]  = useState(null);
@@ -602,6 +609,19 @@ export default function ServicesPage() {
 
   useEffect(() => { loadCategories(); }, [loadCategories]);
   useSync('services', loadCategories);
+
+  // ── Flat service index (all categories) — powers "search categories or
+  // services" so typing a service name surfaces its parent category, even
+  // if that category hasn't been expanded/loaded yet. Best-effort: search
+  // just won't include service matches if this fails.
+  const loadAllServices = useCallback(async () => {
+    try {
+      const r = await api('/api/services/services');
+      setAllServices(r.items || []);
+    } catch { /* ignore — search index only */ }
+  }, []);
+  useEffect(() => { loadAllServices(); }, [loadAllServices]);
+  useSync('services', loadAllServices);
 
   // ── Load services for a category ─────────────────────────────────────────
   const loadServices = useCallback(async (catId) => {
@@ -735,10 +755,27 @@ export default function ServicesPage() {
     loadCategories();
   }
 
-  // ── Filter categories ──────────────────────────────────────────────────────
-  const filteredCats = categories.filter(c =>
-    c.name.toLowerCase().includes(catSearch.toLowerCase())
+  // ── Filter categories (by category name OR any service name inside it) ─────
+  const searchTerm = catSearch.trim().toLowerCase();
+  const catIdsWithMatchingService = new Set(
+    searchTerm
+      ? allServices.filter(s => s.name.toLowerCase().includes(searchTerm)).map(s => s.category_id)
+      : []
   );
+  const filteredCats = categories.filter(c =>
+    c.name.toLowerCase().includes(searchTerm) || catIdsWithMatchingService.has(c.id)
+  );
+
+  // Auto-expand (and load) any category that's only showing up because one
+  // of its services matched, so the match is actually visible without a click.
+  useEffect(() => {
+    if (!searchTerm) return;
+    filteredCats.forEach(cat => {
+      if (!expanded[cat.id]) setExpanded(prev => ({ ...prev, [cat.id]: true }));
+      loadServices(cat.id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catSearch]);
 
   // ── Reorder categories (drag end) ─────────────────────────────────────────
   async function handleCatDragEnd(event) {
@@ -869,7 +906,7 @@ export default function ServicesPage() {
             <Search size={14} className="sp-search-icon" />
             <input
               className="sp-search-input"
-              placeholder="Search categories…"
+              placeholder="Search categories or services…"
               value={catSearch}
               onChange={e => setCatSearch(e.target.value)}
             />
@@ -909,6 +946,7 @@ export default function ServicesPage() {
                       toggleServiceStatus={toggleServiceStatus}
                       setSvcModal={setSvcModal}
                       handleSvcDragEnd={handleSvcDragEnd}
+                      catSearch={catSearch}
                     />
                   ))}
                 </SortableContext>
