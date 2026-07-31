@@ -17,7 +17,14 @@ import '../styles/CustomersPage.css';
 
 function fmtDate(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  // A plain 'YYYY-MM-DD' (invoice_date, timeline event_date) is parsed by
+  // `new Date()` as UTC midnight and would render as the previous day in any
+  // timezone behind UTC. Build those from their parts as a local date instead.
+  const ymd = typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.slice(0, 10))
+    ? d.slice(0, 10).split('-').map(Number)
+    : null;
+  const dt = ymd ? new Date(ymd[0], ymd[1] - 1, ymd[2]) : new Date(d);
+  return dt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function fmtTime(v) {
@@ -748,7 +755,15 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
 
   function daysSince(dateStr) {
     if (!dateStr) return null;
-    const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+    // Calendar days between two dates, not milliseconds between an instant and
+    // a UTC-midnight parse. last_visit is date-only, so the old form returned
+    // -1 before 05:30 IST and rendered "-1d ago".
+    const p = n => String(n).padStart(2, '0');
+    const nowIst = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const todayStr = nowIst.toISOString().slice(0, 10);
+    const [ay, am, ad] = String(dateStr).slice(0, 10).split('-').map(Number);
+    const [by, bm, bd] = todayStr.split('-').map(Number);
+    const days = Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
     if (days === 0) return 'Today';
     if (days === 1) return 'Yesterday';
     if (days < 30)  return `${days}d ago`;
@@ -1353,7 +1368,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                           <span className="cust-hc-price">{fmtINR(inv.total)}</span>
                         </div>
                         <div className="cust-hc-meta">
-                          <span><Calendar size={10}/> {fmtDate(inv.created_at)}</span>
+                          <span><Calendar size={10}/> {fmtDate(inv.invoice_date || inv.created_at)}</span>
                           {inv.hub_name       && <span><Network size={10}/> {inv.hub_name}</span>}
                           {inv.vehicle_number && <span>🚗 {inv.vehicle_number}</span>}
                           {inv.is_b2b && inv.b2b_gst_number && <span>GSTIN: {inv.b2b_gst_number}</span>}
@@ -1441,9 +1456,10 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                 <div className="cust-timeline">
                   {timeline.map((item, idx) => {
                     const cfg = TL_CONFIGS[item.type] || TL_CONFIGS.default;
-                    const dateStr = item.event_date
-                      ? new Date(item.event_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                      : new Date(item.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    // fmtDate handles both plain 'YYYY-MM-DD' event dates
+                    // (invoices, which carry their own legal date) and full
+                    // timestamps (vehicles, appointments) without shifting a day.
+                    const dateStr = fmtDate(item.event_date || item.created_at);
                     return (
                       <div key={`${item.type}-${item.id}-${idx}`} className="cust-tl-row">
                         {/* Left: icon + line */}

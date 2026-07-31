@@ -1,15 +1,18 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
-import { api } from '../api/client.js';
+import { api, API_URL, getToken } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
+import InvoiceExtrasEditor from '../components/InvoiceExtrasEditor.jsx';
+import InvoiceDateDialog from '../components/InvoiceDateDialog.jsx';
+import { openDocumentPdf, downloadDocumentPdf } from '../lib/documentPdf.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { getRoundingFunction } from '../lib/math.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import {
   Receipt, Search, RefreshCw, X, Eye, Trash2,
-  AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Car, ChevronDown, Pencil,
+  AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Download, Car, ChevronDown, Pencil,
 } from 'lucide-react';
 import '../styles/CustomerInvoicesPage.css';
 
@@ -19,9 +22,31 @@ function fmt(n) {
   return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 }
 
+// UTC "today" is yesterday in IST between 00:00 and 05:30, which made today's
+// date unselectable in the picker. The rest of the app resolves today in IST;
+// this now agrees with it.
+function istTodayStr() {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 function fmtDate(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  // A plain 'YYYY-MM-DD' (invoice_date, paid_at dates) is parsed by
+  // `new Date()` as UTC midnight, which then renders as the PREVIOUS day in
+  // any timezone behind UTC. Build those from their parts as a local date so
+  // the calendar day printed is the calendar day stored, everywhere.
+  const ymd = typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.slice(0, 10))
+    ? d.slice(0, 10).split('-').map(Number)
+    : null;
+  const dt = ymd ? new Date(ymd[0], ymd[1] - 1, ymd[2]) : new Date(d);
+  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// The date shown to the user is the invoice's legal date. created_at is only a
+// fallback for any response that predates migration 099 / hasn't selected the
+// column — it is NOT interchangeable (see the rounding note below).
+function invoiceDate(inv) {
+  return inv?.invoice_date || inv?.created_at;
 }
 
 // Older redo invoices stored "Warranty Redo — " inside the item description;
@@ -237,7 +262,7 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
           <input
             className="form-input"
             type="date"
-            max={new Date().toISOString().slice(0, 10)}
+            max={istTodayStr()}
             title="Leave empty for today — set for backdated entries"
             value={form.paid_at}
             onChange={field('paid_at')}
@@ -363,7 +388,7 @@ function VehicleHistoryModal({ onClose }) {
                             <span style={{ fontSize: 11, fontWeight: 700, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 5 }}>
                               #{inv.id}
                             </span>
-                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(inv.created_at)}</span>
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(invoiceDate(inv))}</span>
                             {(inv.hub_full_name || inv.hub_name) && (
                               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>📍 {inv.hub_full_name || inv.hub_name}</span>
                             )}
@@ -427,6 +452,9 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   const [approving, setApproving] = useState(false);
   // generatingPI removed — PI is now created BEFORE CI in the new flow
   const [company, setCompany] = useState(null);
+  const [themedPdfLoading, setThemedPdfLoading] = useState(false);
+  // Separate from the Print spinner so the two buttons disable independently.
+  const [themedPdfSaving, setThemedPdfSaving] = useState(false);
 
   // Whether to include B2B billing details (Company Name/GST/Address) when
   // printing — on-screen these always show regardless of this toggle.
@@ -516,6 +544,9 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   const items = inv?.items || [];
   const payments = inv?.payments || [];
 
+  // created_at, NOT invoice_date — mirrors the backend rule in utils/math.js.
+  // The rounding mode must follow when the invoice was actually created, or a
+  // backdated invoice would render different totals than it was billed at.
   const r2 = getRoundingFunction(inv?.created_at);
   function computeDiscount(it) {
     const exRate = parseFloat(it.customer_rate ?? it.rate ?? 0);
@@ -575,6 +606,16 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   // the backend enforces it too; here it drives the warning + disabled button.
   const hubAlreadyPaid = parseFloat(inv?.linked_pi_amount_paid || 0);
   const canEditPayDate = useCan('EDIT_INVOICE_PAYMENT');
+  // Changing the legal date is its own permission — it moves revenue between
+  // reporting periods and shifts the warranty clock. The override is separate
+  // again, for going past the window or into a locked period.
+  const canBackdate    = useCan('BACKDATE_INVOICE', 'OVERRIDE_INVOICE_DATE_LIMITS');
+  const canOverrideDate = useCan('OVERRIDE_INVOICE_DATE_LIMITS');
+  // The server is the authority (it also checks payments and status); this
+  // just avoids offering a button that would always be refused.
+  const dateEditable   = inv && ['generated', 'approved'].includes(inv.status)
+                             && !(inv.payments || []).length;
+  const [dateDialog, setDateDialog] = useState(false);
 
   async function savePaymentDate() {
     if (!editingPay?.date) return;
@@ -627,7 +668,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontWeight: 800, fontSize: 16, color: '#111', letterSpacing: '0.04em' }}>CUSTOMER INVOICE</div>
             {inv && <div style={{ fontSize: 13, color: '#555', marginTop: 3 }}>CI-{String(inv.id).padStart(6, '0')}</div>}
-            {inv && <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>{fmtDate(inv.created_at)}</div>}
+            {inv && <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>{fmtDate(invoiceDate(inv))}</div>}
           </div>
           {/* QR Code — shown in print */}
           <div className="ci-print-qr" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
@@ -671,24 +712,49 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
               Include notes in print
             </label>
           )}
+          {/* Server-rendered themed PDF. Replaces the old window.print() of
+              the on-screen layout, which ignored the configured theme, logo
+              and accent colour entirely. */}
           <button
             className="btn btn-ghost"
-            onClick={() => {
-              const o = document.title;
-              if (inv) {
-                const invId = `CI-${String(inv.id).padStart(6, '0')}`;
-                const vNum = inv.vehicle_number || '';
-                const vModel = inv.model_name || '';
-                document.title = [invId, vNum, vModel].filter(Boolean).join('_');
+            disabled={themedPdfLoading}
+            onClick={async () => {
+              if (!inv) return;
+              setThemedPdfLoading(true);
+              try {
+                await openDocumentPdf('customer_invoice', inv.id);
+              } catch (e) {
+                showToast(e.message || 'Failed to generate PDF', 'error');
+              } finally {
+                setThemedPdfLoading(false);
               }
-              window.print();
-              document.title = o;
             }}
-
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-            title="Print / Save as PDF"
+            title="Open the themed PDF"
           >
-            <Printer size={15} /> Print / PDF
+            <Printer size={15} /> {themedPdfLoading ? 'Generating…' : 'Print / PDF'}
+          </button>
+          {/* Separate from Print because only a download can carry the proper
+              filename. Print opens a blob URL, and a blob URL has no name — the
+              viewer's own save button can only produce its blob uuid. */}
+          <button
+            className="btn btn-ghost"
+            disabled={themedPdfSaving}
+            onClick={async () => {
+              if (!inv) return;
+              setThemedPdfSaving(true);
+              try {
+                await downloadDocumentPdf('customer_invoice', inv.id);
+              } catch (e) {
+                showToast(e.message || 'Failed to download PDF', 'error');
+              } finally {
+                setThemedPdfSaving(false);
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
+            title="Download the PDF as CI-000000_VEHICLE_Model.pdf"
+          >
+            <Download size={15} /> {themedPdfSaving ? 'Saving…' : 'Download'}
           </button>
         </div>
       </div>
@@ -764,7 +830,36 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                 {/* Invoice meta */}
                 {[
                   { label: 'Invoice No.', value: `CI-${String(inv.id).padStart(6, '0')}` },
-                  { label: 'Date', value: fmtDate(inv.created_at) },
+                  {
+                    label: 'Date',
+                    node: (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>
+                          {fmtDate(invoiceDate(inv))}
+                        </span>
+                        {/* A backdated invoice says so on its own face. The
+                            reason is in the tooltip and the activity log. */}
+                        {inv.original_invoice_date && (
+                          <span className="inv-backdated-badge"
+                            title={`Originally ${fmtDate(inv.original_invoice_date)}` +
+                                   (inv.backdate_reason ? ` — ${inv.backdate_reason}` : '')}>
+                            Backdated
+                          </span>
+                        )}
+                        {canBackdate && dateEditable && (
+                          <button
+                            type="button"
+                            onClick={() => setDateDialog(true)}
+                            style={{
+                              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                              fontSize: 11.5, fontWeight: 600, color: 'var(--primary, #2563eb)',
+                            }}>
+                            Change
+                          </button>
+                        )}
+                      </span>
+                    ),
+                  },
                   { label: 'Status', node: <StatusBadge status={inv.status} /> },
                   ...(inv.warranty_claim_id ? [{
                     label: 'Invoice Type',
@@ -911,6 +1006,16 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                   {amountToWords(parseFloat(grandTotal))}
                 </div>
               </div>
+
+              {/* Optional invoice fields (PO no., e-way bill, batch/exp/mfg,
+                  free-item flag, custom fields/columns). Renders nothing
+                  unless at least one is enabled in Invoice Settings. */}
+              <InvoiceExtrasEditor
+                invoice={inv}
+                config={company?.document_config?.documents?.customer_invoice}
+                showToast={showToast}
+                onSaved={updated => setInv(updated)}
+              />
 
               {(inv.notes || editingNotes) ? (
                 <div className={editingNotes ? 'est-no-print' : (includeNotesPrint ? '' : 'est-no-print')} style={{
@@ -1201,7 +1306,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                               <input
                                 className="form-input"
                                 type="date"
-                                max={new Date().toISOString().slice(0, 10)}
+                                max={istTodayStr()}
                                 style={{ padding: '3px 6px', fontSize: 12, width: 135 }}
                                 value={editingPay.date}
                                 onChange={e => setEditingPay(p => ({ ...p, date: e.target.value }))}
@@ -1362,6 +1467,28 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
             </div>
           )}
 
+          {dateDialog && inv && (
+            <InvoiceDateDialog
+              invoice={inv}
+              canOverride={canOverrideDate}
+              onClose={() => setDateDialog(false)}
+              onSaved={(r) => {
+                // Reload rather than patching state locally: the change can
+                // also move the purchase invoice, and the list's date column
+                // and ordering both need to catch up.
+                load();
+                onRefreshList?.();
+                showToast(
+                  `Invoice date changed to ${fmtDate(r.invoice_date)}` +
+                  (r.purchase_invoice?.moved ? ' (purchase invoice moved too)' : '')
+                );
+                if (r.purchase_invoice && r.purchase_invoice.moved === false) {
+                  showToast(r.purchase_invoice.reason, 'error');
+                }
+              }}
+            />
+          )}
+
         </div>
       )}
     </div>
@@ -1403,12 +1530,15 @@ export default function CustomerInvoicesPage() {
   const [showHubDropdown, setShowHubDropdown] = useState(false);
   const [statusFilter, setStatusFilter] = useState(ls.statusFilter ?? '');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState(ls.vehicleTypeFilter ?? '');
+  // Invoice-date range — both optional; either can be set alone (open-ended).
+  const [fromDate, setFromDate] = useState(ls.fromDate ?? '');
+  const [toDate, setToDate] = useState(ls.toDate ?? '');
   const [hubs, setHubs] = useState([]);
 
   // Persist whenever any of these change
   useEffect(() => {
-    writeListState('sp_customer_invoices_list_v1', { page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter });
-  }, [page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter]);
+    writeListState('sp_customer_invoices_list_v1', { page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter, fromDate, toDate });
+  }, [page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter, fromDate, toDate]);
 
   useListScrollRestore('sp_customer_invoices_list_v1', !loading);
 
@@ -1484,6 +1614,8 @@ export default function CustomerInvoicesPage() {
       if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
       if (statusFilter) q.set('status', statusFilter);
       if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
+      if (fromDate) q.set('from', fromDate);
+      if (toDate) q.set('to', toDate);
       q.set('page', page);
       q.set('limit', pageSize);
       const res = await api(`/api/customer-invoices?${q.toString()}`);
@@ -1494,9 +1626,37 @@ export default function CustomerInvoicesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, hubFilter, statusFilter, vehicleTypeFilter, page, pageSize, showToast]);
+  }, [search, hubFilter, statusFilter, vehicleTypeFilter, fromDate, toDate, page, pageSize, showToast]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+
+  async function handleExport() {
+    try {
+      const q = new URLSearchParams();
+      if (search.trim()) q.set('search', search.trim());
+      if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
+      if (statusFilter) q.set('status', statusFilter);
+      if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
+      if (fromDate) q.set('from', fromDate);
+      if (toDate) q.set('to', toDate);
+      const res = await fetch(`${API_URL}/api/customer-invoices/export?${q.toString()}`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) { showToast('Export failed. Check your permissions.', 'error'); return; }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `customer_invoices_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showToast('Customer invoices exported successfully.');
+    } catch {
+      showToast('Export failed. Please try again.', 'error');
+    }
+  }
 
   return (
     <div className="ci-page">
@@ -1530,13 +1690,23 @@ export default function CustomerInvoicesPage() {
           </div>
         )}
         {!selectedId && (
-          <button
-            className="btn btn-ghost"
-            onClick={() => setShowVehHistory(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
-          >
-            <Car size={15} /> Vehicle History
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <button
+              className="btn btn-ghost"
+              onClick={handleExport}
+              title="Export Excel"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
+            >
+              <Download size={15} /> Export Excel
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={() => setShowVehHistory(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
+            >
+              <Car size={15} /> Vehicle History
+            </button>
+          </div>
         )}
       </div>
 
@@ -1590,6 +1760,20 @@ export default function CustomerInvoicesPage() {
                       boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
                       overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
                     }}>
+                      {hubs.length > 0 && hubFilter.length < hubs.length && (
+                        <button
+                          type="button"
+                          style={{
+                            width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                            color: 'var(--primary, #16b994)', background: 'none', border: 'none',
+                            textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                            paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4
+                          }}
+                          onClick={() => { setHubFilter(hubs.map(h => String(h.id))); setPage(1); }}
+                        >
+                          <CheckCircle2 size={12} /> Select All
+                        </button>
+                      )}
                       {hubFilter.length > 0 && (
                         <button
                           type="button"
@@ -1656,6 +1840,38 @@ export default function CustomerInvoicesPage() {
               <option value="paid">Paid</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
+              <input
+                type="date"
+                className="form-input"
+                style={{ flex: '0 0 140px' }}
+                value={fromDate}
+                max={toDate || undefined}
+                title="From date"
+                onChange={e => { setFromDate(e.target.value); setPage(1); }}
+              />
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>to</span>
+              <input
+                type="date"
+                className="form-input"
+                style={{ flex: '0 0 140px' }}
+                value={toDate}
+                min={fromDate || undefined}
+                title="To date"
+                onChange={e => { setToDate(e.target.value); setPage(1); }}
+              />
+              {(fromDate || toDate) && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  title="Clear dates"
+                  onClick={() => { setFromDate(''); setToDate(''); setPage(1); }}
+                  style={{ padding: '6px 8px' }}
+                >
+                  <X size={13} />
+                </button>
+              )}
+            </div>
             <button className="btn btn-ghost" onClick={fetchInvoices} title="Refresh" style={{ flexShrink: 0 }}>
               <RefreshCw size={15} />
             </button>
@@ -1705,7 +1921,7 @@ export default function CustomerInvoicesPage() {
                             )}
                           </td>
                           <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                            <div>{fmtDate(inv.created_at)}</div>
+                            <div>{fmtDate(invoiceDate(inv))}</div>
                             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', marginTop: 2 }}>
                               CI-{String(inv.id).padStart(6, '0')}
                             </div>

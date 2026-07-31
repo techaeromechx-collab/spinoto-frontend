@@ -608,6 +608,11 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onD
                 🛡 Warranty Redo
               </span>
             )}
+            {appt.booking_source && (
+              <span title={appt.external_ref || ''} style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#e0f2fe', color: '#075985', whiteSpace: 'nowrap' }}>
+                🌐 Online Booking
+              </span>
+            )}
             {status && <StatusBadge name={status.name} color={status.color} bg={status.bg_color} />}
           </div>
           <div className="apptv-hdr-right">
@@ -3053,6 +3058,20 @@ export default function AppointmentsPage() {
                     boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
                     overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200,
                   }}>
+                    {hubs.length > 0 && filterHub.length < hubs.length && (
+                      <button
+                        type="button"
+                        style={{
+                          width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                          color: 'var(--primary, #16b994)', background: 'none', border: 'none',
+                          textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                          paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4,
+                        }}
+                        onClick={() => { setFilterHub(hubs.map(h => String(h.id))); setPage(1); }}
+                      >
+                        <Check size={12} /> Select All
+                      </button>
+                    )}
                     {filterHub.length > 0 && (
                       <button
                         type="button"
@@ -3184,6 +3203,11 @@ export default function AppointmentsPage() {
                       {a.is_warranty_redo && (
                         <span title="Warranty redo appointment" style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: '#fef3c7', color: '#92400e', marginLeft: 6, whiteSpace: 'nowrap', display: 'inline-block' }}>
                           🛡 REDO
+                        </span>
+                      )}
+                      {a.booking_source && (
+                        <span title={`Booked online via ${a.booking_source}`} style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 4, background: '#e0f2fe', color: '#075985', marginLeft: 6, whiteSpace: 'nowrap', display: 'inline-block' }}>
+                          🌐 ONLINE
                         </span>
                       )}
                       {a.lead_id && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Lead #{a.lead_id}</div>}

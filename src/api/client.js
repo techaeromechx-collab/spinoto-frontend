@@ -1,6 +1,11 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'spinoto.token';
 
+// Exported so callers that need a raw (non-JSON) authenticated fetch — e.g.
+// downloading a PDF blob — can build the request themselves instead of
+// going through api()'s JSON-only parsing.
+export { API_URL };
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }

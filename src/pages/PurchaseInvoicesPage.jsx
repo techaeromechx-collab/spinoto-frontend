@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { openDocumentPdf, downloadDocumentPdf } from '../lib/documentPdf.js';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { api } from '../api/client.js';
@@ -8,7 +9,7 @@ import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import {
   ReceiptText, Search, RefreshCw, X, Eye, XCircle,
-  AlertCircle, CheckCircle2, Clock, Trash2, ChevronLeft, Printer, FileText, MoreVertical, ChevronDown,
+  AlertCircle, CheckCircle2, Clock, Trash2, ChevronLeft, Printer, Download, FileText, MoreVertical, ChevronDown,
 } from 'lucide-react';
 import '../styles/PurchaseInvoicesPage.css';
 
@@ -126,9 +127,30 @@ function fmt(n) {
   return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 }
 
+// Overdue is a CALENDAR comparison. `new Date(dateOnly) < new Date()` compares
+// a UTC-midnight date against an instant, so a row flipped to overdue at
+// 05:30 IST ON its due date rather than the day after.
+function istTodayStr() {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+function isPastDue(d) {
+  if (!d) return false;
+  return String(d).slice(0, 10) < istTodayStr();
+}
+
+function toLocalDate(d) {
+  // A plain 'YYYY-MM-DD' (an invoice_date) is parsed by `new Date()` as UTC
+  // midnight and would render as the previous day in any timezone behind UTC.
+  // Build those from their parts as a local date instead.
+  const ymd = typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.slice(0, 10))
+    ? d.slice(0, 10).split('-').map(Number)
+    : null;
+  return ymd ? new Date(ymd[0], ymd[1] - 1, ymd[2]) : new Date(d);
+}
+
 function fmtDate(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return toLocalDate(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function amountToWords(amount) {
@@ -233,6 +255,8 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
   // a no-op here for hub users — the drawer itself still opens fine locally.
   const navigate = isHubUser ? () => {} : rawNavigate;
   const [inv, setInv] = useState(null);
+  const [piPdfLoading, setPiPdfLoading] = useState(false);
+  const [piPdfSaving, setPiPdfSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
   const [company, setCompany] = useState(null);
@@ -445,7 +469,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
             {isHubUser ? 'SELL INVOICE' : 'PURCHASE INVOICE'}
           </div>
           {inv && <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>{isHubUser ? 'SI' : 'PI'}-{String(inv.id).padStart(6, '0')}</div>}
-          {inv && <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>{fmtDate(inv.created_at)}</div>}
+          {inv && <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>{fmtDate(inv.invoice_date || inv.created_at)}</div>}
         </div>
       </div>
 
@@ -459,24 +483,48 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
           {inv && <StatusBadge status={inv.status} />}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* Server-rendered themed PDF. The admin/hub view is decided
+              server-side from the session, so a hub's copy never shows the
+              customer rate or commission. */}
           <button
             className="btn btn-ghost"
-            onClick={() => {
-              const o = document.title;
-              if (inv) {
-                const invId = `${isHubUser ? 'SI' : 'PI'}-${String(inv.id).padStart(6, '0')}`;
-                const vNum = inv.vehicle_number || '';
-                const vModel = inv.model_name || '';
-                document.title = [invId, vNum, vModel].filter(Boolean).join('_');
+            disabled={piPdfLoading}
+            onClick={async () => {
+              if (!inv) return;
+              setPiPdfLoading(true);
+              try {
+                await openDocumentPdf('purchase_invoice', inv.id);
+              } catch (e) {
+                showToast(e.message || 'Failed to generate PDF', 'error');
+              } finally {
+                setPiPdfLoading(false);
               }
-              window.print();
-              document.title = o;
             }}
-
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-            title="Print / Save as PDF"
+            title="Open the themed PDF"
           >
-            <Printer size={15} /> Print / PDF
+            <Printer size={15} /> {piPdfLoading ? 'Generating…' : 'Print / PDF'}
+          </button>
+          {/* Separate from Print because only a download can carry the proper
+              filename — Print opens a blob URL, which has no name. */}
+          <button
+            className="btn btn-ghost"
+            disabled={piPdfSaving}
+            onClick={async () => {
+              if (!inv) return;
+              setPiPdfSaving(true);
+              try {
+                await downloadDocumentPdf('purchase_invoice', inv.id);
+              } catch (e) {
+                showToast(e.message || 'Failed to download PDF', 'error');
+              } finally {
+                setPiPdfSaving(false);
+              }
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
+            title="Download the PDF as PI-000000_VEHICLE_Model.pdf"
+          >
+            <Download size={15} /> {piPdfSaving ? 'Saving…' : 'Download'}
           </button>
           {/* Kebab menu */}
           {inv && inv.status === 'approved' && parseFloat(inv.amount_paid ?? 0) === 0 && (
@@ -579,7 +627,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 )}
                 {[
                   { label: 'Invoice No.', value: `${isHubUser ? 'SI' : 'PI'}-${String(inv.id).padStart(6, '0')}` },
-                  { label: 'Date', value: fmtDate(inv.created_at) },
+                  { label: 'Date', value: fmtDate(inv.invoice_date || inv.created_at) },
                   { label: 'Status', node: <StatusBadge status={inv.status} /> },
                 ].map(({ label, value, node }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
@@ -787,10 +835,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                     <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>Due Date</div>
                     <div style={{
                       fontSize: 13, fontWeight: 700,
-                      color: new Date(inv.payout_due_date) < new Date() && inv.payment_status !== 'paid' ? '#dc2626' : 'var(--text)',
+                      color: isPastDue(inv.payout_due_date) && inv.payment_status !== 'paid' ? '#dc2626' : 'var(--text)',
                     }}>
                       {fmtDate(inv.payout_due_date)}
-                      {new Date(inv.payout_due_date) < new Date() && inv.payment_status !== 'paid' && (
+                      {isPastDue(inv.payout_due_date) && inv.payment_status !== 'paid' && (
                         <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, background: '#fee2e2', color: '#991b1b', padding: '2px 7px', borderRadius: 99 }}>OVERDUE</span>
                       )}
                     </div>
@@ -823,7 +871,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                   <tbody>
                     {inv.schedule.map(inst => {
                       const bal = parseFloat(inst.amount_due) - parseFloat(inst.paid_amount || 0);
-                      const isOverdue = new Date(inst.due_date) < new Date() && inst.status !== 'paid';
+                      const isOverdue = isPastDue(inst.due_date) && inst.status !== 'paid';
                       return (
                         <tr key={inst.id}>
                           <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'center', fontWeight: 700, color: '#6b7280' }}>#{inst.installment_no}</td>
@@ -1096,13 +1144,19 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
           zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center',
         }} onClick={() => setShowApproveModal(false)}>
           <div style={{
-            background: 'var(--bg)', borderRadius: 14, padding: 28,
-            width: '100%', maxWidth: 680, boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+            background: 'var(--bg)', borderRadius: 14,
+            width: '100%', maxWidth: 680, maxHeight: '90vh', boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden',
           }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>Approve Purchase Invoice</div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
-              Edit take rate per item — hub rate updates live. Confirm when ready.
+            <div style={{ padding: '28px 28px 0 28px', flexShrink: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>Approve Purchase Invoice</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+                Edit take rate per item — hub rate updates live. Confirm when ready.
+              </div>
             </div>
+
+            {/* ── Scrollable body: item table + payout schedule ── */}
+            <div style={{ overflowY: 'auto', minHeight: 0, padding: '0 28px' }}>
 
             {/* ── Live preview table ── */}
             {(inv?.items || []).length > 0 && (() => {
@@ -1200,7 +1254,9 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            </div>
+            {/* ── Fixed footer — always visible, never scrolled out of view ── */}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '16px 28px 28px 28px', flexShrink: 0 }}>
               <button className="btn btn-ghost" onClick={() => setShowApproveModal(false)} disabled={approving}>
                 Cancel
               </button>
@@ -1428,6 +1484,20 @@ export default function PurchaseInvoicesPage() {
                       boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
                       overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
                     }}>
+                      {hubs.length > 0 && hubFilter.length < hubs.length && (
+                        <button
+                          type="button"
+                          style={{
+                            width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                            color: 'var(--primary, #16b994)', background: 'none', border: 'none',
+                            textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                            paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4
+                          }}
+                          onClick={() => { setHubFilter(hubs.map(h => String(h.id))); setPage(1); }}
+                        >
+                          <CheckCircle2 size={12} /> Select All
+                        </button>
+                      )}
                       {hubFilter.length > 0 && (
                         <button
                           type="button"
@@ -1589,7 +1659,7 @@ export default function PurchaseInvoicesPage() {
                             </div>
                           )}
                         </td>
-                        <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{fmtDate(inv.created_at)}</td>
+                        <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{fmtDate(inv.invoice_date || inv.created_at)}</td>
                         <td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13 }}>{fmt(inv.grand_total)}</td>
                         <td><StatusBadge status={inv.status} /></td>
                         <td>

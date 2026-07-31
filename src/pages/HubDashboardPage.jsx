@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { api } from '../api/client.js';
 import { usePushNotifications } from '../hooks/usePushNotifications.js';
+import { NOTIF_POLL_MS } from '../config/polling.js';
 import {
   LayoutDashboard, Calendar, FileText, Receipt, ReceiptText,
   LogOut, Moon, Sun, Menu, Building2,
@@ -496,10 +497,25 @@ export default function HubDashboardPage() {
     } catch { /* silent */ }
   }, []);
 
+  // Same polling rules as AppShell — see the comment there for why. This page
+  // is the hub portal and renders outside AppShell (App.jsx: "standalone, no
+  // AppShell"), so it cannot inherit that effect and needs its own copy.
   useEffect(() => {
     fetchCount();
-    const iv = setInterval(fetchCount, 30000);
-    return () => clearInterval(iv);
+
+    const iv = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchCount();
+    }, NOTIF_POLL_MS);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') fetchCount();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [fetchCount]);
 
   useEffect(() => {

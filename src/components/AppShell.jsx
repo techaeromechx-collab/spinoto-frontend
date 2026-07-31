@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 // search state is local to AppShell — no API change
 import { useAuth } from '../auth/AuthContext.jsx';
+import { NOTIF_POLL_MS } from '../config/polling.js';
 import { useUpload } from '../context/UploadContext.jsx';
 import { usePushNotifications } from '../hooks/usePushNotifications.js';
 import {
@@ -131,9 +132,13 @@ const NAV_ITEMS = [
   // ── System ────────────────────────────────────────────────────────────────
   { label: 'Bulk Upload', to: '/bulk-upload', permissions: ['BULK_UPLOAD'],             icon: UploadCloud, section: 'SYSTEM' },
   { label: 'Reports',     to: '/reports',     permissions: ['VIEW_REPORTS'],            icon: BarChart3, section: 'SYSTEM' },
-  { label: 'Users',        to: '/users',        permissions: ['MANAGE_USERS'],                                          icon: UserCog, section: 'SYSTEM' },
-  { label: 'My Team',     to: '/users',        permissions: ['VIEW_TEAM_LEADS'], excludePermissions: ['MANAGE_USERS'], icon: Users2, section: 'SYSTEM'  },
-  { label: 'Super Admins', to: '/super-admins', superAdminOnly: true,                                                   icon: Shield, section: 'SYSTEM'  },
+  // 'Users'/'My Team' and 'Super Admins' used to be separate top-level items
+  // pointing at /users and /super-admins — both pages now live as tabs
+  // inside the consolidated Settings module (those two routes just redirect
+  // there now). A single 'Settings' entry replaces all three; internal tab
+  // visibility (Manage Users / Super Admins / etc.) is gated inside
+  // SettingsPage.jsx itself, same as /profile's tabs always were.
+  { label: 'Settings',     to: '/settings',     permissions: [],                                                        icon: Settings, section: 'SYSTEM'  },
 ];
 
 export default function AppShell({ children }) {
@@ -143,6 +148,12 @@ export default function AppShell({ children }) {
   const location = useLocation();
   const { activeEntries } = useUpload();
   const [masterOpen, setMasterOpen] = useState(location.pathname.startsWith('/master'));
+
+  // Settings gets a full-page takeover — its own sidebar (with a Back to
+  // Dashboard link, built inside SettingsPage.jsx) replaces the main nav
+  // entirely rather than sitting alongside it. The topbar (search,
+  // notifications, user menu) stays, since that wasn't part of what changed.
+  const isSettingsRoute = location.pathname.startsWith('/settings');
 
   const [theme, setTheme] = useState(localStorage.getItem('spinoto_theme') || 'light');
   const [isLeadModalOpen, setLeadModalOpen] = useState(false);
@@ -256,7 +267,11 @@ export default function AppShell({ children }) {
   function handleSearchSelectUser(u) {
     setShowSearchDrop(false);
     setSearchQ('');
-    navigate('/users', { state: { openUserId: u.id } });
+    // Navigate straight to Settings' Manage Users tab with state — a plain
+    // <Navigate> redirect (used for old /users bookmarks) can't forward
+    // router state, so this has to target /settings directly rather than
+    // going through the /users redirect.
+    navigate('/settings?tab=manage-users', { state: { openUserId: u.id } });
   }
 
   const hasSearchResults = searchResults.leads.length > 0 || searchResults.users.length > 0;
@@ -299,11 +314,37 @@ export default function AppShell({ children }) {
     } catch { /* silent */ }
   }, []);
 
-  // Poll unread count every 30s
+  // Poll the unread count — but only while the tab is actually being looked at.
+  //
+  // This runs in every open tab for every logged-in user, and AppShell wraps
+  // the whole app, so it used to fire every 30s regardless of whether anyone
+  // was there. With a serverless Postgres that bills per hour of uptime and
+  // suspends after 5 minutes of silence, a single tab left open overnight kept
+  // the database awake until morning — which was most of the compute bill.
+  //
+  // Nobody reads a badge on a tab they aren't looking at, so gating on
+  // visibility costs nothing. 120s rather than 30s trims the rest; the count
+  // can be up to two minutes stale while you watch it, which for a
+  // notification badge is not a meaningful difference.
   useEffect(() => {
     fetchCount();
-    const iv = setInterval(fetchCount, 30000);
-    return () => clearInterval(iv);
+
+    const iv = setInterval(() => {
+      if (document.visibilityState === 'visible') fetchCount();
+    }, NOTIF_POLL_MS);
+
+    // Returning to the tab should refresh immediately rather than waiting out
+    // the rest of the interval — this is what keeps the longer interval from
+    // being noticeable.
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') fetchCount();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [fetchCount]);
 
   // Open: load notifications
@@ -417,12 +458,13 @@ export default function AppShell({ children }) {
   const userBadge = user?.is_super_admin ? 'super admin' : 'user';
 
   return (
-    <div className={`shell ${effectiveCollapsed ? 'collapsed' : ''}`}>
+    <div className={`shell ${effectiveCollapsed ? 'collapsed' : ''} ${isSettingsRoute ? 'shell--settings' : ''}`}>
       {/* Mobile Backdrop */}
-      {mobileMenuOpen && (
+      {mobileMenuOpen && !isSettingsRoute && (
         <div className="sidebar-backdrop" onClick={() => setMobileMenuOpen(false)} />
       )}
 
+      {!isSettingsRoute && (
       <aside className={`sidebar ${mobileMenuOpen ? 'open' : ''} ${effectiveCollapsed ? 'collapsed' : ''}`}>
         <div className="brand">
           {!effectiveCollapsed && <img src="/logo.svg" alt="Spinoto" style={{ height: 24, width: 'auto', display: 'block' }} />}
@@ -492,7 +534,9 @@ export default function AppShell({ children }) {
         <div
           className="sidebar-profile"
           onClick={() => {
-            if (user?.is_super_admin) navigate('/profile?tab=superadmin');
+            // The old "Super Admin" profile tab (company details + role
+            // creator) now lives in the Settings module.
+            if (user?.is_super_admin) navigate('/settings?tab=business');
             else if (can('MANAGE_USERS')) navigate('/profile?tab=admin');
             else if (can('VIEW_TEAM_LEADS')) navigate('/profile?tab=team');
             else navigate('/profile?tab=overview');
@@ -553,14 +597,17 @@ export default function AppShell({ children }) {
           </div>
         )}
       </aside>
+      )}
 
       <main className="main">
         <header className="topbar">
           {/* ── Left: breadcrumbs & mobile menu ── */}
           <div className="topbar-left">
-            <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)}>
-              <Menu size={20} />
-            </button>
+            {!isSettingsRoute && (
+              <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(true)}>
+                <Menu size={20} />
+              </button>
+            )}
             <div className="crumbs">
               <Link to="/">Home</Link>
               {location.pathname !== '/' && (() => {
@@ -811,16 +858,19 @@ export default function AppShell({ children }) {
                       </button>
                     )}
                     {user?.is_super_admin && (
-                      <button className="user-drop-item" onClick={() => { setUserDropOpen(false); navigate('/profile?tab=superadmin'); }}>
+                      <button className="user-drop-item" onClick={() => { setUserDropOpen(false); navigate('/settings?tab=super-admins'); }}>
                         <Zap size={15} />
                         Super Admin
                       </button>
                     )}
-                    <button className="user-drop-item" onClick={() => { setUserDropOpen(false); navigate('/profile?tab=security'); }}>
+                    {/* Password change now lives in Settings > Account, alongside
+                        notification preferences (both used to be ProfilePage's
+                        "Settings" tab sub-tabs). */}
+                    <button className="user-drop-item" onClick={() => { setUserDropOpen(false); navigate('/settings?tab=account'); }}>
                       <Lock size={15} />
                       Security &amp; Password
                     </button>
-                    <button className="user-drop-item" onClick={() => { setUserDropOpen(false); navigate('/profile?tab=settings'); }}>
+                    <button className="user-drop-item" onClick={() => { setUserDropOpen(false); navigate('/settings?tab=account'); }}>
                       <Settings size={15} />
                       Notification Settings
                     </button>

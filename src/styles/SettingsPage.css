@@ -1,0 +1,687 @@
+/* Settings module layout — full-page takeover (see AppShell.jsx's
+   isSettingsRoute: the main app sidebar isn't rendered at all on /settings,
+   so this sidebar occupies that same full-height slot instead, with its own
+   Back to Dashboard link). AppShell's normal .content wrapper adds
+   32px padding + a 1400px centered max-width, which would leave a gutter
+   around a real sidebar — cancelled out here via :has() since only the
+   settings page needs the full bleed. */
+.content:has(.settings-page) {
+  padding: 0;
+  max-width: none;
+  height: 100%;
+  overflow: hidden;
+}
+
+.settings-page {
+  display: flex;
+  height: 100%;
+}
+
+.settings-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-back-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.settings-back-link:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.settings-sidebar-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 10px 12px;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 28px 32px;
+}
+
+@media (max-width: 768px) {
+  .content:has(.settings-page) {
+    height: auto;
+    overflow: visible;
+  }
+  .settings-page {
+    flex-direction: column;
+    height: auto;
+  }
+  .settings-sidebar {
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .settings-content {
+    height: auto;
+    overflow: visible;
+  }
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.settings-nav-item:hover {
+  background: var(--bg-soft);
+}
+
+.settings-nav-item--active {
+  background: var(--primary-soft, #eef2ff);
+  color: var(--primary, #4f46e5);
+  font-weight: 700;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ═══ Invoice Settings — split pane ═══
+   Left: a large live preview of the real rendered invoice.
+   Right: the scrollable "Theme Store" panel of settings.
+   The Invoice Settings tab is the one settings tab that wants the full
+   viewport height with independently-scrolling panes, so it opts out of
+   .settings-content's normal padding via :has(). */
+.settings-content:has(.its-split) {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 440px rather than 380: the theme strip is a 3-column grid of A4 thumbnails,
+   and at 380 the third column overflowed and forced a horizontal scrollbar.
+   The thumbnail `zoom` below is matched to the column width this produces —
+   if you change this width, change that zoom too. */
+.its-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+  height: 100%;
+  min-height: 0;
+}
+
+.its-loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── Left: preview pane ── */
+.its-preview-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-soft, #f6f7f9);
+  border-right: 1px solid var(--border);
+}
+
+.its-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.its-preview-label {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.its-preview-spin {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.its-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.its-alert { margin: 12px 20px 0; }
+
+/* `safe center` is the point of this rule: ordinary centring (flex centring,
+   text-align, or margin:auto) clips the overflowing LEFT edge of a page that
+   is wider than its scroll container, and no amount of scrolling can reach it.
+   `safe` falls back to start alignment exactly when overflow would occur, so
+   a zoomed-in page stays fully scrollable while a fitting page stays centred. */
+.its-paper-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+  display: flex;
+  justify-content: safe center;
+  align-items: flex-start;
+}
+
+/* A4 at 96dpi is 794x1123. The page is always rendered at NATIVE size and
+   scaled with a transform, so text stays crisp and the proportions match the
+   real PDF exactly at any zoom level.
+
+   A transform doesn't affect layout size, so the sizer reserves the scaled
+   footprint — without it the wrapper couldn't scroll to reach the parts of a
+   zoomed-in page that fall outside the pane. Its width/height are set inline
+   from the current zoom. */
+.its-paper-sizer {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.its-paper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* A4 @96dpi fallback only — InvoiceThemeSettings overrides width/height
+     inline per render, because the sheet changes with the theme (the "(A5)"
+     variants) and the global page-size setting. */
+  width: 794px;
+  height: 1123px;
+  border: none;
+  background: #fff;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  transform-origin: top left;
+  /* An iframe swallows wheel events — they go to ITS document and never reach
+     the parent, so Ctrl/⌘ + scroll did nothing whenever the cursor was over
+     the page itself (i.e. almost always). The preview is a static document
+     with nothing to click, so letting events pass straight through costs
+     nothing. Same treatment as .its-thumb-frame. */
+  pointer-events: none;
+}
+
+/* ── Zoom controls ── */
+.its-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  margin-right: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 2px;
+}
+
+.its-zoom button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.its-zoom button:hover:not(:disabled) { background: var(--bg-soft); }
+.its-zoom button:disabled { opacity: 0.35; cursor: default; }
+
+.its-zoom-val {
+  min-width: 42px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.its-preview-err {
+  padding: 60px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── Right: theme store ── */
+.its-store {
+  overflow-y: auto;
+  /* Hard guarantee against a horizontal scrollbar: nothing in this rail is
+     meant to scroll sideways, so any future overflow gets clipped rather
+     than adding a second scroll axis. */
+  overflow-x: hidden;
+  min-height: 0;
+  background: var(--bg);
+  padding-bottom: 40px;
+}
+
+.its-store-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+  padding: 16px 18px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Document switcher — drives BOTH panes (preview + settings), so it sits
+   above the theme strip rather than inside an accordion section. */
+.its-doctabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 18px 0;
+}
+
+.its-doctab {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 6px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.25;
+}
+
+.its-doctab:hover { background: var(--bg-soft); }
+
+.its-doctab--on {
+  background: var(--primary, #4f46e5);
+  border-color: var(--primary, #4f46e5);
+  color: #fff;
+}
+
+.its-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Fields revealed by a block checkbox — indented so it's visually obvious
+   they belong to the toggle above them. */
+.its-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 8px 24px;
+  border-left: 2px solid var(--border);
+  margin-left: 6px;
+}
+
+/* Heading for a revealed group whose children are checkboxes rather than
+   labelled inputs — without it, "Estimate / Customer Invoice / Purchase
+   Invoice" read as three unrelated switches. */
+.its-fields-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 2px;
+}
+
+/* A signature is wide and short, unlike the square logo box. */
+.its-logo-box--wide {
+  width: 118px;
+  height: 54px;
+}
+
+/* Two side-by-side inputs (number prefix + digits). */
+.its-two {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 8px;
+}
+
+.its-textarea {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.its-strip-card {
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--surface, #fff);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.12s ease;
+  /* Without min-width:0 a grid item refuses to shrink below its content's
+     intrinsic width — which is what pushed the third column out of the rail. */
+  min-width: 0;
+  overflow: hidden;
+}
+
+.its-strip-card:hover { border-color: var(--primary, #4f46e5); }
+
+.its-strip-card--on {
+  border-color: var(--primary, #4f46e5);
+  box-shadow: 0 0 0 1px var(--primary, #4f46e5);
+}
+
+/* Long names like "Advanced GST (Tally)" must wrap rather than widen the
+   card — overflow-wrap catches the case where a single token is too long. */
+.its-strip-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  min-height: 24px;
+  text-align: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Thumbnail: the whole A4 page shrunk with `zoom` and cropped to the top
+   portion — pointer-events:none so clicks reach the card's onClick.
+   `zoom` (unlike transform) shrinks the element's LAYOUT box, so the value
+   here directly sets how much horizontal space each card needs — this is
+   what has to stay in step with the rail width in .its-split above.
+   Rail 440 − 36 (strip padding) − 16 (2 gaps) = 388 / 3 ≈ 129 per column,
+   − 12 (card border + padding) ≈ 117 usable. 117 / 794 ≈ 0.147. */
+.its-thumb {
+  position: relative;
+  height: 86px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+
+.its-thumb-frame {
+  width: 794px;
+  height: 1123px;
+  border: none;
+  pointer-events: none;
+  zoom: 0.147;
+  background: #fff;
+}
+
+.its-thumb-ph { position: absolute; inset: 0; background: #f1f2f4; }
+
+/* ── Accordion sections ── */
+.its-sec { border-bottom: 1px solid var(--border); }
+
+.its-sec-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 18px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+}
+
+.its-sec-head:hover { background: var(--bg-soft); }
+
+.its-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.its-badge {
+  background: var(--primary-soft, #eef2ff);
+  color: var(--primary, #4f46e5);
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+.its-sec-chev { transition: transform 0.15s ease; flex-shrink: 0; opacity: 0.6; }
+.its-sec--open .its-sec-chev { transform: rotate(180deg); }
+
+.its-sec-body {
+  padding: 4px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.its-sub {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+.its-label { font-size: 12px; font-weight: 600; }
+
+.its-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.its-hint--warn { color: #b45309; }
+.its-hint--muted { opacity: 0.7; }
+.its-hint--center { text-align: center; padding: 0 0 12px; }
+
+/* ── Controls ── */
+.its-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.its-check input { cursor: pointer; flex-shrink: 0; }
+.its-check--disabled { opacity: 0.5; cursor: not-allowed; }
+
+.its-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+}
+
+.its-cta {
+  width: 100%;
+  padding: 9px;
+  border-radius: 8px;
+  border: none;
+  background: var(--primary, #4f46e5);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.its-cta:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.its-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+}
+
+.its-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.its-swatch--on { border-color: var(--text); }
+
+.its-swatch-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.its-swatch-custom input {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* ── Custom fields / columns ── */
+.its-custom { display: flex; flex-direction: column; gap: 6px; }
+
+.its-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.its-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 5px;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.its-icon-btn:hover { background: var(--bg-soft); color: #b91c1c; }
+
+.its-add-link {
+  background: none;
+  border: none;
+  color: var(--primary, #4f46e5);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+}
+
+/* ── Logo ── */
+.its-logo-row { display: flex; align-items: center; gap: 12px; }
+
+.its-logo-box {
+  width: 62px;
+  height: 62px;
+  border-radius: 9px;
+  border: 1px dashed var(--border);
+  background: var(--bg-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.its-logo-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+.its-logo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+/* Stack the panes on narrow screens — a 380px settings rail plus a readable
+   preview doesn't fit, and the preview is the first thing to sacrifice. */
+@media (max-width: 1100px) {
+  .settings-content:has(.its-split) { overflow: auto; }
+  .its-split { grid-template-columns: 1fr; height: auto; }
+  .its-preview-pane { border-right: none; border-bottom: 1px solid var(--border); }
+  /* No .its-paper transform here any more. It used to scale(0.45), but the
+     component sets `transform` inline for zoom and an inline style beats a
+     stylesheet — so this rule never actually applied and the narrow-screen
+     preview overflowed. The zoom is now measured from the pane's real width
+     in InvoiceThemeSettings, which handles narrow screens properly. */
+  .its-store { overflow: visible; }
+}

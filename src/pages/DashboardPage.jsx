@@ -1031,7 +1031,7 @@ export default function DashboardPage() {
                       <div className="db-inv-icon"><FileText size={14} style={{ color: '#10b981' }} /></div>
                       <div className="db-inv-info">
                         <div className="db-inv-name">{inv.customer_name || inv.mobile}</div>
-                        <div className="db-inv-meta">INV-{String(inv.id).padStart(6, '0')} · {new Date(inv.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>
+                        <div className="db-inv-meta">INV-{String(inv.id).padStart(6, '0')} · {fmtShortDate(inv.invoice_date || inv.created_at)}</div>
                       </div>
                       <div className="db-inv-right">
                         <div className="db-inv-amount">₹{fmtINR(total)}</div>
@@ -1156,7 +1156,7 @@ export default function DashboardPage() {
                         <div className="db-inv-icon"><FileText size={14} style={{ color: '#f59e0b' }} /></div>
                         <div className="db-inv-info">
                           <div className="db-inv-name">{pi.hub_name || `PI #${pi.id}`}</div>
-                          <div className="db-inv-meta">PI-{String(pi.id).padStart(6,'0')} · {new Date(pi.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</div>
+                          <div className="db-inv-meta">PI-{String(pi.id).padStart(6,'0')} · {fmtShortDate(pi.invoice_date || pi.created_at)}</div>
                         </div>
                         <div className="db-inv-right">
                           <div className="db-inv-amount">₹{fmtINR(total)}</div>
@@ -1779,6 +1779,18 @@ function getWave(h) {
   if (h < 17) return '🌤️';
   return '🌙';
 }
+// Day+month only, for the compact invoice cards. Date-safe: an invoice_date
+// arrives as plain 'YYYY-MM-DD', which `new Date()` reads as UTC midnight and
+// would render a day early anywhere behind UTC.
+function fmtShortDate(d) {
+  if (!d) return '';
+  const ymd = typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.slice(0, 10))
+    ? d.slice(0, 10).split('-').map(Number)
+    : null;
+  const dt = ymd ? new Date(ymd[0], ymd[1] - 1, ymd[2]) : new Date(d);
+  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+}
+
 function fmtINR(n) {
   if (n >= 100000) return (n / 100000).toFixed(1).replace(/\.0$/, '') + 'L';
   if (n >= 1000)   return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';

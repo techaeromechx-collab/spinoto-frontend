@@ -1,7 +1,9 @@
 import react from 'react';
+import { openDocumentPdf, downloadDocumentPdf } from '../lib/documentPdf.js';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
-import { useAuth } from '../auth/AuthContext.jsx';
+import { useAuth, useCan } from '../auth/AuthContext.jsx';
+import InvoiceDateDialog from '../components/InvoiceDateDialog.jsx';
 import PaginationBar from '../components/PaginationBar.jsx';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
@@ -9,7 +11,7 @@ import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { CreateAppointmentModal } from './AppointmentsPage.jsx';
 import {
   FileText, Plus, Search, RefreshCw, X, ChevronRight,
-  CheckCircle2, XCircle, Clock, AlertCircle, Eye, Minus, ReceiptText, Printer, Check, MoreVertical, ChevronDown, Building2,
+  CheckCircle2, XCircle, Clock, AlertCircle, Eye, Minus, ReceiptText, Printer, Download, Check, MoreVertical, ChevronDown, Building2,
   User, Car, Pencil,
 } from 'lucide-react';
 import '../styles/EstimatesPage.css';
@@ -476,16 +478,16 @@ function CustomerApprovalModal({ estimate, onClose, onDone }) {
 
   return (
     <div className="modal-backdrop">
-      <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+      <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 500, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
           <h3>Mark Customer Approval</h3>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
-        <form onSubmit={submit} style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
+        <form onSubmit={submit} style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0, overflow: 'hidden' }}>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>
             Set the customer's decision for each item below.
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', minHeight: 0, paddingRight: 4 }}>
             {approvals.map(a => (
               <div key={a.item_id} style={{
                 display: 'flex', alignItems: 'center', gap: 12,
@@ -530,12 +532,14 @@ function CustomerApprovalModal({ estimate, onClose, onDone }) {
               </div>
             ))}
           </div>
-          <ErrorBox msg={error} />
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : 'Save Approvals'}
-            </button>
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <ErrorBox msg={error} />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? 'Saving…' : 'Save Approvals'}
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -692,7 +696,11 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       const gst = parseFloat(it.gst_percent) || 0;
       const incRate = exRate * (1 + gst / 100);
       return {
+        // _key is a React render key only. `id` is the real estimate_items row
+        // and is sent on save so the server updates it in place — keep the two
+        // separate, or a newly added line's random _key would be sent as an id.
         _key: it.id || Math.random(),
+        id: it.id ?? null,
         type: it.item_type || 'service',
         item_id: it.service_id || it.part_id || it.item_id || '',
         description: it.description || '',
@@ -958,6 +966,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
           return {
             _key: Math.random(),
+            id: null,          // new line — no estimate_items row yet
             type: 'service',
             item_id: s.service_id,
             description: s.service_name || s.name || '',
@@ -1018,6 +1027,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
     setItems(prev => [...prev, {
       _key: Math.random(),
+      id: null,          // new line — no estimate_items row yet
       type: 'service',
       item_id: svc.id,
       description: svc.name,
@@ -1060,6 +1070,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
     setItems(prev => [...prev, {
       _key: Math.random(),
+      id: null,          // new line — no estimate_items row yet
       type: 'part',
       item_id: part.id,
       description: part.name,
@@ -1268,6 +1279,11 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
           const itemForCalc = forceZero ? { ...it, discount_type: null, discount_value: 0 } : it;
           const { discountAmount } = computeItem(itemForCalc);
           return {
+            // The existing estimate_items row, so the server can UPDATE it in
+            // place rather than delete-and-recreate. Null for a newly added
+            // line. Without this the row id churns on every save and the
+            // invoice links that point at it are severed.
+            id: it.id ?? null,
             item_type: it.type,
             item_id: it.item_id || null,
             description: it.description,
@@ -2360,6 +2376,21 @@ function DeleteConfirmModal({ estimate, deleting, onCancel, onConfirm }) {
 
 // Detail Drawer
 // ═════════════════════════════════════════════════════════════════════════════
+// A plain 'YYYY-MM-DD' (estimate_date) is parsed by `new Date()` as UTC
+// midnight, which renders as the previous day in any timezone behind UTC.
+// Build date-only values from their parts as a local date instead.
+function fmtEstDate(d) {
+  if (!d) return '—';
+  const ymd = typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.slice(0, 10))
+    ? d.slice(0, 10).split('-').map(Number) : null;
+  const dt = ymd ? new Date(ymd[0], ymd[1] - 1, ymd[2]) : new Date(d);
+  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// The date shown is the estimate's own; created_at is only a fallback for a
+// response that predates migration 101.
+const estDate = (e) => e?.estimate_date || e?.created_at;
+
 function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = false, onLoaded }) {
   const rawNavigate = useNavigate();
   // Hub Portal renders this drawer as a plain tab with no nested routing, and
@@ -2373,10 +2404,24 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   const [loading, setLoading] = react.useState(true);
   const [actionBusy, setActionBusy] = react.useState(false);
   const [generatingInvoice, setGeneratingInvoice] = react.useState(false);
+  // The estimate's date anchors the whole job chain, so it has its own
+  // permission rather than riding on general edit rights.
+  const canBackdateEst  = useCan('BACKDATE_ESTIMATE', 'OVERRIDE_INVOICE_DATE_LIMITS');
+  const canOverrideDate = useCan('OVERRIDE_INVOICE_DATE_LIMITS');
+  const [dateDialog, setDateDialog] = react.useState(false);
+  // The server refuses these too; this just avoids offering a button that
+  // would always be rejected. Mirrors dateEditable on the invoice page.
+  const estDateEditable = estimate && !['cancelled', 'rejected'].includes(estimate.status);
   const [generatingPI, setGeneratingPI] = react.useState(false);
 
   // Company settings for print header
   const [company, setCompany] = react.useState(null);
+
+  // Guards the Print button while the server renders the themed PDF.
+  const [estPdfLoading, setEstPdfLoading] = react.useState(false);
+  // react.useState, not useState — this file accesses hooks off the namespace
+  // import. Writing plain useState here parses fine and only fails at render.
+  const [estPdfSaving, setEstPdfSaving] = react.useState(false);
 
   // Whether to include B2B billing details (Company Name/GST/Address) when
   // printing — on-screen these always show regardless of this toggle.
@@ -2659,24 +2704,49 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 Include notes in print
               </label>
             )}
+            {/* Server-rendered themed PDF — same template system as customer
+                and purchase invoices, so the estimate now honours the
+                configured theme, logo and accent colour. */}
             <button
               className="btn btn-ghost"
-              onClick={() => {
-                const o = document.title;
-                if (estimate) {
-                  const estId = `EST-${String(estimate.id).padStart(6, '0')}`;
-                  const vNum = estimate.vehicle_number || '';
-                  const vModel = estimate.model_name || '';
-                  // This creates an array of the parts, removes empty ones, and joins them with "_"
-                  document.title = [estId, vNum, vModel].filter(Boolean).join('_');
+              disabled={estPdfLoading}
+              onClick={async () => {
+                if (!estimate) return;
+                setEstPdfLoading(true);
+                try {
+                  await openDocumentPdf('estimate', estimate.id);
+                } catch (e) {
+                  showToast?.(e.message || 'Failed to generate PDF', 'error');
+                } finally {
+                  setEstPdfLoading(false);
                 }
-                window.print();
-                document.title = o;
               }}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-              title="Print estimate"
+              title="Open the themed PDF"
             >
-              <Printer size={15} /> Print
+              <Printer size={15} /> {estPdfLoading ? 'Generating…' : 'Print'}
+            </button>
+
+            {/* Separate from Print because only a download can carry the proper
+                filename — Print opens a blob URL, which has no name. */}
+            <button
+              className="btn btn-ghost"
+              disabled={estPdfSaving}
+              onClick={async () => {
+                if (!estimate) return;
+                setEstPdfSaving(true);
+                try {
+                  await downloadDocumentPdf('estimate', estimate.id);
+                } catch (e) {
+                  showToast?.(e.message || 'Failed to download PDF', 'error');
+                } finally {
+                  setEstPdfSaving(false);
+                }
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
+              title="Download the PDF as EST-000000_VEHICLE_Model.pdf"
+            >
+              <Download size={15} /> {estPdfSaving ? 'Saving…' : 'Download'}
             </button>
 
             {/* Kebab menu */}
@@ -2810,7 +2880,24 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 </div>
                 <div style={{ display: 'flex' }}>
                   <span className="est-info-label">Date</span>
-                  <span className="est-info-value">{estimate.created_at ? new Date(estimate.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span>
+                  <span className="est-info-value" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {fmtEstDate(estDate(estimate))}
+                    {estimate.original_estimate_date && (
+                      <span className="inv-backdated-badge est-no-print"
+                        title={`Originally ${fmtEstDate(estimate.original_estimate_date)}` +
+                               (estimate.backdate_reason ? ` — ${estimate.backdate_reason}` : '')}>
+                        Backdated
+                      </span>
+                    )}
+                    {canBackdateEst && estDateEditable && (
+                      <button type="button" className="est-no-print"
+                        onClick={() => setDateDialog(true)}
+                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                                 fontSize: 11.5, fontWeight: 600, color: 'var(--primary, #2563eb)' }}>
+                        Change
+                      </button>
+                    )}
+                  </span>
                 </div>
                 {/* Created by — screen only, not in PDF */}
                 <div className="est-no-print" style={{ display: 'flex' }}>
@@ -3296,6 +3383,31 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             }}
           />
         )}
+
+        {dateDialog && estimate && (
+          <InvoiceDateDialog
+            documentType="estimate"
+            invoice={estimate}
+            canOverride={canOverrideDate}
+            onClose={() => setDateDialog(false)}
+            onSaved={(r) => {
+              // Reload rather than patching locally: the change can cascade to
+              // the purchase and customer invoices, and the list needs its
+              // date column and ordering refreshed too.
+              load();
+              onUpdated?.();
+              const movedNames = (r.cascade || []).filter(c => c.moved)
+                .map(c => c.type === 'purchase_invoice' ? 'purchase invoice' : 'customer invoice');
+              showToast(
+                `Estimate date changed to ${fmtEstDate(r.estimate_date)}` +
+                (movedNames.length ? ` (${movedNames.join(' and ')} moved too)` : '')
+              );
+              for (const blocked of (r.cascade || []).filter(c => c.moved === false)) {
+                showToast(blocked.blocked_reason, 'error');
+              }
+            }}
+          />
+        )}
       </div>
     </>
   );
@@ -3606,6 +3718,20 @@ export default function EstimatesPage() {
                       boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
                       overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
                     }}>
+                      {hubs.length > 0 && hubFilter.length < hubs.length && (
+                        <button
+                          type="button"
+                          style={{
+                            width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                            color: 'var(--primary, #16b994)', background: 'none', border: 'none',
+                            textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                            paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4
+                          }}
+                          onClick={() => { setHubFilter(hubs.map(h => String(h.id))); setPage(1); }}
+                        >
+                          <Check size={12} /> Select All
+                        </button>
+                      )}
                       {hubFilter.length > 0 && (
                         <button
                           type="button"
@@ -3787,7 +3913,10 @@ export default function EstimatesPage() {
                         </td>
                         <td><StatusBadge status={est.status} /></td>
                         <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          {est.created_at ? new Date(est.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                          {fmtEstDate(estDate(est))}
+                          {est.original_estimate_date && (
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#92400e' }}>Backdated</div>
+                          )}
                         </td>
                       </tr>
                     ))}

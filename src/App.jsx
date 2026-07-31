@@ -23,10 +23,13 @@ import CustomerInvoicesPage from './pages/CustomerInvoicesPage.jsx';
 import PayoutsPage from './pages/PayoutsPage.jsx';
 import BulkUploadPage from './pages/BulkUploadPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
-import UsersPage from './pages/UsersPage.jsx';
-import SuperAdminsPage from './pages/SuperAdminsPage.jsx';
+// UsersPage/SuperAdminsPage are no longer routed to directly — they're
+// rendered as tabs inside SettingsPage.jsx now (/users and /super-admins
+// below just redirect there).
 import ProfilePage from './pages/ProfilePage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
 import AppShell from './components/AppShell.jsx';
+import { UnsavedChangesProvider } from './components/UnsavedChangesGuard.jsx';
 import HubDashboardPage from './pages/HubDashboardPage.jsx';
 
 /**
@@ -95,6 +98,12 @@ export default function App() {
         path="/*"
         element={
           <RequireAdmin>
+            {/* Above AppShell on purpose. Scoped to SettingsPage it only covered
+                the two links inside that page — the sidebar, breadcrumbs, user
+                menu and mobile nav all sit here and silently discarded unsaved
+                work. Guarding at this level means any screen that registers a
+                dirty flag is protected from every in-app navigation. */}
+            <UnsavedChangesProvider>
             <AppShell>
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
@@ -181,9 +190,22 @@ export default function App() {
                 <Route path="/bulk-upload"      element={<RequirePermission codes={['BULK_UPLOAD']}><BulkUploadPage /></RequirePermission>} />
                 <Route path="/reports"          element={<RequirePermission codes={['VIEW_REPORTS']}><ReportsPage /></RequirePermission>} />
 
-                {/* User & permission management */}
-                <Route path="/users"            element={<RequirePermission codes={['MANAGE_USERS', 'VIEW_TEAM_LEADS']}><UsersPage /></RequirePermission>} />
-                <Route path="/super-admins"    element={<RequireSuperAdmin><SuperAdminsPage /></RequireSuperAdmin>} />
+                {/* User & permission management — folded into the Settings
+                    module (see /settings below). Old links/bookmarks keep
+                    working via redirect. The one caller that passed
+                    navigation state through this route (AppShell's global
+                    search → openUserId) was updated to navigate straight to
+                    /settings, since <Navigate> here can't forward state. */}
+                <Route path="/users"         element={<Navigate to="/settings?tab=manage-users" replace />} />
+                <Route path="/super-admins" element={<Navigate to="/settings?tab=super-admins" replace />} />
+
+                {/* Settings — available to every logged-in user; each tab
+                    gates itself internally (mirrors /profile below), since
+                    the module mixes tabs open to everyone (Account) with
+                    ones restricted to super admins or MANAGE_USERS/
+                    VIEW_TEAM_LEADS holders (Manage Users, Manage Business,
+                    Invoice/Print Settings, Reminders, Super Admins). */}
+                <Route path="/settings" element={<SettingsPage />} />
 
                 {/* Profile — available to every logged-in user */}
                 <Route path="/profile" element={<ProfilePage />} />
@@ -191,6 +213,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </AppShell>
+            </UnsavedChangesProvider>
           </RequireAdmin>
         }
       />

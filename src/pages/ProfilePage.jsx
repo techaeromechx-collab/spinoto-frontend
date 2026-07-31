@@ -205,549 +205,6 @@ function SectionHeader({ icon, title, count }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// COMPANY DETAILS CARD  (Super Admin only)
-// ─────────────────────────────────────────────────────────────────────────────
-const EMPTY_CO = {
-  company_name: '', address_line1: '', address_line2: '',
-  city: '', state: '', pincode: '', phone: '', email: '', gstin: '',
-};
-
-function CompanyDetailsCard() {
-  const [form,    setForm]    = useState(EMPTY_CO);
-  const [saved,   setSaved]   = useState(EMPTY_CO);   // last saved snapshot
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [saving,  setSaving]  = useState(false);
-  const [ok,      setOk]      = useState(false);
-  const [err,     setErr]     = useState(null);
-
-  useEffect(() => {
-    api('/api/settings/company')
-      .then(d => { setForm(d); setSaved(d); })
-      .catch(() => setErr('Failed to load company details.'))
-      .finally(() => setLoading(false));
-  }, []);
-
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setForm(f => ({ ...f, [name]: value }));
-  }
-
-  function cancelEdit() {
-    setForm(saved);
-    setEditing(false);
-    setErr(null);
-  }
-
-  async function handleSave(e) {
-    e.preventDefault();
-    setSaving(true); setErr(null); setOk(false);
-    try {
-      const res = await api('/api/settings/company', { method: 'PUT', body: form });
-      const updated = res.item || res;
-      setForm(updated); setSaved(updated);
-      setEditing(false); setOk(true);
-      setTimeout(() => setOk(false), 3000);
-    } catch (ex) {
-      setErr(ex.message || 'Failed to save.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="prfl-card">
-        <SectionHeader icon={<Building2 size={15} />} title="Company Details" />
-        <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-          <Loader size={18} style={{ animation: 'spin 1s linear infinite', marginBottom: 6 }} /><br />Loading…
-        </div>
-      </div>
-    );
-  }
-
-  const coFields = [
-    { icon: <Building2 size={13}/>, label: 'Company Name',  val: saved.company_name  },
-    { icon: <Hash      size={13}/>, label: 'GST / Tax No.',  val: saved.gstin         },
-    { icon: <MapPin    size={13}/>, label: 'Address Line 1', val: saved.address_line1 },
-    { icon: <MapPin    size={13}/>, label: 'Address Line 2', val: saved.address_line2 },
-    { icon: <Globe     size={13}/>, label: 'City',           val: saved.city          },
-    { icon: <Globe     size={13}/>, label: 'State',          val: saved.state         },
-    { icon: <Globe     size={13}/>, label: 'Pincode',        val: saved.pincode       },
-    { icon: <Phone     size={13}/>, label: 'Phone',          val: saved.phone         },
-    { icon: <Mail      size={13}/>, label: 'Email',          val: saved.email         },
-  ];
-
-  return (
-    <div className="prfl-card">
-      <div className="prfl-card-hd" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span className="prfl-card-title">
-          <span className="prfl-card-title-icon"><Building2 size={15} /></span>
-          Company Details
-        </span>
-        {!editing && (
-          <button
-            className="prfl-btn-ghost prfl-btn-ghost--sm"
-            onClick={() => { setEditing(true); setOk(false); setErr(null); }}
-          >
-            <Edit2 size={13} /> Edit
-          </button>
-        )}
-      </div>
-
-      {ok  && <div className="prfl-alert prfl-alert--success" style={{ margin: '0 0 14px' }}>Company details saved successfully!</div>}
-      {err && <div className="prfl-alert prfl-alert--error"   style={{ margin: '0 0 14px' }}>{err}</div>}
-
-      {!editing ? (
-        <div className="prfl-co-grid">
-          {coFields.map(({ icon, label, val }) => (
-            <div key={label} className="prfl-co-field">
-              <div className="prfl-co-field-icon">{icon}</div>
-              <div>
-                <div className="prfl-co-field-label">{label}</div>
-                <div className="prfl-co-field-val" style={{ color: val ? 'var(--text)' : 'var(--text-muted)' }}>{val || '—'}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            {[
-              { name: 'company_name',  label: 'Company Name *',  placeholder: 'Aeromechx Automotive Pvt. Ltd.', full: true },
-              { name: 'address_line1', label: 'Address Line 1',  placeholder: '919, Shilp Epitome, Sindhuabhavan Road' },
-              { name: 'address_line2', label: 'Address Line 2',  placeholder: 'Ahmedabad' },
-              { name: 'city',          label: 'City',             placeholder: 'Ahmedabad' },
-              { name: 'state',         label: 'State',            placeholder: 'Gujarat' },
-              { name: 'pincode',       label: 'Pincode',          placeholder: '380054' },
-              { name: 'phone',         label: 'Phone / Mobile',   placeholder: '7480033800' },
-              { name: 'email',         label: 'Email',            placeholder: 'info@company.com' },
-              { name: 'gstin',         label: 'GST / Tax Number', placeholder: '24ABBCA0719K1ZY' },
-            ].map(({ name, label, placeholder, full }) => (
-              <div key={name} className="prfl-field" style={full ? { gridColumn: '1 / -1' } : {}}>
-                <label>{label}</label>
-                <input
-                  name={name}
-                  value={form[name]}
-                  onChange={handleChange}
-                  placeholder={placeholder}
-                  required={name === 'company_name'}
-                />
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4 }}>
-            <button type="button" className="prfl-btn-ghost" onClick={cancelEdit} disabled={saving}
-              style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <X size={14} /> Cancel
-            </button>
-            <button type="submit" className="prfl-btn-primary" disabled={saving}
-              style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Save size={14} /> {saving ? 'Saving…' : 'Save Company Details'}
-            </button>
-          </div>
-        </form>
-      )}
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ROLE CREATOR PANEL  (Super Admin only)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Permission groups order for the checklist
-const PERM_GROUP_ORDER = [
-  'Administration', 'Leads', 'Vehicles', 'Reference Data', 'Services', 'Pricing',
-  'Hubs', 'Appointments', 'Customers', 'Estimates',
-  'Invoices', 'Purchase Invoices', 'Parts', 'Discounts', 'Operations', 'Dashboard',
-];
-
-// ── Group icon helper ─────────────────────────────────────────────────────────
-function roleGroupIcon(group) {
-  const g = (group || '').toLowerCase();
-
-  if (g.includes('admin') || g === 'administration')
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>;
-
-  if (g === 'leads' || g.startsWith('lead'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-
-  if (g.includes('vehicle'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v9a2 2 0 0 1-2 2h-2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>;
-
-  if (g === 'services' || g.includes('service'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>;
-
-  if (g === 'pricing' || g.includes('pric'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>;
-
-  if (g === 'hubs' || g.startsWith('hub'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
-
-  if (g === 'appointments' || g.includes('appoint'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
-
-  if (g === 'customers' || g.includes('customer'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
-
-  if (g === 'estimates' || g.includes('estimate'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
-
-  if (g === 'invoices' || (g.includes('invoice') && !g.includes('purchase')))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>;
-
-  if (g.includes('purchase'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>;
-
-  if (g.includes('reference') || g.includes('ref data'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>;
-
-  if (g === 'parts' || g.includes('part'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>;
-
-  if (g === 'discounts' || g.includes('discount'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><line x1="4" y1="20" x2="20" y2="4"/></svg>;
-
-  if (g === 'operations' || g.includes('operat'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>;
-
-  if (g === 'dashboard' || g.includes('dashboard'))
-    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>;
-
-  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>;
-}
-
-function RoleCreatorPanel() {
-  const [roles,      setRoles]      = useState([]);
-  const [catalog,    setCatalog]    = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [modalOpen,  setModalOpen]  = useState(false);
-  const [editRole,   setEditRole]   = useState(null);
-  const [deleting,   setDeleting]   = useState(null);
-  const [err,        setErr]        = useState('');
-  const [ok,         setOk]         = useState('');
-
-  // Form state
-  const EMPTY_FORM = { name: '', description: '', permissions: [], is_active: true };
-  const [form,    setForm]    = useState(EMPTY_FORM);
-  const [saving,  setSaving]  = useState(false);
-  const [formErr, setFormErr] = useState('');
-
-  // Active group in the two-column permission picker
-  const [activeGroup, setActiveGroup] = useState('');
-
-  useEffect(() => {
-    Promise.all([
-      api('/api/roles'),
-      api('/api/users/permissions'),
-    ]).then(([r, p]) => {
-      setRoles(r.items || []);
-      setCatalog(p.items || []);
-    }).catch(() => setErr('Failed to load roles. Run the DB migration first.')).finally(() => setLoading(false));
-  }, []);
-
-  // Group permissions by group field, respecting PERM_GROUP_ORDER
-  const grouped = {};
-  for (const p of catalog) {
-    if (!grouped[p.group]) grouped[p.group] = [];
-    grouped[p.group].push(p);
-  }
-  const groupOrder = PERM_GROUP_ORDER.filter(g => grouped[g]);
-
-  // Resolve active group — default to first
-  const resolvedGroup = (activeGroup && grouped[activeGroup]) ? activeGroup : (groupOrder[0] || '');
-
-  function openCreate() {
-    setEditRole(null);
-    setForm(EMPTY_FORM);
-    setFormErr('');
-    setActiveGroup(groupOrder[0] || '');
-    setModalOpen(true);
-  }
-
-  function openEdit(role) {
-    setEditRole(role);
-    setForm({
-      name:        role.name,
-      description: role.description || '',
-      permissions: role.permissions || [],
-      is_active:   role.is_active,
-    });
-    setFormErr('');
-    setActiveGroup(groupOrder[0] || '');
-    setModalOpen(true);
-  }
-
-  function togglePerm(code) {
-    setForm(f => ({
-      ...f,
-      permissions: f.permissions.includes(code)
-        ? f.permissions.filter(c => c !== code)
-        : [...f.permissions, code],
-    }));
-  }
-
-  async function handleSave(e) {
-    e.preventDefault();
-    if (!form.name.trim()) { setFormErr('Role name is required.'); return; }
-    setSaving(true); setFormErr('');
-    try {
-      const body = {
-        name:        form.name.trim(),
-        description: form.description.trim() || null,
-        permissions: form.permissions,
-        is_active:   form.is_active,
-      };
-      if (editRole) {
-        const r = await api(`/api/roles/${editRole.id}`, { method: 'PUT', body });
-        setRoles(prev => prev.map(x => x.id === editRole.id ? r.item : x));
-        setOk(`Role "${r.item.name}" updated.`);
-      } else {
-        const r = await api('/api/roles', { method: 'POST', body });
-        setRoles(prev => [...prev, r.item]);
-        setOk(`Role "${r.item.name}" created.`);
-      }
-      setModalOpen(false);
-      setTimeout(() => setOk(''), 3000);
-    } catch (ex) {
-      setFormErr(ex.message || 'Save failed.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleDelete(role) {
-    const userCount = role.user_count || 0;
-    const warning = userCount > 0
-      ? `⚠️ "${role.name}" is currently assigned to ${userCount} user${userCount > 1 ? 's' : ''}. Their role label will be removed.\n\n`
-      : '';
-    if (!window.confirm(`${warning}Delete role "${role.name}"? This cannot be undone.`)) return;
-    setDeleting(role.id);
-    try {
-      await api(`/api/roles/${role.id}`, { method: 'DELETE' });
-      setRoles(prev => prev.filter(r => r.id !== role.id));
-      setOk(`Role "${role.name}" deleted.`);
-      setTimeout(() => setOk(''), 3000);
-    } catch (ex) {
-      setErr(ex.message || 'Delete failed.');
-    } finally {
-      setDeleting(null);
-    }
-  }
-
-  if (loading) return (
-    <div className="prfl-card">
-      <SectionHeader icon={<Shield size={15}/>} title="Custom Roles" />
-      <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
-        <Loader size={18} className="spin" />
-      </div>
-    </div>
-  );
-
-  return (
-    <>
-      <div className="prfl-card">
-        {/* Card header */}
-        <div className="rc-header">
-          <div className="rc-header-left">
-            <span className="rc-header-icon"><Shield size={15}/></span>
-            <span className="rc-header-title">Custom Roles</span>
-            <span className="rc-header-count">{roles.length}</span>
-          </div>
-          <button className="up-btn-primary rc-new-btn" onClick={openCreate}>
-            + New Role
-          </button>
-        </div>
-
-        {err && <div className="prfl-alert prfl-alert--error rc-alert">{err}</div>}
-        {ok  && <div className="prfl-alert prfl-alert--success rc-alert">{ok}</div>}
-
-        {/* Role list */}
-        {roles.length === 0 ? (
-          <div className="rc-empty">
-            <Shield size={32} className="rc-empty-icon" />
-            <p>No roles yet. Create your first role to bundle permissions.</p>
-            <button className="up-btn-primary" onClick={openCreate}>+ Create first role</button>
-          </div>
-        ) : (
-          <div className="rc-list">
-            {roles.map(role => {
-              const permCount = (role.permissions || []).length;
-              return (
-                <div key={role.id} className={`rc-row${role.is_active ? '' : ' rc-row--inactive'}`}>
-                  {/* Shield icon */}
-                  <div className="rc-row-icon">
-                    <Shield size={17}/>
-                  </div>
-                  {/* Info */}
-                  <div className="rc-row-info">
-                    <div className="rc-row-name">
-                      {role.name}
-                      {!role.is_active && <span className="rc-row-badge rc-row-badge--inactive">Inactive</span>}
-                    </div>
-                    {role.description && <div className="rc-row-desc">{role.description}</div>}
-                    <div className="rc-row-meta">
-                      <span className="rc-row-perms">{permCount} permission{permCount !== 1 ? 's' : ''}</span>
-                      {(role.user_count > 0) && (
-                        <span className="rc-row-perms" style={{ color: '#0891b2' }}>{role.user_count} user{role.user_count !== 1 ? 's' : ''}</span>
-                      )}
-                      {permCount > 0 && (
-                        <span className="rc-row-codes">
-                          {(role.permissions || []).slice(0, 3).map(c => (
-                            <span key={c} className="rc-row-code">{c.replace(/_/g, ' ')}</span>
-                          ))}
-                          {permCount > 3 && <span className="rc-row-code rc-row-code--more">+{permCount - 3} more</span>}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {/* Actions */}
-                  <div className="rc-row-actions">
-                    <button className="up-btn-ghost rc-action-btn" onClick={() => openEdit(role)}>
-                      <Edit2 size={13}/> Edit
-                    </button>
-                    <button
-                      className="up-btn-ghost rc-action-btn rc-action-btn--danger"
-                      onClick={() => handleDelete(role)}
-                      disabled={deleting === role.id}
-                    >
-                      {deleting === role.id
-                        ? <><Loader size={12} className="spin"/> Deleting…</>
-                        : <><X size={13}/> Delete</>}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Create / Edit Modal ── */}
-      {modalOpen && (
-        <div className="up-pw-overlay rc-modal-overlay" onClick={e => { if (e.target === e.currentTarget) setModalOpen(false); }}>
-          <div className="rc-modal" onClick={e => e.stopPropagation()}>
-
-            {/* Modal header */}
-            <div className="rc-modal-hd">
-              <div className="rc-modal-title">
-                <Shield size={16} style={{ color: 'var(--primary)', flexShrink: 0 }}/>
-                {editRole ? `Edit Role: ${editRole.name}` : 'Create New Role'}
-              </div>
-              <button className="rc-modal-close" onClick={() => setModalOpen(false)} type="button">
-                <X size={17}/>
-              </button>
-            </div>
-
-            <form onSubmit={handleSave}>
-              {/* Fields row */}
-              <div className="rc-modal-fields">
-                {formErr && <div className="prfl-alert prfl-alert--error" style={{ gridColumn: '1/-1' }}>{formErr}</div>}
-
-                <div className="prfl-field">
-                  <label>Role Name *</label>
-                  <input
-                    value={form.name} required
-                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                    placeholder="e.g. Telecaller, Hub Manager, Field Agent"
-                  />
-                </div>
-
-                <div className="prfl-field">
-                  <label>Description</label>
-                  <input
-                    value={form.description}
-                    onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                    placeholder="What this role is used for (optional)"
-                  />
-                </div>
-
-                <div className="rc-active-toggle">
-                  <input
-                    type="checkbox" id="rc-is-active"
-                    checked={form.is_active}
-                    onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))}
-                    className="up-fg-checkbox"
-                  />
-                  <label htmlFor="rc-is-active">Active role</label>
-                </div>
-              </div>
-
-              {/* Two-column permission picker — same as UsersPage */}
-              <div className="rc-modal-perms-hd">
-                Permissions
-                <span className="rc-perms-count">{form.permissions.length} selected</span>
-              </div>
-
-              <div className="up-fg-perms rc-perms-picker">
-                <div className="up-fg-header">Select permissions for this role</div>
-                <div className="up-fg-body">
-                  {/* Left: category sidebar */}
-                  <div className="up-fg-sidebar">
-                    {groupOrder.map(group => {
-                      const enabledCount = (grouped[group] || []).filter(p => form.permissions.includes(p.code)).length;
-                      const isActive = resolvedGroup === group;
-                      return (
-                        <button
-                          key={group}
-                          type="button"
-                          className={`up-fg-cat${isActive ? ' up-fg-cat--active' : ''}`}
-                          onClick={() => setActiveGroup(group)}
-                        >
-                          <span className="up-fg-cat-icon">{roleGroupIcon(group)}</span>
-                          <span className="up-fg-cat-label">{group}</span>
-                          {enabledCount > 0 && (
-                            <span className="up-fg-cat-badge">{enabledCount}</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Right: permissions for selected category */}
-                  <div className="up-fg-perm-list">
-                    {(grouped[resolvedGroup] || []).map(p => (
-                      <label
-                        key={p.code}
-                        className={`up-fg-perm-row${form.permissions.includes(p.code) ? ' up-fg-perm-row--checked' : ''}`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="up-fg-checkbox"
-                          checked={form.permissions.includes(p.code)}
-                          onChange={() => togglePerm(p.code)}
-                        />
-                        <div className="up-fg-perm-text">
-                          <div className="up-fg-perm-label">{p.label}</div>
-                          {p.description && <div className="up-fg-perm-desc">{p.description}</div>}
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="rc-modal-footer">
-                <button type="button" className="up-btn-ghost" onClick={() => setModalOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="up-btn-primary" disabled={saving}>
-                  {saving
-                    ? <><Loader size={13} className="spin"/> Saving…</>
-                    : (editRole ? '💾 Update Role' : '✓ Create Role')}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // LOGS PANEL  (Super Admin only)
 // ─────────────────────────────────────────────────────────────────────────────
 function LogsPanel() {
@@ -1004,9 +461,12 @@ export default function ProfilePage() {
     { key: 'activity',    label: 'Activity',    Icon: Activity   },
     ...(hasTeam        ? [{ key: 'team',      label: 'Team',       Icon: Users   }] : []),
     ...(isAdmin        ? [{ key: 'admin',     label: 'Admin',      Icon: Shield  }] : []),
-    ...(isSuperAdmin   ? [{ key: 'superadmin',label: 'Super Admin',Icon: Zap     }] : []),
+    // 'Super Admin' and 'Settings' tabs moved to the consolidated Settings
+    // module (see SettingsPage.jsx) — 'Push Alerts' stays here since it also
+    // hosts device stats + the custom-notification sender, which weren't
+    // part of that move (only its Alert Thresholds section was, into
+    // Settings > Reminders).
     ...(isSuperAdmin   ? [{ key: 'push',      label: 'Push Alerts', Icon: Bell   }] : []),
-    { key: 'settings',   label: 'Settings',    Icon: Settings   },
   ];
 
   const [searchParams] = useSearchParams();
@@ -1017,9 +477,6 @@ export default function ProfilePage() {
 
   // Sub-tab for Activity tab: 'leads' | 'system'
   const [actSubTab, setActSubTab] = useState('leads');
-
-  // Sub-tab for Settings tab: 'notifications' | 'password'
-  const [settingsSubTab, setSettingsSubTab] = useState('notifications');
 
   // If URL tab param changes (e.g. navigated from dropdown)
   const prevTabParam = useRef(searchParams.get('tab'));
@@ -1058,35 +515,19 @@ export default function ProfilePage() {
   const [editBusy, setEditBusy] = useState(false);
   const [editErr,  setEditErr]  = useState('');
 
-  // ── Password change (existing logic — unchanged) ─────────────────────────
-  const [curPw,  setCurPw]  = useState('');
-  const [newPw,  setNewPw]  = useState('');
-  const [confPw, setConfPw] = useState('');
-  const [pwBusy, setPwBusy] = useState(false);
-  const [pwErr,  setPwErr]  = useState('');
-  const [pwOk,   setPwOk]   = useState(false);
-
-  // ── Push admin tab state ─────────────────────────────────────────────────
+  // Password change + notification-preference state moved to
+  // components/settings/AccountSettings.jsx (now self-contained there).
+  // Alert-threshold state moved to components/settings/RemindersSettings.jsx.
+  // Push admin tab keeps its own state below since device stats + the
+  // custom-notification sender stayed on this page.
   const [pushStats,      setPushStats]      = useState(null);
   const [pushLoading,    setPushLoading]    = useState(false);
-  const [alertCfg,       setAlertCfg]       = useState(null);
-  const [alertCfgBusy,   setAlertCfgBusy]   = useState(false);
-  const [alertCfgResult, setAlertCfgResult] = useState('');
   const [pushTestUser,   setPushTestUser]   = useState('');
   const [pushTestTitle,  setPushTestTitle]  = useState('');
   const [pushTestMsg,    setPushTestMsg]    = useState('');
   const [pushTestUrl,    setPushTestUrl]    = useState('/');
   const [pushTestResult, setPushTestResult] = useState('');
   const [pushTestBusy,   setPushTestBusy]   = useState(false);
-
-  // ── Notification settings ────────────────────────────────────────────────
-  const [notifSettings, setNotifSettings] = useState({
-    overdue_lead: true, missed_followup: true, high_priority_lead: true,
-    daily_target: true, inactive_lead: true,   lead_escalation: true,
-    duplicate_lead: true, lead_assigned: true, lead_converted: true, no_activity: true,
-    follow_up_scheduled: true, appointment_reminder: true, note_added: true,
-    pricing_changed: true, reference_data_changed: true,
-  });
 
   // ── Data fetching ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1136,34 +577,11 @@ export default function ProfilePage() {
   }, [activeTab, teamStats]);
 
   useEffect(() => {
-    if (user?.notification_settings && Object.keys(user.notification_settings).length) {
-      setNotifSettings(prev => ({ ...prev, ...user.notification_settings }));
-    }
-  }, [user]);
-
-  useEffect(() => {
     if (activeTab === 'push' && !pushStats) {
       setPushLoading(true);
       api('/api/push/admin/stats').then(r => setPushStats(r)).catch(() => {}).finally(() => setPushLoading(false));
     }
-    if (activeTab === 'push' && !alertCfg) {
-      api('/api/settings/alert').then(r => setAlertCfg(r)).catch(() => {});
-    }
-  }, [activeTab, pushStats, alertCfg]);
-
-  async function saveAlertCfg() {
-    setAlertCfgBusy(true); setAlertCfgResult('');
-    try {
-      const r = await api('/api/settings/alert', { method: 'PUT', body: alertCfg });
-      setAlertCfg(r.alert_settings);
-      setAlertCfgResult('✅ Saved');
-    } catch (e) {
-      setAlertCfgResult(`❌ ${e.message}`);
-    } finally {
-      setAlertCfgBusy(false);
-      setTimeout(() => setAlertCfgResult(''), 3000);
-    }
-  }
+  }, [activeTab, pushStats]);
 
   async function sendTestPush() {
     if (!pushTestTitle.trim()) { setPushTestResult('❌ Title is required'); return; }
@@ -1204,25 +622,6 @@ export default function ProfilePage() {
       setEditing(false);
     } catch (e) { setEditErr(e.message); }
     finally { setEditBusy(false); }
-  }
-
-  // EXISTING unchanged password handler
-  async function handleChangePw(e) {
-    e.preventDefault();
-    setPwErr(''); setPwOk(false);
-    if (newPw !== confPw) { setPwErr('New passwords do not match.'); return; }
-    setPwBusy(true);
-    try {
-      await api('/api/me/password', { method: 'PATCH', body: { current_password: curPw, new_password: newPw } });
-      setPwOk(true); setCurPw(''); setNewPw(''); setConfPw('');
-    } catch (e) { setPwErr(e.message); }
-    finally { setPwBusy(false); }
-  }
-
-  async function saveNotifSettings(updated) {
-    const next = { ...notifSettings, ...updated };
-    setNotifSettings(next);
-    api('/api/me/profile', { method: 'PATCH', body: { notification_settings: next } }).catch(() => {});
   }
 
   if (!user) return null;
@@ -1588,13 +987,9 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* ───── SUPER ADMIN ───── */}
-        {activeTab === 'superadmin' && (
-          <div className="prfl-tab-body">
-            <CompanyDetailsCard />
-            <RoleCreatorPanel />
-          </div>
-        )}
+        {/* 'Super Admin' tab (Company Details + Role Creator) moved to the
+            Settings module — see SettingsPage.jsx's 'business'/'super-admins'
+            tabs. */}
 
         {/* ───── PUSH ALERTS (super admin only) ───── */}
         {activeTab === 'push' && (
@@ -1646,41 +1041,8 @@ export default function ProfilePage() {
               )}
             </div>
 
-            {/* ── Alert Thresholds ── */}
-            <div className="prfl-card">
-              <SectionHeader icon={<Settings size={15}/>} title="Alert Thresholds" />
-              <p className="prfl-card-desc">Configure when each automatic alert fires. Changes take effect on the next scheduler run (every 10 min).</p>
-              {alertCfg && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
-                  {[
-                    { key: 'no_activity_hours',       label: 'No Activity Alert',         unit: 'hours',   desc: 'Alert if no CRM activity for X hours' },
-                    { key: 'inactive_lead_days',       label: 'Inactive Lead Alert',        unit: 'days',    desc: 'Alert if lead has no activity for X days' },
-                    { key: 'daily_target_hour',        label: 'Daily Target Check Time',    unit: 'hour (24h)', desc: 'Check target after this hour (18 = 6 PM)' },
-                    { key: 'escalation_overdue_days',  label: 'Escalation — Overdue Days',  unit: 'days',    desc: 'Escalate if lead overdue by X days' },
-                    { key: 'escalation_missed_count',  label: 'Escalation — Missed Follow-ups', unit: 'count', desc: 'Escalate if X or more follow-ups missed' },
-                    { key: 'work_start_hour',          label: 'Working Hours Start',        unit: 'hour (24h)', desc: 'No Activity alert starts at this hour' },
-                    { key: 'work_end_hour',            label: 'Working Hours End',          unit: 'hour (24h)', desc: 'No Activity alert stops at this hour' },
-                  ].map(({ key, label, unit, desc }) => (
-                    <div key={key} className="prfl-field" style={{ margin: 0 }}>
-                      <label style={{ fontSize: 12 }}>{label} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({unit})</span></label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={alertCfg[key] ?? ''}
-                        onChange={e => setAlertCfg(prev => ({ ...prev, [key]: parseInt(e.target.value, 10) || 1 }))}
-                        title={desc}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
-                <button className="prfl-btn-primary" onClick={saveAlertCfg} disabled={alertCfgBusy || !alertCfg}>
-                  {alertCfgBusy ? 'Saving…' : 'Save Thresholds'}
-                </button>
-                {alertCfgResult && <span style={{ fontSize: 13, color: alertCfgResult.startsWith('✅') ? '#16a34a' : '#dc2626' }}>{alertCfgResult}</span>}
-              </div>
-            </div>
+            {/* Alert Thresholds moved to Settings > Reminders
+                (components/settings/RemindersSettings.jsx). */}
 
             <div className="prfl-card">
               <SectionHeader icon={<Zap size={15}/>} title="Send Custom Notification" />
@@ -1755,90 +1117,8 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* ───── SETTINGS ───── */}
-        {activeTab === 'settings' && (
-          <div className="prfl-tab-body">
-            {/* Settings sub-tabs */}
-            <div className="act-subtabs">
-              <button className={`act-subtab${settingsSubTab === 'notifications' ? ' act-subtab--active' : ''}`} onClick={() => setSettingsSubTab('notifications')}>
-                🔔 Notifications
-              </button>
-              <button className={`act-subtab${settingsSubTab === 'password' ? ' act-subtab--active' : ''}`} onClick={() => setSettingsSubTab('password')}>
-                🔒 Password
-              </button>
-            </div>
-
-            {/* Notifications sub-tab */}
-            {settingsSubTab === 'notifications' && (
-              <div className="prfl-card">
-                <SectionHeader icon={<Bell size={15}/>} title="Notification Preferences" />
-                <div className="prfl-notif-list">
-                  {[
-                    { key: 'overdue_lead',       label: 'Overdue Lead Alerts',       desc: 'When a lead follow-up is overdue',               color: '#dc2626' },
-                    { key: 'missed_followup',    label: 'Missed Follow-up Alerts',   desc: 'When a scheduled follow-up is missed',           color: '#d97706' },
-                    { key: 'high_priority_lead', label: 'High Priority Lead Alerts', desc: 'When a high priority lead is assigned',          color: '#7c3aed' },
-                    { key: 'daily_target',       label: 'Daily Target Alerts',       desc: 'When daily call target is not met by 6 PM',      color: '#2563eb' },
-                    { key: 'inactive_lead',      label: 'Inactive Lead Alerts',      desc: 'When a lead has no activity for 7+ days',        color: '#0891b2' },
-                    { key: 'lead_escalation',    label: 'Escalation Alerts',         desc: 'When a lead is escalated to manager',            color: '#9333ea' },
-                    { key: 'duplicate_lead',     label: 'Duplicate Lead Alerts',     desc: 'When a duplicate lead is detected',              color: '#16a34a' },
-                    { key: 'lead_assigned',      label: 'New Lead Assignment',       desc: 'When a lead is assigned to you',                 color: '#2563eb' },
-                    { key: 'lead_converted',     label: 'Lead Conversion',           desc: 'When a lead is won/converted',                   color: '#16a34a' },
-                    { key: 'no_activity',        label: 'No Activity Warning',       desc: 'When no CRM activity for 2+ hours during work hours', color: '#d97706' },
-                    { key: 'follow_up_scheduled',label: 'Follow-up Scheduled',       desc: 'When a follow-up is scheduled on your lead',     color: '#0891b2' },
-                    { key: 'appointment_reminder',label: 'Appointment Reminder',     desc: '30 min / 2 hr / 24 hr before an appointment',   color: '#7c3aed' },
-                    { key: 'note_added',         label: 'Note Added',                desc: 'When a note is added on your lead',              color: '#d97706' },
-                    { key: 'pricing_changed',    label: 'Pricing Changed',           desc: 'When pricing changes for a service/category your hub handles', color: '#15803d' },
-                    { key: 'reference_data_changed', label: 'Reference Data Changed', desc: 'When CC category ranges affecting 2W pricing change', color: '#4338ca' },
-                  ].map(item => (
-                    <div key={item.key} className="prfl-notif-row">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: 1 }}>
-                        <div className="prfl-notif-dot" style={{ background: notifSettings[item.key] ? item.color : 'var(--border)' }} />
-                        <div>
-                          <div className="prfl-notif-label">{item.label}</div>
-                          <div className="prfl-notif-desc">{item.desc}</div>
-                        </div>
-                      </div>
-                      <button
-                        className={`prfl-toggle${notifSettings[item.key] ? ' prfl-toggle--on' : ''}`}
-                        style={notifSettings[item.key] ? { background: item.color } : {}}
-                        onClick={() => saveNotifSettings({ [item.key]: !notifSettings[item.key] })}
-                      >
-                        <span className="prfl-toggle-knob" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Password sub-tab */}
-            {settingsSubTab === 'password' && (
-              <div className="prfl-card">
-                <SectionHeader icon={<Lock size={15}/>} title="Change Password" />
-                <p className="prfl-card-desc">Choose a strong password with at least 6 characters.</p>
-                {pwErr && <div className="prfl-alert prfl-alert--error">{pwErr}</div>}
-                {pwOk  && <div className="prfl-alert prfl-alert--success">Password updated successfully!</div>}
-                <form onSubmit={handleChangePw} className="prfl-pw-form">
-                  <div className="prfl-field">
-                    <label>Current Password</label>
-                    <input type="password" required value={curPw} onChange={e => setCurPw(e.target.value)} placeholder="Enter current password" />
-                  </div>
-                  <div className="prfl-field">
-                    <label>New Password</label>
-                    <input type="password" required minLength={6} value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Min. 6 characters" />
-                  </div>
-                  <div className="prfl-field">
-                    <label>Confirm New Password</label>
-                    <input type="password" required minLength={6} value={confPw} onChange={e => setConfPw(e.target.value)} placeholder="Repeat new password" />
-                  </div>
-                  <button type="submit" className="prfl-btn-primary" disabled={pwBusy}>
-                    {pwBusy ? 'Updating…' : 'Update Password'}
-                  </button>
-                </form>
-              </div>
-            )}
-          </div>
-        )}
+        {/* 'Settings' tab (notification prefs + password change) moved to
+            Settings > Account — see components/settings/AccountSettings.jsx. */}
 
       </div>
 
