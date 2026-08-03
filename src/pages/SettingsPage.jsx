@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
-  User, Building2, Palette, Printer, UserCog, Bell, Shield, ArrowLeft, Lock,
+  User, Building2, Palette, Printer, UserCog, Bell, Shield, ArrowLeft, Lock, KeyRound,
 } from 'lucide-react';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { useUnsavedGuard } from '../components/UnsavedChangesGuard.jsx';
@@ -19,6 +19,7 @@ import InvoiceThemeSettings from '../components/settings/InvoiceThemeSettings.js
 import PrintSettings from '../components/settings/PrintSettings.jsx';
 import RemindersSettings from '../components/settings/RemindersSettings.jsx';
 import AccountingPeriodSettings from '../components/settings/AccountingPeriodSettings.jsx';
+import ApiKeysSettings from '../components/settings/ApiKeysSettings.jsx';
 import RoleCreatorPanel from '../components/settings/RoleCreatorPanel.jsx';
 import UsersPage from './UsersPage.jsx';
 import SuperAdminsPage from './SuperAdminsPage.jsx';
@@ -43,6 +44,11 @@ export default function SettingsPage() {
   // Closing the books is an accounting decision, not a system-admin one, so
   // it gets its own delegable permission rather than riding on super-admin.
   const canManageBooksLock  = useCan('MANAGE_BOOKS_LOCK');
+  // Issuing a key grants a system outside Spinoto standing read access to the
+  // master data — with pricing:read, to the whole price list. A commercial
+  // decision, so its own delegable permission rather than riding on
+  // super-admin or on MANAGE_MASTER_DATA.
+  const canManageApiKeys    = useCan('MANAGE_API_KEYS');
   const isSuperAdmin = !!user?.is_super_admin;
 
   const TABS = [
@@ -53,6 +59,7 @@ export default function SettingsPage() {
     { key: 'manage-users',  label: 'Manage Users',    Icon: UserCog,  show: canManageUsers },
     { key: 'reminders',     label: 'Reminders',       Icon: Bell,     show: canManageReminders },
     { key: 'accounting',    label: 'Accounting Period', Icon: Lock,   show: canManageBooksLock },
+    { key: 'api-keys',      label: 'API Keys',        Icon: KeyRound, show: canManageApiKeys },
     { key: 'super-admins',  label: 'Super Admins',    Icon: Shield,   show: isSuperAdmin },
   ].filter(t => t.show);
 
@@ -130,6 +137,7 @@ export default function SettingsPage() {
         {activeTab === 'manage-users' && canManageUsers && <UsersPage />}
         {activeTab === 'reminders'    && canManageReminders && <RemindersSettings />}
         {activeTab === 'accounting'   && canManageBooksLock && <AccountingPeriodSettings />}
+        {activeTab === 'api-keys'     && canManageApiKeys  && <ApiKeysSettings />}
         {activeTab === 'super-admins' && isSuperAdmin && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <SuperAdminsPage />
