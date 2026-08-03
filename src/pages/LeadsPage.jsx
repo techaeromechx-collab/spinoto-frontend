@@ -3247,11 +3247,15 @@ export default function LeadsPage() {
   // fall back to the last-persisted value for this page.
   const [search, setSearch] = useState(() => searchParams.get('search') || ls.search || '');
   const [statusFilters, setStatusFilters] = useState(ls.statusFilters ?? []); // multi-select array
-  const [createdByFilter, setCreatedByFilter] = useState(ls.createdByFilter ?? '');
+  // Assignee filter — multi-select array, same pattern as statusFilters.
+  // 'unassigned' is a pseudo-value alongside real assignee ids (as strings).
+  const [assigneeFilters, setAssigneeFilters] = useState(ls.assigneeFilters ?? []);
   const [creatorFilter, setCreatorFilter] = useState(ls.creatorFilter ?? '');
   const [statusDDOpen, setStatusDDOpen] = useState(false);
+  const [assigneeDDOpen, setAssigneeDDOpen] = useState(false);
 
   const statusDDRef = useRef(null);
+  const assigneeDDRef = useRef(null);
 
   // Advanced filters panel
   const [showAdv, setShowAdv] = useState(false);
@@ -3268,10 +3272,10 @@ export default function LeadsPage() {
   // Persist whenever any of these change
   useEffect(() => {
     writeListState('sp_leads_list_v1', {
-      page, pageSize, search, statusFilters, createdByFilter, creatorFilter,
+      page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
       dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource,
     });
-  }, [page, pageSize, search, statusFilters, createdByFilter, creatorFilter,
+  }, [page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
       dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
 
   useListScrollRestore('sp_leads_list_v1', !loading);
@@ -3438,10 +3442,11 @@ export default function LeadsPage() {
     setFModel('');
   }, [fMake]);
 
-  // Close status dropdown on outside click
+  // Close status/assignee dropdowns on outside click
   useEffect(() => {
     function handler(e) {
       if (statusDDRef.current && !statusDDRef.current.contains(e.target)) setStatusDDOpen(false);
+      if (assigneeDDRef.current && !assigneeDDRef.current.contains(e.target)) setAssigneeDDOpen(false);
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -3495,6 +3500,14 @@ export default function LeadsPage() {
     setFSource('');
   }
 
+  // Multi-select assignee match — 'unassigned' is a pseudo-value alongside
+  // real assignee ids (as strings), same shape as statusFilters above.
+  function matchesAssigneeFilter(l) {
+    if (!assigneeFilters.length) return true;
+    if (!l.assigned_to) return assigneeFilters.includes('unassigned');
+    return assigneeFilters.includes(String(l.assigned_to));
+  }
+
   // Client-side filter — all criteria combined
   const filtered = leads.filter(l => {
     const q = search.toLowerCase();
@@ -3507,13 +3520,7 @@ export default function LeadsPage() {
       const matchesStatus = l.status && statusFilters.includes(l.status);
       if (!matchesNew && !matchesStatus) return false;
     }
-    if (createdByFilter) {
-      if (createdByFilter === 'unassigned') {
-        if (l.assigned_to) return false;
-      } else {
-        if (String(l.assigned_to) !== createdByFilter) return false;
-      }
-    }
+    if (!matchesAssigneeFilter(l)) return false;
     if (creatorFilter && String(l.created_by_id) !== creatorFilter) return false;
 
     // Date range
@@ -3548,11 +3555,11 @@ export default function LeadsPage() {
   useEffect(() => {
     if (skipFirstPageReset.current) { skipFirstPageReset.current = false; return; }
     setPage(1);
-  }, [search, statusFilters, createdByFilter, creatorFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
+  }, [search, statusFilters, assigneeFilters, creatorFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
 
-  // Status counts — scoped to selected assignee if one is active
-  const leadsForCounts = createdByFilter
-    ? leads.filter(l => String(l.assigned_to) === createdByFilter)
+  // Status counts — scoped to selected assignee(s) if any are active
+  const leadsForCounts = assigneeFilters.length
+    ? leads.filter(matchesAssigneeFilter)
     : leads;
   const newLeadCount = leadsForCounts.filter(l => !l.status).length;
   const counts = leadsForCounts.reduce((acc, l) => { if (l.status) { acc[l.status] = (acc[l.status] || 0) + 1; } return acc; }, {});
@@ -4108,15 +4115,55 @@ export default function LeadsPage() {
             </div>
 
             {assignees.length > 0 && (
-              <div className="lp-creator-wrap">
-                <UserCheck size={13} className="lp-creator-icon" />
-                <select className="lp-creator-select" value={createdByFilter} onChange={e => setCreatedByFilter(e.target.value)}>
-                  <option value="">All assignees</option>
-                  <option value="unassigned">Unassigned</option>
-                  {assignees.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-                <ChevronDown size={13} className="lp-creator-caret" />
-                {createdByFilter && <button className="lp-creator-clear" onClick={() => setCreatedByFilter('')}><X size={11} /></button>}
+              <div className="lp-status-dd-wrap" ref={assigneeDDRef}>
+                <button
+                  className={`lp-status-dd-btn${assigneeFilters.length > 0 ? ' lp-status-dd-btn--active' : ''}`}
+                  onClick={() => setAssigneeDDOpen(v => !v)}
+                >
+                  <UserCheck size={13} />
+                  {assigneeFilters.length === 0
+                    ? 'All assignees'
+                    : assigneeFilters.length === 1
+                      ? (assigneeFilters[0] === 'unassigned' ? 'Unassigned' : (assignees.find(a => a.id === assigneeFilters[0])?.name || '1 assignee'))
+                      : `${assigneeFilters.length} assignees`}
+                  <ChevronDown size={13} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+                </button>
+                {assigneeDDOpen && (
+                  <div className="lp-status-dd-menu">
+                    <div className="lp-status-dd-header">
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Filter by Assignee</span>
+                      {assigneeFilters.length > 0 && (
+                        <button className="lp-status-dd-clear" onClick={() => setAssigneeFilters([])}>Clear all</button>
+                      )}
+                    </div>
+                    {(() => {
+                      const checked = assigneeFilters.includes('unassigned');
+                      const unassignedCount = leads.filter(l => !l.assigned_to).length;
+                      return (
+                        <label className={`lp-status-dd-item${checked ? ' lp-status-dd-item--checked' : ''}`}>
+                          <input type="checkbox" checked={checked} onChange={() =>
+                            setAssigneeFilters(prev => checked ? prev.filter(x => x !== 'unassigned') : [...prev, 'unassigned'])
+                          } />
+                          <span className="lp-status-dd-name">Unassigned</span>
+                          {unassignedCount > 0 && <span className="lp-status-dd-count">{unassignedCount}</span>}
+                        </label>
+                      );
+                    })()}
+                    {assignees.map(a => {
+                      const checked = assigneeFilters.includes(String(a.id));
+                      const count = leads.filter(l => String(l.assigned_to) === String(a.id)).length;
+                      return (
+                        <label key={a.id} className={`lp-status-dd-item${checked ? ' lp-status-dd-item--checked' : ''}`}>
+                          <input type="checkbox" checked={checked} onChange={() =>
+                            setAssigneeFilters(prev => checked ? prev.filter(x => x !== String(a.id)) : [...prev, String(a.id)])
+                          } />
+                          <span className="lp-status-dd-name">{a.name}</span>
+                          {count > 0 && <span className="lp-status-dd-count">{count}</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
