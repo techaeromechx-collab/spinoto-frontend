@@ -41,7 +41,12 @@ const DOCS = {
     dateField: 'invoice_date',
     originalField: 'original_invoice_date',
     base: id => `/api/customer-invoices/${id}`,
-    preflight: (id, d) => `/api/customer-invoices/${id}/date-preflight?invoice_date=${d}`,
+    // movePi is part of the query because it changes the answer: with the PI
+    // coming along, the invoice's floor is the estimate rather than the PI's
+    // current date. Asking without it showed a hard failure for a date the
+    // PATCH would have accepted.
+    preflight: (id, d, movePi) =>
+      `/api/customer-invoices/${id}/date-preflight?invoice_date=${d}&move_purchase_invoice=${movePi ? 'true' : 'false'}`,
     patch: id => `/api/customer-invoices/${id}/invoice-date`,
     payloadDate: 'invoice_date',
   },
@@ -51,6 +56,8 @@ const DOCS = {
     dateField: 'estimate_date',
     originalField: 'original_estimate_date',
     base: id => `/api/estimates/${id}`,
+    // The estimate is the top of the chain, so nothing below it can relax its
+    // floor — the cascade flag makes no difference to what is allowed here.
     preflight: (id, d) => `/api/estimates/${id}/date-preflight?estimate_date=${d}`,
     patch: id => `/api/estimates/${id}/estimate-date`,
     payloadDate: 'estimate_date',
@@ -77,7 +84,7 @@ export default function InvoiceDateDialog({
   // Debounced, and race-guarded: typing a date fires several requests and the
   // slowest must not overwrite the newest.
   const seq = useRef(0);
-  const runPreflight = useCallback(async (d) => {
+  const runPreflight = useCallback(async (d, movePi) => {
     // Bump FIRST. Returning early without it left an in-flight request for the
     // previous date still "current", so reverting to the original date cleared
     // the panel and then had it repopulated by the stale response.
@@ -85,7 +92,7 @@ export default function InvoiceDateDialog({
     if (!d || d === current) { setPre(null); return; }
     setChecking(true);
     try {
-      const r = await api(DOC.preflight(invoice.id, d));
+      const r = await api(DOC.preflight(invoice.id, d, movePi));
       if (mine === seq.current) setPre(r);
     } catch (e) {
       if (mine === seq.current) { setPre(null); setErr(e.message || 'Could not check that date.'); }
@@ -94,11 +101,13 @@ export default function InvoiceDateDialog({
     }
   }, [invoice?.id, current, DOC]);
 
+  // Re-runs on movePi too — toggling the checkbox changes which rules apply,
+  // so leaving it out of the deps would leave stale errors on screen.
   useEffect(() => {
     setErr(null);
-    const t = setTimeout(() => runPreflight(date), 250);
+    const t = setTimeout(() => runPreflight(date, movePi), 250);
     return () => clearTimeout(t);
-  }, [date, runPreflight]);
+  }, [date, movePi, runPreflight]);
 
   async function save() {
     setSaving(true); setErr(null);
@@ -263,7 +272,10 @@ export default function InvoiceDateDialog({
                 onChange={e => setMovePi(e.target.checked)}
               />
               <span>
-                Also move {cascade.map(c => `${DOC_NOUN[c.type] || 'the linked document'} (currently ${fmt(c.invoice_date)})`).join(' and ')}
+                Also move {cascade.map(c =>
+                  `${DOC_NOUN[c.type] || 'the linked document'} (${fmt(c.invoice_date)}` +
+                  (c.can_follow && changed ? ` → ${fmt(date)}` : '') + ')'
+                ).join(' and ')}
                 {cascade.filter(c => !c.can_follow).map(c => (
                   <div key={c.type} className="idd-muted">{c.blocked_reason}</div>
                 ))}
