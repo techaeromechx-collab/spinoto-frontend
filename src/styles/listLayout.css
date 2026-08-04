@@ -1,0 +1,383 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shared list-screen layout — Estimates, Purchase Invoices, Customer Invoices
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Full-bleed table, no card wrapper, horizontal dividers only, and one toolbar
+   row with filters left and actions right.
+
+   ONE stylesheet, not three copies. The per-page search boxes were three copies
+   of the same idea and quietly drifted — only Estimates ever got a debounce,
+   only Estimates could search by document number. A shared file means a fix
+   lands everywhere or nowhere.
+
+   ── How a page opts in ────────────────────────────────────────────────────
+     root      <div className="est-page lb-page">      (list view only)
+     toolbar   <div className="lb-toolbar">  …  <div className="lb-toolbar-right">
+     controls  className="lb-control"                  (select / button / input)
+     table     <div className="lb-list"><div className="…-table-wrap"><table>
+
+   The table rules target `.lb-list table`, not a named class, so each page
+   keeps its own .est-table / .pi-table / .ci-table and whatever those already
+   do — including their print stylesheets, which must not be touched.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* ── Surface colours ───────────────────────────────────────────────────────
+   The list body is WHITE and the header band is a distinctly greyer tone.
+
+   Before this the page sat on --bg-soft and the header used --bg-soft too, so
+   the header had nothing to separate it from — #f8fafc against #f8fafc is no
+   contrast at all. Its own dedicated variable rather than reusing --bg-soft,
+   because the two now need to differ: --bg-soft stays the app's general
+   "slightly off-white", this is specifically the table-header grey.
+
+   #eef2f6 is one step darker than --bg-soft (#f8fafc) — enough to read as a
+   band without turning into a heavy toolbar. */
+:root {
+  --lb-head-bg: #eef2f6;
+}
+
+/* Dark mode already had the separation: --bg #18181b vs --bg-soft #27272a. The
+   header keeps the lighter of the two, which is the same relationship — a step
+   away from the body, in whichever direction the theme reads as "raised". */
+[data-theme="dark"] {
+  --lb-head-bg: #27272a;
+}
+
+/* White body.
+   `.main` is what actually paints the app's grey (app.css sets it, and `body`
+   under that). `.content` alone is not enough: a list shorter than the window
+   leaves `.content` short too, and the grey shows again below the last row.
+   Painting `.page-scroll` covers the full scroll area whatever the list height.
+
+   Scoped with :has so only the five list screens turn white — every other page
+   in the app keeps the grey canvas its cards are designed to sit on. */
+.page-scroll:has(.lb-page),
+.content:has(.lb-page),
+.lb-page,
+.lb-list {
+  background: var(--bg);
+}
+
+/* ── Full bleed ────────────────────────────────────────────────────────────
+   The app wrapper is `.content { padding: 32px; max-width: 1400px; margin: 0
+   auto }`. BOTH produce the grey gutter: the padding always, and the max-width
+   once the window passes 1400px, which centres the column and leaves grey down
+   each side.
+
+   `:has()` rather than a negative margin on the table — the pattern Payouts,
+   Leads and Settings already use here, and the one that survives a horizontal
+   scrollbar. A negative margin would let the table slide out from under its own
+   scroll container.
+
+   .lb-page goes on the LIST view only. A detail view rendered edge to edge has
+   nothing to sit against. */
+.content:has(.lb-page) {
+  max-width: 100%;
+  padding: 0;
+}
+
+/* The page roots set `gap: 16px` between children. With the toolbar carrying
+   its own padding that gap becomes a stray band of grey between the toolbar and
+   the table's top border. */
+.lb-page {
+  gap: 0;
+}
+
+/* ── Toolbar ───────────────────────────────────────────────────────────────
+   Directly on the page background: no card, no border, no radius.
+
+   20px horizontal padding is the same value the cells use, so the leftmost
+   filter lines up with the first column header and the rightmost action lines
+   up with the last one. Vertical padding replaces what .content used to give. */
+.lb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 20px;
+  overflow: visible;   /* dropdowns and popovers escape this box */
+}
+
+.lb-toolbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* One height for everything in the row — the thing that makes a toolbar read as
+   a single row rather than a pile of unrelated inputs. A native <select> and an
+   <input type="date"> do not agree on height by default. */
+.lb-control,
+select.lb-control,
+input.lb-control,
+button.lb-control {
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.lb-control:focus,
+.lb-control:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+}
+
+button.lb-control {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+button.lb-control:hover { border-color: var(--text-muted); }
+
+button.lb-control.lb-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+button.lb-control.lb-primary:hover { filter: brightness(1.08); }
+
+/* Icon-only: square inside the pill so the glyph stays centred. */
+.lb-icon-btn {
+  width: 36px;
+  padding: 0 !important;
+  justify-content: center;
+  position: relative;
+}
+
+/* Count of filters hidden behind the funnel. Without it a filtered list looks
+   identical to an unfiltered one, and people conclude their data is missing. */
+.lb-filter-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+}
+
+.lb-count {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── Popovers ──────────────────────────────────────────────────────────── */
+.lb-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1000;
+  min-width: 280px;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+  cursor: default;
+}
+
+/* Same surface, but anchored left and scrolling — for a long checklist such as
+   the hub picker. */
+.lb-pop--left {
+  right: auto;
+  left: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  min-width: 240px;
+  padding: 8px;
+  gap: 4px;
+}
+
+.lb-pop-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+  display: block;
+}
+
+.lb-pop-row { display: flex; align-items: center; gap: 6px; }
+
+.lb-pop .lb-control { width: 100%; }
+
+.lb-pop-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.lb-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 6px;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.lb-pop-item:hover { background: var(--bg-soft); }
+
+/* ── Table ─────────────────────────────────────────────────────────────────
+   No card, no outer border, no radius. Horizontal dividers only; every vertical
+   rule is removed. Only the TEXT is inset — the lines reach the window edge. */
+.lb-list {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  /* No overflow here: the page's own …-table-wrap is already the horizontal
+     scroll container, and two nested scrollers give two scrollbars with the
+     outer one dead. */
+}
+
+.lb-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* The header is the ONE place vertical rules are wanted: they separate the
+   column names, which sit close together and read as a run-on line without
+   them. Body rows stay clean — a grid of boxes is what the card layout looked
+   like, and it is what this replaced. */
+/* ── Table wrapper: NO overflow at all ─────────────────────────────────────
+   This element must not scroll, because a sticky header binds to its nearest
+   scrolling ancestor. Give this box any scrolling and the header sticks to a
+   box that never moves vertically — it scrolls away exactly as if `position:
+   sticky` had never been set.
+
+   `overflow-x: auto` with `overflow-y: clip` does NOT dodge that, which is what
+   I first assumed. CSS coerces the pair: when one axis is `auto` and the other
+   is `clip`, the `clip` computes to `hidden` — and `hidden` is a scroll
+   container too. Same broken result, just less obviously.
+
+   So the wrapper stays fully `visible` and horizontal scrolling moves up to
+   `.page-scroll`, which is already the vertical scroller. Its `overflow-x` is
+   unset, and per the same coercion rule `visible` beside `auto` computes to
+   `auto` — so it scrolls sideways for a wide table without another declaration.
+
+   Higher specificity than the pages' own `.ci-table-wrap` / `.est-table-wrap`
+   etc., which still declare `overflow-x: auto`. A plain `.lb-scroll-x` would
+   tie with those on specificity and lose on import order. */
+.lb-list .lb-scroll-x {
+  overflow: visible;
+}
+
+.lb-list table th {
+  padding: 12px 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  /* Solid, not a tint: rows slide UNDER this once it sticks, so anything
+     translucent would show them through. Both values are opaque hex. */
+  background: var(--lb-head-bg);
+  /* The card used to supply the line above the header. There is no card now, so
+     without this the tinted band bleeds straight into the toolbar with nothing
+     closing it off at the top. */
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+
+  /* ── Sticky ──
+     `top: 0` is relative to `.page-scroll`, the app's scroll container, whose
+     top edge sits directly under the fixed top bar — so the header parks right
+     beneath the breadcrumb rather than under the window edge.
+
+     On <th> rather than <thead>: with `border-collapse: collapse` a sticky
+     <thead> is ignored by every browser, and the borders vanish because
+     collapsed borders belong to the table, not the cell. Sticking the cells
+     keeps both. */
+  position: sticky;
+  top: 0;
+  z-index: 3;
+
+  /* Collapsed borders do not paint on a sticky cell — the row scrolling under
+     it would show through where the bottom border should be. box-shadow is
+     drawn from the cell itself and survives. */
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+/* No divider after the last column — it would be a stray tick against the
+   window edge with nothing on the other side of it. */
+.lb-list table th:last-child {
+  border-right: none;
+}
+
+/* The rule should not run the full height of the cell. Insetting it top and
+   bottom is what makes a header read as separated rather than gridded. */
+.lb-list table th {
+  background-clip: padding-box;
+}
+
+/* ── Sort indicator ───────────────────────────────────────────────────────
+   `lb-sorted` marks the column the list is actually ordered by, and the arrow
+   direction must match the query. It is not a control — these lists are
+   server-sorted by date and there is no ?sort= parameter — so it is deliberately
+   not a button and carries no hover state. Labelling the existing order is
+   honest; drawing a clickable-looking arrow that does nothing is not. */
+.lb-sorted {
+  color: var(--text);
+}
+
+.lb-sort-icon {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-left: 5px;
+  opacity: 0.75;
+}
+
+
+.lb-list table td {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  border-right: none;
+  vertical-align: middle;
+}
+
+/* The card layout drops the last divider so it doesn't collide with the card's
+   own bottom edge. There is no card now, and that line is what closes the
+   table off. */
+.lb-list table tbody tr:last-child td {
+  border-bottom: 1px solid var(--border);
+}
+
+.lb-list table tbody tr:hover { background: var(--bg-soft); }
+
+.lb-empty {
+  padding: 56px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}

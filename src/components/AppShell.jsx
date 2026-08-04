@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 // search state is local to AppShell — no API change
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -40,8 +40,6 @@ import {
   Activity,
   User,
   Settings,
-  Search,
-  Phone,
   Lock,
   PanelLeftClose,
   PanelLeftOpen,
@@ -83,6 +81,7 @@ function getNotifMeta(type) {
 import { motion, AnimatePresence } from 'framer-motion';
 import NewLeadModal from './NewLeadModal.jsx';
 import { api } from '../api/client.js';
+import { useTopbarSearch, clearPageSearch } from '../lib/pageSearchStore.js';
 import '../styles/AppShell.css';
 
 // Each nav item declares the permissions it requires (any of). An empty
@@ -187,94 +186,43 @@ export default function AppShell({ children }) {
     return () => document.removeEventListener('mousedown', onOut);
   }, []);
 
-  // ── Global search ─────────────────────────────────────────────────────────
-  const [searchQ,       setSearchQ]       = useState('');
-  const [searchResults, setSearchResults] = useState({ leads: [], users: [] });
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [showSearchDrop, setShowSearchDrop] = useState(false);
-  const searchRef     = useRef(null);
-  const searchWrapRef = useRef(null);
-  const searchTimer   = useRef(null);
+  // ── Top-bar search ────────────────────────────────────────────────────────
+  //
+  // This used to be a global search over leads and users. It is now the CURRENT
+  // PAGE's search: whichever list is open claims the box via usePageSearch()
+  // and owns the state, the debounce and the request. The shell only renders
+  // what it is handed.
+  //
+  // Two reasons for the change. The obvious one is that the list pages each had
+  // their own search box, so the header search sat directly above a second
+  // search box that did something else — on the Customer Invoices screen there
+  // were two inputs and neither name told you which was which. The quieter one
+  // is that the old header search fired at every page, on a 280ms debounce,
+  // hitting /api/leads AND fetching the ENTIRE users table to filter it in the
+  // browser. That last part cost a full table read per keystroke-pause.
+  //
+  // A page that does not claim the box gets no box, rather than one that
+  // silently does nothing.
+  const pageSearch = useTopbarSearch();
+  const searchRef  = useRef(null);
 
-  const canSearchUsers = useMemo(() => can('MANAGE_USERS', 'VIEW_TEAM_LEADS'), [can]);
-
-  // Debounced search
-  useEffect(() => {
-    const q = searchQ.trim();
-    if (!q) { setSearchResults({ leads: [], users: [] }); setShowSearchDrop(false); return; }
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(async () => {
-      setSearchLoading(true);
-      try {
-        const promises = [api(`/api/leads?search=${encodeURIComponent(q)}&limit=6`)];
-        if (canSearchUsers) promises.push(api(`/api/users`));
-        const [leadsRes, usersRes] = await Promise.all(promises);
-        const leads = leadsRes?.items || [];
-        const users = canSearchUsers
-          ? (usersRes?.items || []).filter(u =>
-              u.name.toLowerCase().includes(q.toLowerCase()) ||
-              u.email.toLowerCase().includes(q.toLowerCase())
-            ).slice(0, 4)
-          : [];
-        setSearchResults({ leads: leads.slice(0, 6), users });
-        setShowSearchDrop(true);
-      } catch { /* silent */ }
-      finally { setSearchLoading(false); }
-    }, 280);
-    return () => clearTimeout(searchTimer.current);
-  }, [searchQ, canSearchUsers]);
-
-  // Close search dropdown on outside click
-  useEffect(() => {
-    function onOut(e) {
-      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target)) {
-        setShowSearchDrop(false);
-      }
-    }
-    document.addEventListener('mousedown', onOut);
-    return () => document.removeEventListener('mousedown', onOut);
-  }, []);
-
-  // ⌘K / Ctrl+K focuses the search bar
+  // ⌘K / Ctrl+K focuses it; Escape clears and blurs.
   useEffect(() => {
     function onKey(e) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        // Only swallow the browser's own ⌘K when there is something to focus.
+        if (!pageSearch.active) return;
         e.preventDefault();
         searchRef.current?.focus();
-        setShowSearchDrop(!!searchQ.trim());
       }
-      if (e.key === 'Escape') { setShowSearchDrop(false); searchRef.current?.blur(); }
+      if (e.key === 'Escape' && document.activeElement === searchRef.current) {
+        clearPageSearch();
+        searchRef.current?.blur();
+      }
     }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [searchQ]);
-
-  function handleSearchSubmit(e) {
-    e.preventDefault();
-    if (searchQ.trim()) {
-      setShowSearchDrop(false);
-      navigate(`/leads?search=${encodeURIComponent(searchQ.trim())}`);
-      searchRef.current?.blur();
-    }
-  }
-
-  function handleSearchSelectLead(lead) {
-    setShowSearchDrop(false);
-    setSearchQ('');
-    navigate('/leads', { state: { openLeadId: lead.id } });
-  }
-
-  function handleSearchSelectUser(u) {
-    setShowSearchDrop(false);
-    setSearchQ('');
-    // Navigate straight to Settings' Manage Users tab with state — a plain
-    // <Navigate> redirect (used for old /users bookmarks) can't forward
-    // router state, so this has to target /settings directly rather than
-    // going through the /users redirect.
-    navigate('/settings?tab=manage-users', { state: { openUserId: u.id } });
-  }
-
-  const hasSearchResults = searchResults.leads.length > 0 || searchResults.users.length > 0;
+  }, [pageSearch.active]);
 
   // ── Profile password modal ─────────────────────────────────────────────────
   const [pwOpen, setPwOpen]       = useState(false);
@@ -637,95 +585,39 @@ export default function AppShell({ children }) {
           </div>
 
 
-          {/* ── Center: global search ── */}
-          <div className="topbar-center" ref={searchWrapRef}>
-            <form className="topbar-search-wrap" onSubmit={handleSearchSubmit}>
-              <svg className="topbar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input
-                ref={searchRef}
-                className="topbar-search-input"
-                placeholder="Search leads, users…"
-                value={searchQ}
-                onChange={e => { setSearchQ(e.target.value); }}
-                onFocus={() => { if (searchQ.trim() && hasSearchResults) setShowSearchDrop(true); }}
-                autoComplete="off"
-                spellCheck="false"
-              />
-              {searchLoading
-                ? <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>…</span>
-                : <kbd className="topbar-search-kbd">⌘K</kbd>
-              }
-            </form>
-
-            {/* Search suggestions dropdown */}
-            {showSearchDrop && (searchLoading || hasSearchResults) && (
-              <div className="gsearch-drop">
-                {searchLoading && !hasSearchResults && (
-                  <div className="gsearch-loading">Searching…</div>
-                )}
-                {!searchLoading && !hasSearchResults && (
-                  <div className="gsearch-empty">No results for "{searchQ}"</div>
-                )}
-
-                {searchResults.leads.length > 0 && (
-                  <div>
-                    <div className="gsearch-group-label">Leads</div>
-                    {searchResults.leads.map(lead => (
-                      <button
-                        key={lead.id}
-                        type="button"
-                        className="gsearch-item"
-                        onMouseDown={() => handleSearchSelectLead(lead)}
-                      >
-                        <div className="gsearch-item-icon gsearch-item-icon--lead">
-                          <Users size={13}/>
-                        </div>
-                        <div className="gsearch-item-body">
-                          <div className="gsearch-item-name">{lead.name || lead.mobile}</div>
-                          <div className="gsearch-item-meta">
-                            {lead.mobile && <span><Phone size={10}/> {lead.mobile}</span>}
-                            {lead.status_name && <span style={{ background: lead.status_bg_color || '#dbeafe', color: lead.status_color || '#1d4ed8', borderRadius: 4, padding: '0 5px', fontSize: 10, fontWeight: 700 }}>{lead.status_name}</span>}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {searchResults.users.length > 0 && (
-                  <div>
-                    <div className="gsearch-group-label">Users</div>
-                    {searchResults.users.map(u => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        className="gsearch-item"
-                        onMouseDown={() => handleSearchSelectUser(u)}
-                      >
-                        <div className="gsearch-item-icon gsearch-item-icon--user">
-                          <User size={13}/>
-                        </div>
-                        <div className="gsearch-item-body">
-                          <div className="gsearch-item-name">{u.name}</div>
-                          <div className="gsearch-item-meta">
-                            <span>{u.email}</span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {searchQ.trim() && (
+          {/* ── Center: the current page's search ──
+              Rendered only when a page has claimed it. The wrapper stays in the
+              DOM either way so the breadcrumb and the action buttons keep their
+              positions instead of jumping when you move between pages. */}
+          <div className="topbar-center">
+            {pageSearch.active && (
+              <form className="topbar-search-wrap" onSubmit={e => e.preventDefault()}>
+                <svg className="topbar-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input
+                  ref={searchRef}
+                  className="topbar-search-input"
+                  placeholder={pageSearch.placeholder}
+                  value={pageSearch.value}
+                  onChange={e => pageSearch.onChange?.(e.target.value)}
+                  autoComplete="off"
+                  spellCheck="false"
+                />
+                {pageSearch.value && (
                   <button
                     type="button"
-                    className="gsearch-see-all"
-                    onMouseDown={handleSearchSubmit}
+                    className="topbar-search-clear"
+                    onClick={() => { pageSearch.onChange?.(''); searchRef.current?.focus(); }}
+                    aria-label="Clear search"
                   >
-                    <Search size={12}/> See all results for "<strong>{searchQ}</strong>"
+                    <X size={13} />
                   </button>
                 )}
-              </div>
+                {/* The hint replaces the ⌘K badge rather than sitting below it,
+                    so telling the user to type more never shifts the layout. */}
+                {pageSearch.hint
+                  ? <span className="topbar-search-hint">{pageSearch.hint}</span>
+                  : <kbd className="topbar-search-kbd">⌘K</kbd>}
+              </form>
             )}
           </div>
 

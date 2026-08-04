@@ -2,6 +2,108 @@
 
 /* Override the global .content max-width for this page only */
 .content:has(.po-page) { max-width: 100% !important; padding: 0 !important; }
+
+/* ── Delete a hub payment ─────────────────────────────────────────────────
+   Muted until hovered. A column of red bins next to every row of money reads
+   as a warning about the data rather than an action you can take — the danger
+   colour belongs on the confirm button in the dialog, where the decision
+   actually happens. */
+.po-del-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+
+.po-del-btn:hover {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.po-del-btn:focus-visible {
+  outline: 2px solid #dc2626;
+  outline-offset: 1px;
+}
+
+/* The non-destructive sibling of .po-del-btn — same size and rhythm so the two
+   read as one action group, but it goes to the primary colour on hover rather
+   than to red. */
+.po-act-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+
+.po-act-btn:hover {
+  color: var(--primary);
+  background: var(--bg-soft);
+}
+
+.po-act-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* ── Payment history tables ───────────────────────────────────────────────
+   The min-width alone only guarantees the table is wide; without this the
+   cells still wrap to stay inside it, which is what put "Bank Transfer" on two
+   lines and split "PI-000041" across the date column. nowrap forces the table
+   to its real width so the wrapper actually has something to scroll. */
+.po-hist-scroll th,
+.po-hist-scroll td {
+  white-space: nowrap;
+}
+
+/* -webkit- for momentum scrolling on iOS, matching the invoice list wrappers. */
+.po-hist-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Bulk payment rows ────────────────────────────────────────────────────
+   A batch sits where its PI number would be, so the column still answers
+   "which invoice" — with "several, click to see". */
+.po-batch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 5px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Expanded children are indented and quieter than the batch row above them —
+   they are a breakdown of it, not eight more payments. */
+.po-batch-child > td:first-child {
+  border-left: 2px solid var(--primary);
+}
+
+.po-batch-child > td {
+  background: var(--bg-soft);
+  padding-top: 7px !important;
+  padding-bottom: 7px !important;
+}
 .po-page { padding: 24px 28px; }
 
 /* ── Buttons ── */

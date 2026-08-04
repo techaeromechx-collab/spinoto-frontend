@@ -7,10 +7,13 @@ import PaginationBar from '../components/PaginationBar.jsx';
 import { getRoundingFunction } from '../lib/math.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
+import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
+import { usePageSearch } from '../lib/pageSearchStore.js';
 import {
-  ReceiptText, Search, RefreshCw, X, Eye, XCircle,
+  ReceiptText, RefreshCw, X, Eye, XCircle, SlidersHorizontal, ArrowDown,
   AlertCircle, CheckCircle2, Clock, Trash2, ChevronLeft, Printer, Download, FileText, MoreVertical, ChevronDown,
 } from 'lucide-react';
+import '../styles/listLayout.css';
 import '../styles/PurchaseInvoicesPage.css';
 
 // ── Method badge ──────────────────────────────────────────────────────────────
@@ -1301,23 +1304,47 @@ export default function PurchaseInvoicesPage() {
   const [page, setPage] = useState(ls.page ?? 1);
   const [pageSize, setPageSize] = useState(ls.pageSize ?? 10);
 
-  const [search, setSearch] = useState(ls.search ?? '');
+  // `searchInput` is what the box shows; `search` is what the server is asked
+  // for, at most once per 300ms pause and never below 2 characters.
+  const { input: searchInput, setInput: setSearchInput, search, tooShort, minChars } =
+    useDebouncedSearch(ls.search ?? '');
+  const abortSignal = useAbortController();
+  // Typing must also send you back to page 1 — otherwise a search run while on
+  // page 3 returns two results and shows you an empty page 3 of them.
+  // useCallback because usePageSearch compares this by identity.
+  const onSearchChange = useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
   const [hubFilter, setHubFilter] = useState(() => ls.hubFilter ?? (user?.hub_id ? [String(user.hub_id)] : []));
   const [showHubDropdown, setShowHubDropdown] = useState(false);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState(ls.statusFilter ?? '');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState(ls.vehicleTypeFilter ?? '');
   const [hubs, setHubs] = useState([]);
 
-  // Persist whenever any of these change
+  // Persist whenever any of these change. searchInput, not search: restore the
+  // box exactly as they left it, even mid-word.
   useEffect(() => {
-    writeListState('sp_purchase_invoices_list_v1', { page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter });
-  }, [page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter]);
+    writeListState('sp_purchase_invoices_list_v1', { search: searchInput, page, pageSize, statusFilter, vehicleTypeFilter, hubFilter });
+  }, [page, pageSize, searchInput, statusFilter, vehicleTypeFilter, hubFilter]);
 
   useListScrollRestore('sp_purchase_invoices_list_v1', !loading);
+
+  // How many of the filters hidden behind the funnel are actually on.
+  const hiddenFilterCount = vehicleTypeFilter ? 1 : 0;
 
   // Auto-open a specific invoice if navigated here from Estimates page
   const [selectedId, setSelectedId] = useState(() => location.state?.openId ?? null);
   const [toast, setToast] = useState(null);
+
+  // Claim the top bar's search box. Declared after selectedId because it reads
+  // it: the box is released while a single invoice is open, since searching a
+  // list you cannot see is a control that appears to do nothing.
+  usePageSearch({
+    value: searchInput,
+    onChange: onSearchChange,
+    placeholder: 'Name, mobile, vehicle no. or PI-000012',
+    hint: tooShort ? `${minChars}+ characters` : '',
+    enabled: !selectedId,
+  });
 
   const showToast = useCallback((msg, type = 'success') => setToast({ msg, type }), []);
 
@@ -1384,29 +1411,42 @@ export default function PurchaseInvoicesPage() {
     setLoading(true);
     try {
       const q = new URLSearchParams();
-      if (search.trim()) q.set('search', search.trim());
+      if (search) q.set('search', search);
       if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
       if (statusFilter) q.set('status', statusFilter);
       if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
       q.set('page', page);
       q.set('limit', pageSize);
-      const res = await api(`/api/purchase-invoices?${q.toString()}`);
+      const res = await api(`/api/purchase-invoices?${q.toString()}`, { signal: abortSignal() });
       setItems(res.items || []);
       setTotal(res.total ?? (res.items || []).length);
-    } catch {
+      setLoading(false);
+    } catch (e) {
+      // A cancelled request is this code superseding itself, not a failure.
+      // Deliberately NOT in a `finally`: that would run on abort too and clear
+      // the spinner while the replacement request is still in flight.
+      if (isAbortError(e)) return;
       showToast('Failed to load purchase invoices.', 'error');
-    } finally {
       setLoading(false);
     }
-  }, [search, hubFilter, statusFilter, vehicleTypeFilter, page, pageSize, showToast]);
+  }, [search, hubFilter, statusFilter, vehicleTypeFilter, page, pageSize, showToast, abortSignal]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
   return (
-    <div className="pi-page">
-      {/* ── Header ── */}
-      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        {selectedId ? (
+    /* lb-page cancels the app wrapper's padding and max-width so the table runs
+       edge to edge. The detail view deliberately does not get it. */
+    <div className={selectedId ? 'pi-page' : 'pi-page lb-page'}>
+      {/* ── Header ──
+          The list view has no title: the top bar's breadcrumb already names the
+          screen. The whole block is skipped rather than left empty, so the
+          toolbar rises to fill the gap.
+
+          The DETAIL view keeps its header — the back button and the title are
+          the only thing telling you which view you are looking at, and for a
+          hub user the wording differs ("Sell Invoice"). */}
+      {selectedId && (
+        <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
               className="btn btn-ghost"
@@ -1422,18 +1462,8 @@ export default function PurchaseInvoicesPage() {
               {isHubUser ? 'Sell Invoice' : 'Purchase Invoice'} Detail
             </h2>
           </div>
-        ) : (
-          <div>
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <ReceiptText size={22} style={{ color: 'var(--primary)' }} />
-              {isHubUser ? 'Sell Invoices' : 'Purchase Invoices'}
-            </h2>
-            <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 13 }}>
-              {isHubUser ? 'Your earnings after commission deduction' : 'Hub payables after commission deduction'}
-            </p>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {selectedId ? (
         /* ── Full-page Detail View ── */
@@ -1447,43 +1477,31 @@ export default function PurchaseInvoicesPage() {
         />
       ) : (
         <>
-          {/* Filters */}
-          <div className="card" style={{ padding: '14px 18px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', overflow: 'visible' }}>
-            <div style={{ position: 'relative', flex: '1 1 220px' }}>
-              <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input
-                className="form-input"
-                style={{ paddingLeft: 32 }}
-                placeholder="Search invoices…"
-                value={search}
-                onChange={e => { setSearch(e.target.value); setPage(1); }}
-              />
-            </div>
+          {/* ── Toolbar ──
+              No card: filters sit directly on the page background, one row,
+              actions pushed right. Shared with the other two lists — see
+              styles/listLayout.css. The search box is in the top bar. */}
+          <div className="lb-toolbar">
             {!isHubUser && (
-              <div style={{ position: 'relative', flex: '0 0 180px' }}>
+              <div style={{ position: 'relative', flex: '0 0 auto' }}>
                 <button
                   type="button"
-                  className="form-input"
-                  style={{ width: '100%', textAlign: 'left', background: 'var(--bg)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  className="lb-control"
+                  style={{ minWidth: 150, justifyContent: 'space-between' }}
                   onClick={() => setShowHubDropdown(p => !p)}
                 >
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {hubFilter.length === 0 
-                      ? 'All Hubs' 
+                    {hubFilter.length === 0
+                      ? 'All Hubs'
                       : `${hubFilter.length} Hubs Selected`}
                   </span>
                   <ChevronDown size={14} style={{ opacity: 0.5 }} />
                 </button>
-                
+
                 {showHubDropdown && (
                   <>
                     <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowHubDropdown(false)} />
-                    <div style={{
-                      position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-                      background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8,
-                      boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
-                      overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
-                    }}>
+                    <div className="lb-pop lb-pop--left">
                       {hubs.length > 0 && hubFilter.length < hubs.length && (
                         <button
                           type="button"
@@ -1515,12 +1533,7 @@ export default function PurchaseInvoicesPage() {
                       {hubs.map(h => {
                         const isChecked = hubFilter.includes(String(h.id));
                         return (
-                          <label 
-                            key={h.id} 
-                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', cursor: 'pointer', borderRadius: 4, userSelect: 'none' }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                          >
+                          <label key={h.id} className="lb-pop-item">
                             <input
                               type="checkbox"
                               checked={isChecked}
@@ -1532,7 +1545,7 @@ export default function PurchaseInvoicesPage() {
                                 setPage(1);
                               }}
                             />
-                            <span style={{ fontSize: 13, color: 'var(--text)' }}>{h.hub_name || h.name}</span>
+                            <span>{h.hub_name || h.name}</span>
                           </label>
                         );
                       })}
@@ -1541,19 +1554,9 @@ export default function PurchaseInvoicesPage() {
                 )}
               </div>
             )}
+
             <select
-              className="form-input"
-              style={{ flex: '0 0 140px' }}
-              value={vehicleTypeFilter}
-              onChange={e => { setVehicleTypeFilter(e.target.value); setPage(1); }}
-            >
-              <option value="">All Vehicles</option>
-              <option value="2W">2W Only</option>
-              <option value="4W">4W Only</option>
-            </select>
-            <select
-              className="form-input"
-              style={{ flex: '0 0 180px' }}
+              className="lb-control"
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
             >
@@ -1562,25 +1565,86 @@ export default function PurchaseInvoicesPage() {
               <option value="approved">Approved</option>
               <option value="cancelled">Cancelled</option>
             </select>
-            <button className="btn btn-ghost" onClick={fetchInvoices} title="Refresh" style={{ flexShrink: 0 }}>
+
+            {/* ── More filters ──
+                Vehicle type lives behind the funnel. The badge is what stops a
+                filtered list from looking like a broken one: with the control
+                hidden, a count is the only clue rows are being held back. */}
+            <div style={{ position: 'relative', flex: '0 0 auto' }}>
+              <button
+                type="button"
+                className="lb-control lb-icon-btn"
+                title="More filters"
+                aria-expanded={showMoreFilters}
+                onClick={() => setShowMoreFilters(p => !p)}
+              >
+                <SlidersHorizontal size={15} />
+                {hiddenFilterCount > 0 && <span className="lb-filter-count">{hiddenFilterCount}</span>}
+              </button>
+
+              {showMoreFilters && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreFilters(false)} />
+                  <div className="lb-pop">
+                    <div>
+                      <label className="lb-pop-label" htmlFor="lb-pi-veh">Vehicle type</label>
+                      <select
+                        id="lb-pi-veh"
+                        className="lb-control"
+                        value={vehicleTypeFilter}
+                        onChange={e => { setVehicleTypeFilter(e.target.value); setPage(1); }}
+                      >
+                        <option value="">All Vehicles</option>
+                        <option value="2W">2W Only</option>
+                        <option value="4W">4W Only</option>
+                      </select>
+                    </div>
+                    <div className="lb-pop-foot">
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ padding: '6px 10px', fontSize: 13 }}
+                        disabled={hiddenFilterCount === 0}
+                        onClick={() => { setVehicleTypeFilter(''); setPage(1); }}
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ padding: '6px 10px', fontSize: 13 }}
+                        onClick={() => setShowMoreFilters(false)}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button type="button" className="lb-control lb-icon-btn" onClick={fetchInvoices} title="Refresh">
               <RefreshCw size={15} />
             </button>
-            <span style={{ fontSize: 13, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-              {total} invoice{total !== 1 ? 's' : ''}
-            </span>
+
+            <div className="lb-toolbar-right">
+              <span className="lb-count">{total} invoice{total !== 1 ? 's' : ''}</span>
+            </div>
           </div>
 
-          {/* Table */}
-          <div className="card" style={{ overflowX: 'auto' }}>
+          {/* ── Table ──
+              Full bleed: no card wrapper, no outer border or radius, and
+              horizontal dividers only. */}
+          <div className="lb-list">
             {loading ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
+              <div className="lb-empty">Loading…</div>
             ) : items.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div className="lb-empty">
                 <ReceiptText size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
                 <p style={{ margin: 0 }}>No purchase invoices found.</p>
               </div>
             ) : (
-              <div className="pi-table-wrap">
+              <div className="pi-table-wrap lb-scroll-x">
                 <table className="pi-table">
                   <thead>
                     <tr>
@@ -1588,7 +1652,10 @@ export default function PurchaseInvoicesPage() {
                       <th>Customer / Vehicle</th>
                       <th>Hub</th>
                       <th>{isHubUser ? 'SI # / CI #' : 'PI # / CI #'}</th>
-                      <th>Date</th>
+                      {/* The list is ORDER BY invoice_date DESC, id DESC on the
+                          server. The arrow states that; it is not a control,
+                          because there is no ?sort= to send. */}
+                      <th className="lb-sorted">Date <ArrowDown size={12} className="lb-sort-icon" /></th>
                       <th style={{ textAlign: 'right' }}>Grand Total</th>
                       <th>Status</th>
                       <th>Payment</th>

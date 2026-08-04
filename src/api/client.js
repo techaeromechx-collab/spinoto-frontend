@@ -19,10 +19,15 @@ export function setToken(token) {
  * Thin wrapper around fetch that attaches the JWT and parses JSON.
  * Throws an Error with the server's `error` message on non-2xx responses.
  */
-export async function api(path, { method = 'GET', body, auth = true, headers = {} } = {}) {
+export async function api(path, { method = 'GET', body, auth = true, headers = {}, signal } = {}) {
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json', ...headers },
+    // Lets a caller cancel a superseded request — search boxes pass one so a
+    // slow response for "swi" cannot land after a fast one for "swift" and
+    // repaint the list with stale rows. A cancelled fetch rejects with an
+    // AbortError, which callers must recognise and ignore rather than show.
+    signal,
   };
   if (auth) {
     const token = getToken();

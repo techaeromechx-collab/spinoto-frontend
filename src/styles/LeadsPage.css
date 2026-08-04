@@ -944,34 +944,139 @@
 
 
 /* Leads page fills exactly the viewport minus the topbar — no outer page scroll */
-.page-scroll:has(.leads-page) {
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
+/* Leads used to lock the page and scroll the TABLE inside a fixed viewport,
+   via `.page-scroll:has(.leads-page) { overflow: hidden; display: flex }`.
+   That override is deleted, not neutralised: the global `.page-scroll` already
+   does the right thing, and the four other list screens get their scrolling by
+   simply not overriding it. Leads now does the same. */
 
 .content:has(.leads-page) {
   padding: 0;
-  overflow: hidden;
-  flex: 1;
-  min-height: 0;
 }
 
 .leads-page {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  overflow: hidden;
   padding: 20px 24px 0;
   box-sizing: border-box;
 }
 
+/* Full-bleed mode. .content's padding was already 0 for this page, but the page
+   root carried 24px of its own — which is the gutter you would still see with
+   .lb-page applied and nothing else changed. Specificity (0,2,0) beats the rule
+   above regardless of which stylesheet loads last. */
+/* ── Copy the mobile number ───────────────────────────────────────────────
+   Sits inline with the number rather than joining the call/WhatsApp row below
+   it: those two leave the app, this one does not, and grouping them would
+   suggest it does. */
+.lp-mobile-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lp-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  /* Hidden until the row is hovered — one of these per row would otherwise be
+     a column of grey icons competing with the data. Opacity, not display, so
+     the number never shifts as it appears. */
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+
+.lp-table tbody tr:hover .lp-copy-btn,
+.lp-copy-btn:focus-visible {
+  opacity: 1;
+}
+
+.lp-copy-btn:hover {
+  color: var(--primary);
+  background: var(--bg-soft);
+}
+
+/* Once copied the tick must stay visible even after the pointer leaves, or the
+   only confirmation you get vanishes with it. Driven by an explicit attribute
+   the component sets — not by sniffing the icon's class, which belongs to
+   lucide and could be renamed by a version bump. */
+.lp-copy-btn[data-copied='true'] {
+  opacity: 1;
+  color: var(--primary);
+}
+
+.leads-page.lb-page {
+  /* Bottom padding survives: without it the last row sits flush against the
+     bottom of the window with nothing under it. The side padding is what has
+     to go for full bleed, not the vertical. */
+  padding: 0 0 40px;
+}
+
+/* .lp-filters used to sit inside a padded card and supply 14px/16px around all
+   three of its children (toolbar, advanced panel, active tags). The toolbar now
+   carries its own 20px, so the container drops its side padding and the other
+   two children get the same 20px inset explicitly — otherwise the panel and the
+   filter chips sit flush against the window edge while the toolbar above them
+   does not. */
+.leads-page.lb-page .lp-filters {
+  padding: 0 0 14px;
+}
+
+.leads-page.lb-page .lb-toolbar {
+  padding-bottom: 0;   /* .lp-filters' 10px gap spaces the rows instead */
+}
+
+.leads-page.lb-page .lp-adv-panel,
+.leads-page.lb-page .lp-active-tags {
+  margin-left: 20px;
+  margin-right: 20px;
+}
+
+/* ── Pill shape for the wrapper controls ──────────────────────────────────
+   .lp-creator-wrap is the VISIBLE box — it holds the icon, the select and the
+   caret, and the <select> inside it is deliberately transparent and
+   borderless. Putting .lb-control on that inner select drew a second pill
+   inside the first, which is the doubled outline on All Sources and All
+   creators. The shape belongs on the wrapper.
+
+   Written out here rather than adding .lb-control to the wrapper in the JSX:
+   .lb-control and .lp-creator-wrap have identical specificity, so which one
+   won would depend on stylesheet import order — a coin-flip that would flip
+   again the moment someone reorders the imports. The compound selector below
+   is (0,2,0) and cannot lose. */
+.leads-page.lb-page .lp-creator-wrap,
+.leads-page.lb-page .lp-status-dd-btn,
+.leads-page.lb-page .lp-adv-btn,
+.leads-page.lb-page .lp-clear-all-btn {
+  height: 36px;
+  border-width: 1px;
+  border-radius: 999px;
+  background: var(--bg);
+  box-sizing: border-box;
+}
+
+.leads-page.lb-page .lp-creator-wrap:hover,
+.leads-page.lb-page .lp-status-dd-btn:hover,
+.leads-page.lb-page .lp-adv-btn:hover {
+  border-color: var(--text-muted);
+}
+
+/* An active filter still reads as active — the pill shape must not swallow the
+   state the old square controls showed. */
+.leads-page.lb-page .lp-status-dd-btn--active,
+.leads-page.lb-page .lp-adv-btn--active {
+  border-color: var(--primary);
+}
+
 .lp-table-card {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
   margin-bottom: 0;
 }
 
@@ -2035,10 +2140,10 @@
 }
 
 /* ── Desktop table ── */
+/* Horizontal only. Vertical scrolling is the page's job now — leaving
+   `overflow: auto` here would keep a second, inner scrollbar for the rows. */
 .lp-table-wrap {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
+  overflow-x: auto;
 }
 
 .lp-table {
@@ -2691,41 +2796,20 @@
     margin: 6px 0;
   }
 
-  /* CRITICAL: Restore scroll on mobile (desktop uses overflow:hidden for fixed-height layout) */
-  /* 1. page-scroll is the outermost scrollable container — LeadsPage locks it to hidden */
-  .page-scroll:has(.leads-page) {
-    overflow: auto !important;
-    height: auto !important;
-    flex: 1 !important;
-  }
+  /* This block used to undo the desktop locked-scroll layout — five rules of
+     !important restoring overflow and height that the desktop CSS had taken
+     away. The desktop lock is gone (the page scrolls normally now), so there is
+     nothing left to undo and only the mobile PADDING choice remains.
 
-  /* 2. content section also gets locked */
+     Padding, not full bleed, on mobile: below this breakpoint the table is
+     replaced by .lp-mobile-list cards, and cards touching both screen edges
+     read as broken rather than as edge-to-edge. */
   .content:has(.leads-page) {
-    overflow: visible !important;
     padding: 12px 12px 80px !important;
-    flex: none !important;
-    height: auto !important;
   }
 
-  /* 3. motion.div child of content has inline height:100% — force auto */
-  .content:has(.leads-page)>* {
-    height: auto !important;
-    min-height: unset !important;
-  }
-
-  /* 4. leads-page itself */
   .leads-page {
-    height: auto !important;
-    overflow: visible !important;
     padding: 0 !important;
-    min-height: unset !important;
-  }
-
-  /* 5. table card inner scroll container */
-  .lp-table-card {
-    flex: none !important;
-    overflow: visible !important;
-    min-height: unset !important;
   }
 
   /* Page header: stack on mobile */
@@ -4763,13 +4847,26 @@
 }
 
 .lp-cat-btn {
-  flex: 1;
+  /* NOT `flex: 1`. That expands to `flex-basis: 0%`, which tells every button
+     its natural height is zero and then divides the container between all of
+     them — ~25 categories in ~430px is about 15px each, less than the text
+     itself, so `overflow: hidden` sliced the top and bottom off every name.
+     It also stopped the list ever overflowing, so `overflow-y: auto` on the
+     parent never produced a scrollbar.
+
+     `0 0 auto`: each button is as tall as its own content, the list overflows,
+     and the parent scrolls as it was always meant to. */
+  flex: 0 0 auto;
   text-align: left;
   padding: 7px 9px;
   border: none;
   border-radius: 6px;
   background: transparent;
-  font-size: 15px;
+  /* 12px, down from 15px — it was the largest text in a picker whose service
+     list is 12px and whose summary heading is 11px. Smaller also means fewer
+     names hit the ellipsis in a 160px column. */
+  font-size: 12px;
+  line-height: 1.4;
   font-weight: 500;
   cursor: pointer;
   color: var(--text-muted);

@@ -10,10 +10,13 @@ import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { getRoundingFunction } from '../lib/math.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
+import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
+import { usePageSearch } from '../lib/pageSearchStore.js';
 import {
-  Receipt, Search, RefreshCw, X, Eye, Trash2,
+  Receipt, Search, RefreshCw, X, Eye, Trash2, SlidersHorizontal, ArrowDown,
   AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Download, Car, ChevronDown, Pencil,
 } from 'lucide-react';
+import '../styles/listLayout.css';
 import '../styles/CustomerInvoicesPage.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1525,9 +1528,19 @@ export default function CustomerInvoicesPage() {
   const [page, setPage] = useState(ls.page ?? 1);
   const [pageSize, setPageSize] = useState(ls.pageSize ?? 10);
 
-  const [search, setSearch] = useState(ls.search ?? '');
+  // `searchInput` is what the box shows; `search` is what the server is asked
+  // for, at most once per 300ms pause and never below 2 characters.
+  const { input: searchInput, setInput: setSearchInput, search, tooShort, minChars } =
+    useDebouncedSearch(ls.search ?? '');
+  const abortSignal = useAbortController();
+
+  // Typing must also send you back to page 1 — otherwise a search run while on
+  // page 3 returns two results and shows you an empty page 3 of them.
+  // useCallback because usePageSearch compares this by identity.
+  const onSearchChange = useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
   const [hubFilter, setHubFilter] = useState(() => ls.hubFilter ?? (user?.hub_id ? [String(user.hub_id)] : []));
   const [showHubDropdown, setShowHubDropdown] = useState(false);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState(ls.statusFilter ?? '');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState(ls.vehicleTypeFilter ?? '');
   // Invoice-date range — both optional; either can be set alone (open-ended).
@@ -1537,15 +1550,34 @@ export default function CustomerInvoicesPage() {
 
   // Persist whenever any of these change
   useEffect(() => {
-    writeListState('sp_customer_invoices_list_v1', { page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter, fromDate, toDate });
-  }, [page, pageSize, search, statusFilter, vehicleTypeFilter, hubFilter, fromDate, toDate]);
+    // searchInput, not search: restore the box exactly as they left it, even
+    // mid-word. The hook re-derives the debounced value on mount.
+    writeListState('sp_customer_invoices_list_v1', { search: searchInput, page, pageSize, statusFilter, vehicleTypeFilter, hubFilter, fromDate, toDate });
+  }, [page, pageSize, searchInput, statusFilter, vehicleTypeFilter, hubFilter, fromDate, toDate]);
 
   useListScrollRestore('sp_customer_invoices_list_v1', !loading);
+
+  // How many of the filters hidden behind the funnel are actually on. A date
+  // range counts as one thing, not two, because that is how a person thinks of
+  // it — "filtered by date" is one decision even when both ends are set.
+  const hiddenFilterCount =
+    (vehicleTypeFilter ? 1 : 0) + ((fromDate || toDate) ? 1 : 0);
 
   // Auto-open a specific invoice if navigated here from Estimates page
   const [selectedId, setSelectedId] = useState(() => location.state?.openId ?? null);
   const [showVehHistory, setShowVehHistory] = useState(false);
   const [toast, setToast] = useState(null);
+
+  // Claim the top bar's search box. Declared after selectedId because it reads
+  // it: the box is released while a single invoice is open, since searching a
+  // list you cannot see is a control that appears to do nothing.
+  usePageSearch({
+    value: searchInput,
+    onChange: onSearchChange,
+    placeholder: 'Name, mobile, vehicle no. or CI-000048',
+    hint: tooShort ? `${minChars}+ characters` : '',
+    enabled: !selectedId,
+  });
 
   const showToast = useCallback((msg, type = 'success') => setToast({ msg, type }), []);
 
@@ -1610,7 +1642,7 @@ export default function CustomerInvoicesPage() {
     setLoading(true);
     try {
       const q = new URLSearchParams();
-      if (search.trim()) q.set('search', search.trim());
+      if (search) q.set('search', search);
       if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
       if (statusFilter) q.set('status', statusFilter);
       if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
@@ -1618,22 +1650,27 @@ export default function CustomerInvoicesPage() {
       if (toDate) q.set('to', toDate);
       q.set('page', page);
       q.set('limit', pageSize);
-      const res = await api(`/api/customer-invoices?${q.toString()}`);
+      const res = await api(`/api/customer-invoices?${q.toString()}`, { signal: abortSignal() });
       setItems(res.items || []);
       setTotal(res.total ?? (res.items || []).length);
-    } catch {
+      setLoading(false);
+    } catch (e) {
+      // A cancelled request is this code superseding itself, not a failure.
+      // Deliberately NOT in a `finally`: that would run on abort too and clear
+      // the spinner while the request that replaced this one is still in
+      // flight, flickering the list back to "loaded" and then to loading again.
+      if (isAbortError(e)) return;
       showToast('Failed to load customer invoices.', 'error');
-    } finally {
       setLoading(false);
     }
-  }, [search, hubFilter, statusFilter, vehicleTypeFilter, fromDate, toDate, page, pageSize, showToast]);
+  }, [search, hubFilter, statusFilter, vehicleTypeFilter, fromDate, toDate, page, pageSize, showToast, abortSignal]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
   async function handleExport() {
     try {
       const q = new URLSearchParams();
-      if (search.trim()) q.set('search', search.trim());
+      if (search) q.set('search', search);
       if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
       if (statusFilter) q.set('status', statusFilter);
       if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
@@ -1659,10 +1696,20 @@ export default function CustomerInvoicesPage() {
   }
 
   return (
-    <div className="ci-page">
-      {/* ── Header ── */}
-      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        {selectedId ? (
+    /* lb-page cancels the app wrapper's padding and max-width so the table runs
+       edge to edge. The detail view deliberately does not get it. */
+    <div className={selectedId ? 'ci-page' : 'ci-page lb-page'}>
+      {/* ── Header ──
+          The list view has no title: the top bar's breadcrumb already reads
+          "Home › Customer Invoices", and repeating it under the breadcrumb was
+          the same words twice with nothing between them. The whole block is
+          skipped rather than left empty, so the toolbar rises to fill the gap.
+
+          The DETAIL view keeps its header — there the back button and "Invoice
+          Detail" are the only thing telling you which of the two views you are
+          looking at. */}
+      {selectedId && (
+        <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
               className="btn btn-ghost"
@@ -1678,37 +1725,8 @@ export default function CustomerInvoicesPage() {
               Invoice Detail
             </h2>
           </div>
-        ) : (
-          <div>
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Receipt size={22} style={{ color: 'var(--primary)' }} />
-              Customer Invoices
-            </h2>
-            <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 13 }}>
-              Invoices sent to customers
-            </p>
-          </div>
-        )}
-        {!selectedId && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <button
-              className="btn btn-ghost"
-              onClick={handleExport}
-              title="Export Excel"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
-            >
-              <Download size={15} /> Export Excel
-            </button>
-            <button
-              className="btn btn-ghost"
-              onClick={() => setShowVehHistory(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}
-            >
-              <Car size={15} /> Vehicle History
-            </button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {showVehHistory && <VehicleHistoryModal onClose={() => setShowVehHistory(false)} />}
 
@@ -1723,24 +1741,17 @@ export default function CustomerInvoicesPage() {
         />
       ) : (
         <>
-          {/* Filters */}
-          <div className="card" style={{ padding: '14px 18px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', overflow: 'visible' }}>
-            <div style={{ position: 'relative', flex: '1 1 220px' }}>
-              <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input
-                className="form-input"
-                style={{ paddingLeft: 32 }}
-                placeholder="Search invoices…"
-                value={search}
-                onChange={e => { setSearch(e.target.value); setPage(1); }}
-              />
-            </div>
+          {/* ── Toolbar ──
+              No card: filters sit directly on the page background, everything
+              on one row, actions pushed right. The search box is in the top
+              bar (see usePageSearch above). */}
+          <div className="lb-toolbar">
             {!isHubUser && (
-              <div style={{ position: 'relative', flex: '0 0 180px' }}>
+              <div style={{ position: 'relative', flex: '0 0 auto' }}>
                 <button
                   type="button"
-                  className="form-input"
-                  style={{ width: '100%', textAlign: 'left', background: 'var(--bg)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  className="lb-control"
+                  style={{ minWidth: 150, justifyContent: 'space-between' }}
                   onClick={() => setShowHubDropdown(p => !p)}
                 >
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1754,10 +1765,14 @@ export default function CustomerInvoicesPage() {
                 {showHubDropdown && (
                   <>
                     <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowHubDropdown(false)} />
+                    {/* minWidth, not right:0 — the trigger is now a
+                        shrink-to-fit pill rather than a 180px block, so
+                        stretching the menu to its edges would leave hub names
+                        wrapping in a ~150px column. */}
                     <div style={{
-                      position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-                      background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8,
-                      boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
+                      position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 240, marginTop: 0,
+                      background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12,
+                      boxShadow: '0 12px 28px rgba(0,0,0,0.12)', zIndex: 1000, maxHeight: 280,
                       overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
                     }}>
                       {hubs.length > 0 && hubFilter.length < hubs.length && (
@@ -1817,19 +1832,10 @@ export default function CustomerInvoicesPage() {
                 )}
               </div>
             )}
+            {/* Status stays visible — it is the filter people reach for most.
+                Vehicle type and the date range live behind the funnel. */}
             <select
-              className="form-input"
-              style={{ flex: '0 0 140px' }}
-              value={vehicleTypeFilter}
-              onChange={e => { setVehicleTypeFilter(e.target.value); setPage(1); }}
-            >
-              <option value="">All Vehicles</option>
-              <option value="2W">2W Only</option>
-              <option value="4W">4W Only</option>
-            </select>
-            <select
-              className="form-input"
-              style={{ flex: '0 0 180px' }}
+              className="lb-control"
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
             >
@@ -1840,62 +1846,136 @@ export default function CustomerInvoicesPage() {
               <option value="paid">Paid</option>
               <option value="cancelled">Cancelled</option>
             </select>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
-              <input
-                type="date"
-                className="form-input"
-                style={{ flex: '0 0 140px' }}
-                value={fromDate}
-                max={toDate || undefined}
-                title="From date"
-                onChange={e => { setFromDate(e.target.value); setPage(1); }}
-              />
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>to</span>
-              <input
-                type="date"
-                className="form-input"
-                style={{ flex: '0 0 140px' }}
-                value={toDate}
-                min={fromDate || undefined}
-                title="To date"
-                onChange={e => { setToDate(e.target.value); setPage(1); }}
-              />
-              {(fromDate || toDate) && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  title="Clear dates"
-                  onClick={() => { setFromDate(''); setToDate(''); setPage(1); }}
-                  style={{ padding: '6px 8px' }}
-                >
-                  <X size={13} />
-                </button>
+
+            {/* ── More filters ──
+                A funnel collapses the less-used filters. The badge is what
+                stops a filtered list from looking like a broken one: with the
+                controls hidden, a count is the only clue that rows are being
+                held back. */}
+            <div style={{ position: 'relative', flex: '0 0 auto' }}>
+              <button
+                type="button"
+                className="lb-control lb-icon-btn"
+                title="More filters"
+                aria-expanded={showMoreFilters}
+                onClick={() => setShowMoreFilters(p => !p)}
+              >
+                <SlidersHorizontal size={15} />
+                {hiddenFilterCount > 0 && (
+                  <span className="lb-filter-count">{hiddenFilterCount}</span>
+                )}
+              </button>
+
+              {showMoreFilters && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreFilters(false)} />
+                  <div className="lb-pop">
+                    <div>
+                      <label className="lb-pop-label" htmlFor="lb-veh">Vehicle type</label>
+                      <select
+                        id="lb-veh"
+                        className="lb-control"
+                        value={vehicleTypeFilter}
+                        onChange={e => { setVehicleTypeFilter(e.target.value); setPage(1); }}
+                      >
+                        <option value="">All Vehicles</option>
+                        <option value="2W">2W Only</option>
+                        <option value="4W">4W Only</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="lb-pop-label">Invoice date</label>
+                      <div className="lb-pop-row">
+                        <input
+                          type="date"
+                          className="lb-control"
+                          value={fromDate}
+                          max={toDate || undefined}
+                          title="From date"
+                          onChange={e => { setFromDate(e.target.value); setPage(1); }}
+                        />
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>to</span>
+                        <input
+                          type="date"
+                          className="lb-control"
+                          value={toDate}
+                          min={fromDate || undefined}
+                          title="To date"
+                          onChange={e => { setToDate(e.target.value); setPage(1); }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="lb-pop-foot">
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ padding: '6px 10px', fontSize: 13 }}
+                        disabled={hiddenFilterCount === 0}
+                        onClick={() => {
+                          setVehicleTypeFilter(''); setFromDate(''); setToDate(''); setPage(1);
+                        }}
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ padding: '6px 10px', fontSize: 13 }}
+                        onClick={() => setShowMoreFilters(false)}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
-            <button className="btn btn-ghost" onClick={fetchInvoices} title="Refresh" style={{ flexShrink: 0 }}>
+
+            <button
+              type="button"
+              className="lb-control lb-icon-btn"
+              onClick={fetchInvoices}
+              title="Refresh"
+            >
               <RefreshCw size={15} />
             </button>
-            <span style={{ fontSize: 13, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-              {total} invoice{total !== 1 ? 's' : ''}
-            </span>
+
+            <div className="lb-toolbar-right">
+              <span className="lb-count">
+                {total} invoice{total !== 1 ? 's' : ''}
+              </span>
+              <button type="button" className="lb-control" onClick={handleExport} title="Export Excel">
+                <Download size={15} /> Export
+              </button>
+              <button type="button" className="lb-control" onClick={() => setShowVehHistory(true)}>
+                <Car size={15} /> Vehicle History
+              </button>
+            </div>
           </div>
 
-          {/* Table */}
-          <div className="card" style={{ overflowX: 'auto' }}>
+          {/* ── Table ──
+              Full bleed: no card wrapper, no outer border or radius, and
+              horizontal dividers only. */}
+          <div className="lb-list">
             {loading ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
+              <div className="lb-empty">Loading…</div>
             ) : items.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div className="lb-empty">
                 <Receipt size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
                 <p style={{ margin: 0 }}>No customer invoices found.</p>
               </div>
             ) : (
-              <div className="ci-table-wrap">
+              <div className="ci-table-wrap lb-scroll-x">
                 <table className="ci-table">
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>Date</th>
+                      {/* The list is ORDER BY invoice_date DESC, id DESC on the
+                          server. The arrow states that; it is not a control,
+                          because there is no ?sort= parameter to send. */}
+                      <th className="lb-sorted">Date <ArrowDown size={12} className="lb-sort-icon" /></th>
                       <th>Customer</th>
                       <th>Vehicle</th>
                       <th>Hub</th>

@@ -7,12 +7,16 @@ import { useBodyLock } from '../hooks/useBodyLock.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
+import { useDebouncedSearch } from '../hooks/useDebouncedSearch.js';
+import { usePageSearch } from '../lib/pageSearchStore.js';
+import '../styles/listLayout.css';
 import {
   PlusCircle, Search, User, Calendar, MapPin, Car, Bike,
   MoreVertical, Eye, Pencil, Trash2, X, CheckCircle2,
   AlertCircle, Phone, MessageCircle, Tag, FileText,
   IndianRupee, ChevronDown, UserCheck, Wrench, Plus, Info,
   SlidersHorizontal, Bell, Clock, Send, MessageSquare, Activity, Download, Lock,
+  Copy, Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import '../styles/LeadsPage.css';
@@ -1700,6 +1704,10 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
                     : categories.map(c => (
                       <button key={c.id} type="button"
                         className={`lp-cat-btn${selectedCatId === String(c.id) ? ' lp-cat-btn--on' : ''}`}
+                        /* The column is 160px with ellipsis truncation, so a
+                           long name like "Denting and Painting" is still cut
+                           horizontally. The tooltip is how you read the rest. */
+                        title={c.name}
                         onClick={() => setSelectedCatId(String(c.id))}>
                         {c.name}
                       </button>
@@ -3245,7 +3253,17 @@ export default function LeadsPage() {
 
   // Basic filters — seed from global search URL param (?search=) first, then
   // fall back to the last-persisted value for this page.
-  const [search, setSearch] = useState(() => searchParams.get('search') || ls.search || '');
+  // Seeded from ?search= first (the old global header search navigated here
+  // with it) then from the last-persisted value.
+  //
+  // NOTE: this list filters and paginates CLIENT-side, so unlike the invoice
+  // lists the debounce saves no queries — it only stops a re-render per
+  // keystroke over the full lead array. The minimum-length guard is skipped for
+  // the same reason: there is no expensive query to protect, and a one-letter
+  // filter over already-loaded rows is instant.
+  const { input: searchInput, setInput: setSearchInput, search } =
+    useDebouncedSearch(searchParams.get('search') || ls.search || '', { minChars: 1 });
+  const setSearch = setSearchInput;
   const [statusFilters, setStatusFilters] = useState(ls.statusFilters ?? []); // multi-select array
   // Assignee filter — multi-select array, same pattern as statusFilters.
   // 'unassigned' is a pseudo-value alongside real assignee ids (as strings).
@@ -3279,6 +3297,43 @@ export default function LeadsPage() {
       dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
 
   useListScrollRestore('sp_leads_list_v1', !loading);
+
+  // Copy-to-clipboard for the mobile column. Holds the lead id, not a boolean,
+  // so the tick appears on the row that was actually clicked.
+  //
+  // navigator.clipboard needs a secure context — it is simply absent on a plain
+  // http:// origin, which is how the API-keys Copy button ended up doing
+  // nothing visible. The execCommand fallback is deprecated but still works
+  // everywhere and covers exactly that case.
+  const [copiedMobile, setCopiedMobile] = useState(null);
+  const copyMobile = useCallback(async (mobile, id) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(mobile);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = mobile;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      setCopiedMobile(id);
+      setTimeout(() => setCopiedMobile(c => (c === id ? null : c)), 1200);
+    } catch {
+      /* Nothing to show but the number itself, which is already on screen. */
+    }
+  }, []);
+
+  // Claim the top bar's search box. Leads open in a modal rather than an in-page
+  // detail view, so there is no state in which the box should be released.
+  usePageSearch({
+    value: searchInput,
+    onChange: setSearchInput,
+    placeholder: 'Search leads by name or mobile',
+  });
 
   // Reference data for advanced filters
   const [states, setStates] = useState([]);
@@ -3649,7 +3704,11 @@ export default function LeadsPage() {
   }
 
   return (
-    <div className="leads-page">
+    /* lb-page cancels the app wrapper's padding and max-width. This page
+       already set .content padding to 0 for its locked-scroll layout, so the
+       only thing lb-page adds here is max-width — which is what removes the
+       grey gutter on a window wider than 1400px. */
+    <div className="leads-page lb-page">
 
       {/* Convert-to-Appointment modal — lifted to page level so it survives lead-list re-renders */}
       {pageConvertModal && (
@@ -3683,33 +3742,13 @@ export default function LeadsPage() {
       {error && <div className="banner error">{error}</div>}
 
       {/* ── Page header row ── */}
-      <div className="lp-page-header">
-        <div className="lp-page-header-title">
-          <h2>
-            {leadsScope === 'own' ? 'My Leads' :
-              leadsScope === 'team' ? 'Team Leads' :
-                'Leads'}
-          </h2>
-          <p>
-            {leadsScope === 'own' ? 'Leads you have created.' :
-              leadsScope === 'team' ? 'Leads created by your team members.' :
-                'Real-time overview of all customer inquiries.'}
-          </p>
-        </div>
-        <div className="lp-page-header-actions">
-          {canExport && (
-            <button className="button secondary" onClick={handleExport} title="Export CSV">
-              <Download size={15} /> Export CSV
-            </button>
-          )}
-          {canCreate && (
-            <button className="button primary"
-              onClick={() => window.dispatchEvent(new Event('open-lead-modal'))}>
-              <PlusCircle size={15} /> Capture New Lead
-            </button>
-          )}
-        </div>
-      </div>
+      {/* No title block: the top bar's breadcrumb already names the screen, and
+          Export CSV / Capture New Lead have moved into the toolbar row.
+
+          One thing genuinely lost here: the subtitle used to say WHICH leads
+          you were looking at — "Leads you have created" vs "Leads created by
+          your team members". The scope now shows only in the breadcrumb, so it
+          is carried on the count instead (see lb-count below). */}
 
       {/* ── Follow-ups bar ── */}
       <div className="lp-fu-bar">
@@ -4033,27 +4072,28 @@ export default function LeadsPage() {
         </div>
       )}
 
-      <div className="card lp-table-card">
+      {/* ── Table ──
+          Full bleed: no card, no outer border or radius, horizontal dividers
+          only. Plain .lb-list — the page scrolls, same as the other four. */}
+      <div className="lb-list lp-table-card">
 
         {/* ── Filters ── */}
         <div className="lp-filters">
-          {/* Row 1: search + creator + advanced toggle */}
-          <div className="lp-filter-top">
-            <div className="lp-search">
-              <Search size={14} className="lp-search-icon" />
-              <input placeholder="Search by name or mobile…"
-                autoComplete="off"
-                data-form-type="other"
-                readOnly
-                onFocus={e => e.target.removeAttribute('readonly')}
-                value={search} onChange={e => setSearch(e.target.value)} />
-              {search && <button className="lp-clear-btn" onClick={() => setSearch('')}><X size={12} /></button>}
-            </div>
+          {/* ── Toolbar ──
+              No card: controls sit directly on the page background, one row,
+              actions pushed right. Shared with the four other list screens —
+              see styles/listLayout.css.
 
+              The search box moved to the top bar (usePageSearch). Unlike the
+              other lists this one filters CLIENT-side, so nothing here is about
+              query load — it is purely so the same control sits in the same
+              place on every screen. */}
+          <div className="lb-toolbar">
             {/* Status multi-select dropdown */}
             <div className="lp-status-dd-wrap" ref={statusDDRef}>
               <button
                 className={`lp-status-dd-btn${statusFilters.length > 0 ? ' lp-status-dd-btn--active' : ''}`}
+                style={{ minWidth: 150 }}
                 onClick={() => setStatusDDOpen(v => !v)}
               >
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusFilters.length > 0 ? 'var(--primary)' : 'var(--text-muted)', display: 'inline-block', flexShrink: 0 }} />
@@ -4118,6 +4158,7 @@ export default function LeadsPage() {
               <div className="lp-status-dd-wrap" ref={assigneeDDRef}>
                 <button
                   className={`lp-status-dd-btn${assigneeFilters.length > 0 ? ' lp-status-dd-btn--active' : ''}`}
+                  style={{ minWidth: 150 }}
                   onClick={() => setAssigneeDDOpen(v => !v)}
                 >
                   <UserCheck size={13} />
@@ -4179,6 +4220,8 @@ export default function LeadsPage() {
               </div>
             )}
 
+            {/* This page already had the funnel-plus-panel pattern before the
+                other lists did; it keeps its own panel and its own count. */}
             <button
               className={`lp-adv-btn${showAdv ? ' lp-adv-btn--on' : ''}${advCount > 0 ? ' lp-adv-btn--active' : ''}`}
               onClick={() => setShowAdv(v => !v)}
@@ -4193,6 +4236,30 @@ export default function LeadsPage() {
                 <X size={12} /> Clear filters
               </button>
             )}
+
+            {/* Moved down from the page header, which is gone. */}
+            <div className="lb-toolbar-right">
+              {/* Carries the scope the deleted subtitle used to state — "12 of
+                  my leads" reads as clearly as a heading did, and in less room. */}
+              <span className="lb-count">
+                {filtered.length}{' '}
+                {leadsScope === 'own' ? 'of my leads' : leadsScope === 'team' ? 'team leads' : `lead${filtered.length !== 1 ? 's' : ''}`}
+              </span>
+              {canExport && (
+                <button type="button" className="lb-control" onClick={handleExport} title="Export CSV">
+                  <Download size={15} /> Export CSV
+                </button>
+              )}
+              {canCreate && (
+                <button
+                  type="button"
+                  className="lb-control lb-primary"
+                  onClick={() => window.dispatchEvent(new Event('open-lead-modal'))}
+                >
+                  <PlusCircle size={15} /> Capture New Lead
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Advanced filter panel */}
@@ -4405,7 +4472,7 @@ export default function LeadsPage() {
         )}
 
         {/* ── Desktop table ── */}
-        <div className="lp-table-wrap">
+        <div className="lp-table-wrap lb-scroll-x">
           <table className="data-table lp-table">
             <thead>
               <tr>
@@ -4418,15 +4485,15 @@ export default function LeadsPage() {
                       else setSelectedLeads(new Set());
                     }} />
                 </th>
-                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Date</div></th>
-                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Customer</div></th>
-                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Location</div></th>
-                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Vehicle</div></th>
-                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Service</div></th>
-                <th style={{ fontWeight: 700, fontSize: '12px' }}>Status</th>
-                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Assign To</div></th>
-                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Next Follow-up</div></th>
-                <th style={{ fontWeight: 700, fontSize: '12px' }}><div className="th-cell">Created By</div></th>
+                <th><div className="th-cell">Date</div></th>
+                <th><div className="th-cell">Customer</div></th>
+                <th><div className="th-cell">Location</div></th>
+                <th><div className="th-cell">Vehicle</div></th>
+                <th><div className="th-cell">Service</div></th>
+                <th>Status</th>
+                <th><div className="th-cell">Assign To</div></th>
+                <th><div className="th-cell">Next Follow-up</div></th>
+                <th><div className="th-cell">Created By</div></th>
                 <th style={{ width: 44 }} />
               </tr>
             </thead>
@@ -4458,7 +4525,23 @@ export default function LeadsPage() {
                     <div className="lp-customer-row">
                       <div className="lp-customer">
                         <strong>{l.name || <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>—</span>}</strong>
-                        <span>{l.mobile}</span>
+                        {/* stopPropagation: the whole row opens the lead, and
+                            copying a number should not also open it. */}
+                        <span className="lp-mobile-line" onClick={e => e.stopPropagation()}>
+                          {l.mobile}
+                          {l.mobile && (
+                            <button
+                              type="button"
+                              className="lp-copy-btn"
+                              data-copied={copiedMobile === l.id ? 'true' : 'false'}
+                              title={copiedMobile === l.id ? 'Copied' : 'Copy number'}
+                              aria-label={`Copy ${l.mobile}`}
+                              onClick={() => copyMobile(l.mobile, l.id)}
+                            >
+                              {copiedMobile === l.id ? <Check size={11} /> : <Copy size={11} />}
+                            </button>
+                          )}
+                        </span>
                         <div className="lp-contact-btns" onClick={e => e.stopPropagation()}>
                           <a className="lp-contact-btn lp-contact-btn--call" href={`tel:${l.mobile}`} title="Call"><Phone size={12} /></a>
                           <a className="lp-contact-btn lp-contact-btn--wa"

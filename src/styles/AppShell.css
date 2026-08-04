@@ -241,6 +241,36 @@
   pointer-events: none;
 }
 
+/* Sits where the ⌘K badge sits, so "type at least 2 characters" never pushes
+   the input around. Unlike the badge it stays visible while focused — that is
+   exactly when the user needs to read it. */
+.topbar-search-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.topbar-search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.topbar-search-clear:hover {
+  color: var(--text);
+  background: var(--border);
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;

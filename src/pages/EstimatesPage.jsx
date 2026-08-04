@@ -8,12 +8,15 @@ import PaginationBar from '../components/PaginationBar.jsx';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
+import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
+import { usePageSearch } from '../lib/pageSearchStore.js';
 import { CreateAppointmentModal } from './AppointmentsPage.jsx';
 import {
   FileText, Plus, Search, RefreshCw, X, ChevronRight,
   CheckCircle2, XCircle, Clock, AlertCircle, Eye, Minus, ReceiptText, Printer, Download, Check, MoreVertical, ChevronDown, Building2,
-  User, Car, Pencil,
+  User, Car, Pencil, SlidersHorizontal, ArrowDown,
 } from 'lucide-react';
+import '../styles/listLayout.css';
 import '../styles/EstimatesPage.css';
 import '../styles/AppointmentsPage.css'; // styles CreateAppointmentModal, reused here for direct estimate creation
 
@@ -3444,25 +3447,32 @@ export default function EstimatesPage() {
   const [page, setPage] = react.useState(ls.page ?? 1);
   const [pageSize, setPageSize] = react.useState(ls.pageSize ?? 10);
 
-  const [searchInput, setSearchInput] = react.useState(ls.searchInput ?? ''); // what the user types
-  const [search, setSearch] = react.useState(ls.search ?? '');           // debounced value used for fetching
+  // This page had the debounce first; it now shares the hook with the two
+  // invoice pages so the three cannot drift apart again. The hook adds the
+  // minimum-length guard this version lacked — a single character was still
+  // querying, and that is the most expensive, least useful search there is.
+  const { input: searchInput, setInput: setSearchInput, search, tooShort, minChars } =
+    useDebouncedSearch(ls.searchInput ?? ls.search ?? '');
+  const abortSignal = useAbortController();
+  // Typing must also send you back to page 1 — otherwise a search run while on
+  // page 3 returns two results and shows you an empty page 3 of them.
+  // useCallback because usePageSearch compares this by identity.
+  const onSearchChange = react.useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
   const [statusFilter, setStatusFilter] = react.useState(ls.statusFilter ?? '');
   const [vehicleTypeFilter, setVehicleTypeFilter] = react.useState(ls.vehicleTypeFilter ?? '');
-
-  // Debounce: wait 300ms after the last keystroke before hitting the API
-  react.useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput), 300);
-    return () => clearTimeout(t);
-  }, [searchInput]);
   const [hubFilter, setHubFilter] = react.useState(() => ls.hubFilter ?? (user?.hub_id ? [String(user.hub_id)] : []));
 
   // Persist whenever any of these change
   react.useEffect(() => {
-    writeListState('sp_estimates_list_v1', { page, pageSize, searchInput, search, statusFilter, vehicleTypeFilter, hubFilter });
-  }, [page, pageSize, searchInput, search, statusFilter, vehicleTypeFilter, hubFilter]);
+    writeListState('sp_estimates_list_v1', { searchInput, page, pageSize, statusFilter, vehicleTypeFilter, hubFilter });
+  }, [page, pageSize, searchInput, statusFilter, vehicleTypeFilter, hubFilter]);
 
   useListScrollRestore('sp_estimates_list_v1', !loading);
   const [showHubDropdown, setShowHubDropdown] = react.useState(false);
+  const [showMoreFilters, setShowMoreFilters] = react.useState(false);
+
+  // How many of the filters hidden behind the funnel are actually on.
+  const hiddenFilterCount = vehicleTypeFilter ? 1 : 0;
 
   const [hubs, setHubs] = react.useState([]);
   const [hubsLoaded, setHubsLoaded] = react.useState(false);
@@ -3481,6 +3491,18 @@ export default function EstimatesPage() {
   // EstimateModal with the picked customer/vehicle as initialStandaloneContext.
   const [showCreateAppt, setShowCreateAppt] = react.useState(false);
   const [standaloneCreateCtx, setStandaloneCreateCtx] = react.useState(null);
+
+  // Claim the top bar's search box. Declared after selectedId/showCreate
+  // because it reads them: the box is released while a single estimate or the
+  // create wizard is open, since searching a list you cannot see is a control
+  // that appears to do nothing.
+  usePageSearch({
+    value: searchInput,
+    onChange: onSearchChange,
+    placeholder: 'Name, mobile, vehicle no. or EST-000048',
+    hint: tooShort ? `${minChars}+ characters` : '',
+    enabled: !selectedId && !showCreate,
+  });
   const [toast, setToast] = react.useState(null);
 
   const showToast = react.useCallback((msg, type = 'success') => setToast({ msg, type }), []);
@@ -3548,21 +3570,25 @@ export default function EstimatesPage() {
     setLoading(true);
     try {
       const q = new URLSearchParams();
-      if (search.trim()) q.set('search', search.trim());
+      if (search) q.set('search', search);
       if (statusFilter) q.set('status', statusFilter);
       if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
       if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
       q.set('page', String(page));
       q.set('limit', String(pageSize));
-      const res = await api(`/api/estimates?${q.toString()}`);
+      const res = await api(`/api/estimates?${q.toString()}`, { signal: abortSignal() });
       setEstimates(res.items || []);
       setTotal(res.total ?? (res.items || []).length);
-    } catch {
+      setLoading(false);
+    } catch (e) {
+      // A cancelled request is this code superseding itself, not a failure.
+      // Deliberately NOT in a `finally`: that would run on abort too and clear
+      // the spinner while the replacement request is still in flight.
+      if (isAbortError(e)) return;
       showToast('Failed to load estimates.', 'error');
-    } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, hubFilter, vehicleTypeFilter, page, pageSize, showToast]);
+  }, [search, statusFilter, hubFilter, vehicleTypeFilter, page, pageSize, showToast, abortSignal]);
 
   react.useEffect(() => { fetchEstimates(); }, [fetchEstimates]);
 
@@ -3588,11 +3614,20 @@ export default function EstimatesPage() {
   }
 
   return (
-    <div className="estimates-page">
-      {/* ── Header ── */}
-      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        {selectedId ? (
-          /* Detail view header */
+    /* lb-page cancels the app wrapper's padding and max-width so the table runs
+       edge to edge. The detail view deliberately does not get it. */
+    <div className={selectedId ? 'estimates-page' : 'estimates-page lb-page'}>
+      {/* ── Header ──
+          The list view has no title: the top bar's breadcrumb already reads
+          "Home › Estimates", and repeating it underneath was the same words
+          twice. The whole block is skipped rather than left empty, so the
+          toolbar rises to fill the gap.
+
+          The DETAIL view keeps its header — there the back button and
+          "Estimate Detail" are the only thing telling you which view you are
+          looking at. */}
+      {selectedId && (
+        <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
               className="btn btn-ghost"
@@ -3608,30 +3643,8 @@ export default function EstimatesPage() {
               Estimate Detail
             </h2>
           </div>
-        ) : (
-          /* List view header */
-          <div>
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <FileText size={22} style={{ color: 'var(--primary)' }} />
-              Estimates
-            </h2>
-            <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 13 }}>
-              Manage service estimates linked to appointments.
-            </p>
-          </div>
-        )}
-
-        {!selectedId && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-ghost" onClick={() => setShowCreateAppt(true)} title="Create a new customer + vehicle, then go straight into the estimate — no appointment is created">
-              <Plus size={16} /> New Customer
-            </button>
-            <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> New Estimate
-            </button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {showCreateAppt && (
         <CreateAppointmentModal
@@ -3661,63 +3674,31 @@ export default function EstimatesPage() {
       ) : (
         <>
           {/* ── Filters ── */}
-          <div className="card" style={{ padding: '14px 18px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', overflow: 'visible' }}>
-            <div style={{ position: 'relative', flex: '1 1 220px' }}>
-              <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input
-                className="form-input"
-                style={{ paddingLeft: 32 }}
-                placeholder="Search by customer, vehicle, mobile…"
-                value={searchInput}
-                onChange={e => { setSearchInput(e.target.value); setPage(1); }}
-              />
-            </div>
-            <select
-              className="form-input"
-              style={{ flex: '0 0 180px' }}
-              value={statusFilter}
-              onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-            >
-              <option value="">All statuses</option>
-              {Object.entries(STATUS_META).map(([val, m]) => (
-                <option key={val} value={val}>{m.label}</option>
-              ))}
-            </select>
-            <select
-              className="form-input"
-              style={{ flex: '0 0 140px' }}
-              value={vehicleTypeFilter}
-              onChange={e => { setVehicleTypeFilter(e.target.value); setPage(1); }}
-            >
-              <option value="">All Vehicles</option>
-              <option value="2W">2W Only</option>
-              <option value="4W">4W Only</option>
-            </select>
+          {/* ── Toolbar ──
+              No card: filters sit directly on the page background, one row,
+              actions pushed right. Shared with the two invoice lists — see
+              styles/listLayout.css. The search box is in the top bar. */}
+          <div className="lb-toolbar">
             {!isHubUser && (
-              <div style={{ position: 'relative', flex: '0 0 160px' }}>
+              <div style={{ position: 'relative', flex: '0 0 auto' }}>
                 <button
                   type="button"
-                  className="form-input"
-                  style={{ width: '100%', textAlign: 'left', background: 'var(--bg)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  className="lb-control"
+                  style={{ minWidth: 150, justifyContent: 'space-between' }}
                   onClick={() => setShowHubDropdown(p => !p)}
                 >
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {hubFilter.length === 0 
-                      ? 'All Hubs' 
+                    {hubFilter.length === 0
+                      ? 'All Hubs'
                       : `${hubFilter.length} Hubs Selected`}
                   </span>
                   <ChevronDown size={14} style={{ opacity: 0.5 }} />
                 </button>
-                
+
                 {showHubDropdown && (
                   <>
                     <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowHubDropdown(false)} />
-                    <div style={{
-                      position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-                      background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8,
-                      boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
-                      overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4
-                    }}>
+                    <div className="lb-pop lb-pop--left">
                       {hubs.length > 0 && hubFilter.length < hubs.length && (
                         <button
                           type="button"
@@ -3749,12 +3730,7 @@ export default function EstimatesPage() {
                       {hubs.map(h => {
                         const isChecked = hubFilter.includes(String(h.id));
                         return (
-                          <label 
-                            key={h.id} 
-                            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', cursor: 'pointer', borderRadius: 4, userSelect: 'none' }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                          >
+                          <label key={h.id} className="lb-pop-item">
                             <input
                               type="checkbox"
                               checked={isChecked}
@@ -3766,7 +3742,7 @@ export default function EstimatesPage() {
                                 setPage(1);
                               }}
                             />
-                            <span style={{ fontSize: 13, color: 'var(--text)' }}>{h.hub_name || h.name}</span>
+                            <span>{h.hub_name || h.name}</span>
                           </label>
                         );
                       })}
@@ -3775,30 +3751,113 @@ export default function EstimatesPage() {
                 )}
               </div>
             )}
-            <button className="btn btn-ghost" onClick={fetchEstimates} title="Refresh" style={{ flexShrink: 0 }}>
+
+            <select
+              className="lb-control"
+              value={statusFilter}
+              onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+            >
+              <option value="">All statuses</option>
+              {Object.entries(STATUS_META).map(([val, m]) => (
+                <option key={val} value={val}>{m.label}</option>
+              ))}
+            </select>
+
+            {/* ── More filters ──
+                Vehicle type lives behind the funnel. The badge is what stops a
+                filtered list from looking like a broken one: with the control
+                hidden, a count is the only clue rows are being held back. */}
+            <div style={{ position: 'relative', flex: '0 0 auto' }}>
+              <button
+                type="button"
+                className="lb-control lb-icon-btn"
+                title="More filters"
+                aria-expanded={showMoreFilters}
+                onClick={() => setShowMoreFilters(p => !p)}
+              >
+                <SlidersHorizontal size={15} />
+                {hiddenFilterCount > 0 && <span className="lb-filter-count">{hiddenFilterCount}</span>}
+              </button>
+
+              {showMoreFilters && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreFilters(false)} />
+                  <div className="lb-pop">
+                    <div>
+                      <label className="lb-pop-label" htmlFor="lb-est-veh">Vehicle type</label>
+                      <select
+                        id="lb-est-veh"
+                        className="lb-control"
+                        value={vehicleTypeFilter}
+                        onChange={e => { setVehicleTypeFilter(e.target.value); setPage(1); }}
+                      >
+                        <option value="">All Vehicles</option>
+                        <option value="2W">2W Only</option>
+                        <option value="4W">4W Only</option>
+                      </select>
+                    </div>
+                    <div className="lb-pop-foot">
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ padding: '6px 10px', fontSize: 13 }}
+                        disabled={hiddenFilterCount === 0}
+                        onClick={() => { setVehicleTypeFilter(''); setPage(1); }}
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ padding: '6px 10px', fontSize: 13 }}
+                        onClick={() => setShowMoreFilters(false)}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button type="button" className="lb-control lb-icon-btn" onClick={fetchEstimates} title="Refresh">
               <RefreshCw size={15} />
             </button>
-            <span style={{ fontSize: 13, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-              {total} estimate{total !== 1 ? 's' : ''}
-            </span>
+
+            <div className="lb-toolbar-right">
+              <span className="lb-count">{total} estimate{total !== 1 ? 's' : ''}</span>
+              <button
+                type="button"
+                className="lb-control"
+                onClick={() => setShowCreateAppt(true)}
+                title="Create a new customer + vehicle, then go straight into the estimate — no appointment is created"
+              >
+                <Plus size={15} /> New Customer
+              </button>
+              <button type="button" className="lb-control lb-primary" onClick={() => setShowCreate(true)}>
+                <Plus size={15} /> New Estimate
+              </button>
+            </div>
           </div>
 
-          {/* ── Table ── */}
-          <div className="card" style={{ overflowX: 'auto' }}>
+          {/* ── Table ──
+              Full bleed: no card wrapper, no outer border or radius, and
+              horizontal dividers only. */}
+          <div className="lb-list">
             {loading ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div className="lb-empty">
                 <Clock size={28} style={{ opacity: 0.3, marginBottom: 10 }} />
                 <p style={{ margin: 0 }}>Loading estimates…</p>
               </div>
             ) : estimates.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div className="lb-empty">
                 <FileText size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
                 <p style={{ margin: 0 }}>
                   {search || statusFilter || hubFilter ? 'No estimates match your filters.' : 'No estimates yet. Create your first one above.'}
                 </p>
               </div>
             ) : (
-              <div className="est-table-wrap">
+              <div className="est-table-wrap lb-scroll-x">
                 <table className="est-table">
                   <thead>
                     <tr>
@@ -3808,7 +3867,10 @@ export default function EstimatesPage() {
                       <th style={{ textAlign: 'right' }}>Items</th>
                       <th>Totals</th>
                       <th>Status</th>
-                      <th>Created</th>
+                      {/* The list is ORDER BY estimate_date DESC, id DESC on
+                          the server. The arrow states that; it is not a
+                          control, because there is no ?sort= to send. */}
+                      <th className="lb-sorted">Created <ArrowDown size={12} className="lb-sort-icon" /></th>
                     </tr>
                   </thead>
                   <tbody>

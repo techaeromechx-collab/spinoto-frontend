@@ -7,11 +7,15 @@ import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import PaginationBar from '../components/PaginationBar.jsx';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
+import { useDebouncedSearch } from '../hooks/useDebouncedSearch.js';
+import { usePageSearch } from '../lib/pageSearchStore.js';
+import '../styles/listLayout.css';
 import {
   Calendar, Search, Eye, X, AlertCircle, CheckCircle2,
   ChevronLeft, ChevronRight, Clock, Car, Bike, Network,
   User, Phone, MapPin, Wrench, IndianRupee, ChevronDown,
-  FileText, MessageCircle, Plus, Pencil, Filter, Copy, Check, Trash2,
+  FileText, MessageCircle, Plus, Pencil, Copy, Check, Trash2,
+  SlidersHorizontal, ArrowDown,
 } from 'lucide-react';
 import '../styles/AppointmentsPage.css';
 
@@ -2826,7 +2830,13 @@ export default function AppointmentsPage() {
   const listStateRef = useRef(readListState('sp_appointments_list_v1'));
   const ls = listStateRef.current;
 
-  const [search, setSearch] = useState(ls.search ?? '');
+  // The old version was a hand-rolled 350ms timer writing to an UNCONTROLLED
+  // input (defaultValue), so the box could not be cleared from code and the
+  // restored value never re-synced. The shared hook makes it controlled and
+  // adds the minimum-length guard the other lists have.
+  const { input: searchInput, setInput: setSearchInput, search, tooShort, minChars } =
+    useDebouncedSearch(ls.search ?? '');
+  const onSearchChange = useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
   const [filterStatus, setFilterStatus] = useState(ls.filterStatus ?? '');
   // Hub users are locked to their own hub — pre-fill from user object.
   // Multi-select like the Estimates page's hub filter — array of hub-id strings.
@@ -2840,18 +2850,36 @@ export default function AppointmentsPage() {
 
   // Persist whenever any of these change
   useEffect(() => {
-    writeListState('sp_appointments_list_v1', { page, pageSize, search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy });
-  }, [page, pageSize, search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy]);
+    // searchInput, not search: restore the box exactly as they left it, even mid-word.
+    writeListState('sp_appointments_list_v1', { search: searchInput, page, pageSize, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy });
+  }, [page, pageSize, searchInput, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy]);
 
   useListScrollRestore('sp_appointments_list_v1', !loading);
 
-  const [showFilters, setShowFilters] = useState(true); // mobile funnel toggle
+  // Claim the top bar's search box. Appointments open in a modal rather than an
+  // in-page detail view, so there is no state in which the box should be
+  // released — it is always the list underneath.
+  usePageSearch({
+    value: searchInput,
+    onChange: onSearchChange,
+    placeholder: 'Search customer, vehicle or mobile no.',
+    hint: tooShort ? `${minChars}+ characters` : '',
+  });
+
+  // How many of the filters hidden behind the funnel are actually on. A date
+  // range counts as one thing, not two — that is how a person thinks of it.
+  const hiddenFilterCount =
+    (filterCreatedBy ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
+
+  // Starts CLOSED. `true` was right when this drove a filter ROW that expanded
+  // in place; it now drives the funnel popover, and a popover open on arrival
+  // covers the first rows of the table every time you land on the page.
+  const [showFilters, setShowFilters] = useState(false);
   const [modal, setModal] = useState(null); // null | { mode: 'view', appt }
   const [createModal, setCreateModal] = useState(false);
   const [prefillCustomer, setPrefillCustomer] = useState(null); // customer to auto-select when opened from Customer Profile
   const [editAppt, setEditAppt] = useState(null); // appt being edited
   const [toast, setToast] = useState(null);
-  const searchTimer = useRef(null);
 
   // Load statuses + hubs + users once
   useEffect(() => {
@@ -2960,11 +2988,6 @@ export default function AppointmentsPage() {
     setCreateModal(true);
   }, [location.state?.prefillCustomer]);
 
-  function handleSearchChange(v) {
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => { setSearch(v); setPage(1); }, 350);
-  }
-
   function showToast(msg, type = 'success') {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
@@ -2980,155 +3003,193 @@ export default function AppointmentsPage() {
   const end = Math.min(page * pageSize, total);
 
   return (
-    <div className="appt-page">
+    /* lb-page cancels the app wrapper's padding and max-width so the table runs
+       edge to edge. Unlike the invoice pages there is no in-page detail view to
+       exempt — an appointment opens in a modal — so this applies always. */
+    <div className="appt-page lb-page">
       {toast && (
         <div className={`appt-toast appt-toast--${toast.type}`}>
           <CheckCircle2 size={14} /> {toast.msg}
         </div>
       )}
 
-      <header className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Calendar size={20} /> Appointments
-          </h2>
-          <p>Track and manage all customer appointments.</p>
-        </div>
-        {canCreate && !isHubUser && (
-          <button
-            onClick={() => setCreateModal(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 10, border: 'none', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(8,145,178,.3)', transition: 'background .12s' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--primary-hover)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'var(--primary)'}
-          >
-            <Plus size={15} /> New Appointment
-          </button>
-        )}
-      </header>
+      {/* No title block: the top bar's breadcrumb already reads
+          "Home › Appointments", and New Appointment has moved into the toolbar
+          row with the other controls. */}
 
       {error && <div className="banner error">{error}</div>}
 
-      {/* Filters — wrappers use display:contents on desktop so the layout
-          there is unchanged; on mobile they become rows per the design. */}
-      <div className="appt-filters">
-        <div className="appt-search-row">
-          <div className="appt-search-wrap">
-            <Search size={14} className="appt-search-icon" />
-            <input className="appt-search" placeholder="Search customer, vehicle, mobile no…"
-              defaultValue={search}
-              onChange={e => handleSearchChange(e.target.value)} />
+      {/* ── Toolbar ──
+          No card: filters sit directly on the page background, one row, actions
+          pushed right. Shared with Estimates and the two invoice lists — see
+          styles/listLayout.css. The search box is in the top bar.
+
+          This replaces .appt-filters, which had its own show/hide toggle for the
+          whole filter row. Two collapse mechanisms on one toolbar — that toggle
+          and the funnel — would be two buttons doing nearly the same thing, so
+          the funnel wins and the toggle is gone. */}
+      <div className="lb-toolbar">
+        {!isHubUser && (
+          <div style={{ position: 'relative', flex: '0 0 auto' }}>
+            <button
+              type="button"
+              className="lb-control"
+              style={{ minWidth: 150, justifyContent: 'space-between' }}
+              onClick={() => setShowHubDropdown(p => !p)}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {filterHub.length === 0 ? 'All Hubs' : `${filterHub.length} Hubs Selected`}
+              </span>
+              <ChevronDown size={14} style={{ opacity: 0.5, flexShrink: 0 }} />
+            </button>
+
+            {showHubDropdown && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowHubDropdown(false)} />
+                <div className="lb-pop lb-pop--left">
+                  {hubs.length > 0 && filterHub.length < hubs.length && (
+                    <button
+                      type="button"
+                      style={{
+                        width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                        color: 'var(--primary, #16b994)', background: 'none', border: 'none',
+                        textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                        paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4,
+                      }}
+                      onClick={() => { setFilterHub(hubs.map(h => String(h.id))); setPage(1); }}
+                    >
+                      <Check size={12} /> Select All
+                    </button>
+                  )}
+                  {filterHub.length > 0 && (
+                    <button
+                      type="button"
+                      style={{
+                        width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                        color: 'var(--text-danger, #dc2626)', background: 'none', border: 'none',
+                        textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                        paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4,
+                      }}
+                      onClick={() => { setFilterHub([]); setPage(1); }}
+                    >
+                      <X size={12} /> Clear Selection
+                    </button>
+                  )}
+                  {hubs.map(h => {
+                    const isChecked = filterHub.includes(String(h.id));
+                    return (
+                      <label key={h.id} className="lb-pop-item">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            const newIds = isChecked
+                              ? filterHub.filter(id => id !== String(h.id))
+                              : [...filterHub, String(h.id)];
+                            setFilterHub(newIds);
+                            setPage(1);
+                          }}
+                        />
+                        <span>{h.hub_name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
+        )}
+
+        <select
+          className="lb-control"
+          value={filterStatus}
+          onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
+        >
+          <option value="">All Status</option>
+          {statusList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+
+        {/* ── More filters ──
+            Created-by and the date range live behind the funnel. The badge is
+            what stops a filtered list from looking like a broken one: with the
+            controls hidden, a count is the only clue rows are being held back. */}
+        <div style={{ position: 'relative', flex: '0 0 auto' }}>
           <button
             type="button"
-            className={`appt-filter-toggle ${showFilters ? 'appt-filter-toggle--on' : ''}`}
+            className="lb-control lb-icon-btn"
+            title="More filters"
+            aria-expanded={showFilters}
             onClick={() => setShowFilters(v => !v)}
-            title="Show / hide filters"
           >
-            <Filter size={15} />
+            <SlidersHorizontal size={15} />
+            {hiddenFilterCount > 0 && <span className="lb-filter-count">{hiddenFilterCount}</span>}
           </button>
-        </div>
-        <div className={`appt-filter-row ${showFilters ? '' : 'appt-filter-row--collapsed'}`}>
-          <select className="appt-filter-sel" value={filterStatus}
-            onChange={e => { setFilterStatus(e.target.value); setPage(1); }}>
-            <option value="">All Status</option>
-            {statusList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          {!isHubUser && (
-            <div style={{ position: 'relative' }}>
-              <button
-                type="button"
-                className="appt-filter-sel"
-                style={{ textAlign: 'left', background: 'var(--bg)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, minWidth: 140 }}
-                onClick={() => setShowHubDropdown(p => !p)}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {filterHub.length === 0
-                    ? 'All Hubs'
-                    : `${filterHub.length} Hubs Selected`}
-                </span>
-                <ChevronDown size={14} style={{ opacity: 0.5, flexShrink: 0 }} />
-              </button>
 
-              {showHubDropdown && (
-                <>
-                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowHubDropdown(false)} />
-                  <div style={{
-                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-                    background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8,
-                    boxShadow: '0 8px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 250,
-                    overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200,
-                  }}>
-                    {hubs.length > 0 && filterHub.length < hubs.length && (
-                      <button
-                        type="button"
-                        style={{
-                          width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
-                          color: 'var(--primary, #16b994)', background: 'none', border: 'none',
-                          textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
-                          paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4,
-                        }}
-                        onClick={() => { setFilterHub(hubs.map(h => String(h.id))); setPage(1); }}
-                      >
-                        <Check size={12} /> Select All
-                      </button>
-                    )}
-                    {filterHub.length > 0 && (
-                      <button
-                        type="button"
-                        style={{
-                          width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
-                          color: 'var(--text-danger, #dc2626)', background: 'none', border: 'none',
-                          textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
-                          paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4,
-                        }}
-                        onClick={() => { setFilterHub([]); setPage(1); }}
-                      >
-                        <X size={12} /> Clear Selection
-                      </button>
-                    )}
-                    {hubs.map(h => {
-                      const isChecked = filterHub.includes(String(h.id));
-                      return (
-                        <label
-                          key={h.id}
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', cursor: 'pointer', borderRadius: 4, userSelect: 'none' }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {
-                              const newIds = isChecked
-                                ? filterHub.filter(id => id !== String(h.id))
-                                : [...filterHub, String(h.id)];
-                              setFilterHub(newIds);
-                              setPage(1);
-                            }}
-                          />
-                          <span style={{ fontSize: 13, color: 'var(--text)' }}>{h.hub_name}</span>
-                        </label>
-                      );
-                    })}
+          {showFilters && (
+            <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowFilters(false)} />
+              <div className="lb-pop">
+                <div>
+                  <label className="lb-pop-label" htmlFor="lb-appt-by">Created by</label>
+                  <select
+                    id="lb-appt-by"
+                    className="lb-control"
+                    value={filterCreatedBy}
+                    onChange={e => { setFilterCreatedBy(e.target.value); setPage(1); }}
+                  >
+                    <option value="">All Created By</option>
+                    {usersList.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="lb-pop-label">Date range</label>
+                  <div className="lb-pop-row">
+                    <input
+                      type="date" className="lb-control" value={dateFrom}
+                      max={dateTo || undefined} title="From date"
+                      onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+                    />
+                    <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>to</span>
+                    <input
+                      type="date" className="lb-control" value={dateTo}
+                      min={dateFrom || undefined} title="To date"
+                      onChange={e => { setDateTo(e.target.value); setPage(1); }}
+                    />
                   </div>
-                </>
-              )}
-            </div>
+                </div>
+
+                <div className="lb-pop-foot">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 10px', fontSize: 13 }}
+                    disabled={hiddenFilterCount === 0}
+                    onClick={() => { setFilterCreatedBy(''); setDateFrom(''); setDateTo(''); setPage(1); }}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 10px', fontSize: 13 }}
+                    onClick={() => setShowFilters(false)}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </>
           )}
-          <select className="appt-filter-sel" value={filterCreatedBy}
-            onChange={e => { setFilterCreatedBy(e.target.value); setPage(1); }}>
-            <option value="">All Created By</option>
-            {usersList.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-          <div className="appt-date-range">
-            <input type="date" className="appt-filter-sel" value={dateFrom}
-              onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-              title="From date" style={{ minWidth: 140 }} />
-            <span className="appt-date-dash">–</span>
-            <input type="date" className="appt-filter-sel" value={dateTo}
-              onChange={e => { setDateTo(e.target.value); setPage(1); }}
-              title="To date" style={{ minWidth: 140 }} />
-          </div>
+        </div>
+
+        <div className="lb-toolbar-right">
+          <span className="lb-count">{total} appointment{total !== 1 ? 's' : ''}</span>
+          {canCreate && !isHubUser && (
+            <button type="button" className="lb-control lb-primary" onClick={() => setCreateModal(true)}>
+              <Plus size={15} /> New Appointment
+            </button>
+          )}
         </div>
       </div>
 
@@ -3155,13 +3216,21 @@ export default function AppointmentsPage() {
         ))}
       </div>
 
-      {/* Table */}
-      <div className="card" style={{ overflowX: 'auto' }}>
-        <div style={{ overflowX: 'auto' }}>
+      {/* ── Table ──
+          Full bleed: no card wrapper, no outer border or radius, horizontal
+          dividers only. One scroll container, not the two nested ones this
+          had — the outer was dead and only ever produced a second scrollbar. */}
+      <div className="lb-list">
+        <div className="lb-scroll-x">
           <table className="data-table appt-table">
             <thead>
               <tr>
-                <th>#</th>
+                {/* The list is ORDER BY created_at DESC, id DESC on the server.
+                    The arrow goes on # — the id runs in the same order as
+                    created_at, and it is the only visible column that does.
+                    NOT on Schedule: that is the appointment's date, which is not
+                    what the list is ordered by, and marking it would be a lie. */}
+                <th className="lb-sorted">#  <ArrowDown size={12} className="lb-sort-icon" /></th>
                 <th>Customer</th>
                 <th>Vehicle</th>
                 <th>Hub</th>

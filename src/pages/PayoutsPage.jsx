@@ -1,15 +1,45 @@
 'use strict';
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
+import { useCan } from '../auth/AuthContext.jsx';
+import DeleteHubPaymentDialog from '../components/DeleteHubPaymentDialog.jsx';
+import PaginationBar from '../components/PaginationBar.jsx';
+import DeletePaymentBatchDialog from '../components/DeletePaymentBatchDialog.jsx';
+import EditPaymentDateDialog from '../components/EditPaymentDateDialog.jsx';
+import { groupPaymentsByBatch } from '../lib/groupPayments.js';
 import {
   Wallet, RefreshCw, AlertCircle, CheckCircle2, Clock,
   X, ChevronRight, ChevronLeft, Search, CreditCard,
   MoreVertical, AlertTriangle, Trophy, Calendar, CalendarDays,
-  History, Receipt, Info, Download,
+  History, Receipt, Info, Download, Trash2, ChevronDown as ChevDown, Layers, CalendarClock,
 } from 'lucide-react';
 import '../styles/PayoutsPage.css';
+
+// Matches the server's `canPayment` on the DELETE route exactly
+// (purchase_invoices.routes.js:11). Recording and reversing a payout are the
+// same authority — a user who can add money to the record can take it back.
+//
+// This page had NO permission checks at all before this: every action button
+// rendered for everyone and only failed on click with a 403 toast.
+const PAYMENT_PERMS = ['ADD_INVOICE_PAYMENT', 'MANAGE_HUBS', 'ADD_PURCHASE_INVOICE_PAYMENT'];
+
+// The PI-000042 link. This expression was copy-pasted six times across this
+// file; the token/fallback branch is easy to get subtly wrong in one copy.
+function PiLink({ p, navigate }) {
+  return (
+    <button
+      onClick={() => navigate(
+        p.purchase_invoice_token ? `/purchase-invoices/${p.purchase_invoice_token}` : '/purchase-invoices',
+        p.purchase_invoice_token ? undefined : { state: { openId: p.purchase_invoice_id } }
+      )}
+      style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}
+    >
+      PI-{String(p.purchase_invoice_id).padStart(6,'0')}
+    </button>
+  );
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = n => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -116,10 +146,13 @@ function PayModal({ pi, onClose, onSuccess }) {
 }
 
 // ── PI Payment History Modal (3-dot menu) ─────────────────────────────────────
-function PIPaymentsModal({ pi, onClose }) {
+function PIPaymentsModal({ pi, onClose, showToast, onChanged }) {
   useEscapeClose(onClose);
+  const canDelete = useCan(...PAYMENT_PERMS);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [delPayment, setDelPayment] = useState(null);
+  const [editDate, setEditDate]     = useState(null);
 
   useEffect(() => {
     api(`/api/purchase-invoices/${pi.id}`)
@@ -160,17 +193,40 @@ function PIPaymentsModal({ pi, onClose }) {
           <div style={{ padding:24, textAlign:'center', color:'var(--text-muted)', fontSize:13 }}>No payments recorded yet.</div>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:0, border:'1px solid var(--border)', borderRadius:10, overflow:'hidden' }}>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', padding:'8px 14px', background:'var(--bg-soft)', borderBottom:'1px solid var(--border)' }}>
-              {['Date', 'Amount', 'Method', 'Reference'].map(h => (
+            <div style={{ display:'grid', gridTemplateColumns: canDelete ? '1fr 1fr 1fr 1fr 34px' : '1fr 1fr 1fr 1fr', padding:'8px 14px', background:'var(--bg-soft)', borderBottom:'1px solid var(--border)' }}>
+              {['Date', 'Amount', 'Method', 'Reference', ...(canDelete ? [''] : [])].map(h => (
                 <div key={h} style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em' }}>{h}</div>
               ))}
             </div>
             {payments.map((p, i) => (
-              <div key={p.id} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', padding:'10px 14px', borderBottom: i < payments.length-1 ? '1px solid var(--border)' : 'none', alignItems:'center' }}>
+              <div key={p.id} style={{ display:'grid', gridTemplateColumns: canDelete ? '1fr 1fr 1fr 1fr 34px' : '1fr 1fr 1fr 1fr', padding:'10px 14px', borderBottom: i < payments.length-1 ? '1px solid var(--border)' : 'none', alignItems:'center' }}>
                 <div style={{ fontSize:12, color:'var(--text-muted)' }}>{fmtDate(p.paid_at)}</div>
                 <div style={{ fontSize:13, fontWeight:700, color:'#16a34a' }}>{fmt(p.amount)}</div>
                 <MethodBadge method={p.method}/>
                 <div style={{ fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</div>
+                {canDelete && (
+                  <span style={{ display:'inline-flex', gap:2, justifyContent:'flex-end' }}>
+                    {/* No date edit for a batched payment: it has to move with
+                        its batch, which is a Payment History action. The server
+                        enforces this too (409 IN_BATCH). */}
+                    {!p.payment_batch_id && (
+                      <button
+                        type="button"
+                        className="po-act-btn"
+                        title="Change the payment date"
+                        aria-label={`Change date of payment of ${fmt(p.amount)}`}
+                        onClick={() => setEditDate({ kind:'single', payment:{ ...p, purchase_invoice_id: pi.id } })}
+                      ><CalendarClock size={12}/></button>
+                    )}
+                    <button
+                      type="button"
+                      className="po-del-btn"
+                      title="Delete this payment"
+                      aria-label={`Delete payment of ${fmt(p.amount)}`}
+                      onClick={() => setDelPayment(p)}
+                    ><Trash2 size={13}/></button>
+                  </span>
+                )}
               </div>
             ))}
             <div style={{ padding:'10px 14px', background:'var(--bg-soft)', borderTop:'1px solid var(--border)', display:'flex', justifyContent:'space-between' }}>
@@ -179,22 +235,56 @@ function PIPaymentsModal({ pi, onClose }) {
             </div>
           </div>
         )}
+
+        {delPayment && (
+          <DeleteHubPaymentDialog
+            payment={delPayment}
+            piId={pi.id}
+            showToast={showToast}
+            onClose={() => setDelPayment(null)}
+            /* The response carries the refreshed invoice, so the list updates
+               without a second request. onChanged reloads the page behind. */
+            onDeleted={(item) => { setPayments(item?.hub_payments || []); onChanged?.(); }}
+          />
+        )}
+
+        {editDate && (
+          <EditPaymentDateDialog
+            target={editDate}
+            showToast={showToast}
+            onClose={() => setEditDate(null)}
+            onSaved={() => {
+              api(`/api/purchase-invoices/${pi.id}`)
+                .then(res => setPayments(res.item?.hub_payments || []))
+                .catch(() => {});
+              onChanged?.();
+            }}
+          />
+        )}
       </div>
     </div>
   );
 }
 
 // ── Hub Payments Table ────────────────────────────────────────────────────────
-function HubPaymentsTab({ hubName, hubId, onExport }) {
+function HubPaymentsTab({ hubName, hubId, onExport, showToast, onChanged }) {
   const navigate = useNavigate();
+  const canDelete = useCan(...PAYMENT_PERMS);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [total, setTotal]       = useState(0);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate]     = useState('');
   const [search, setSearch]     = useState('');
+  const [delPayment, setDelPayment] = useState(null);
+  const [page, setPage]         = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [openBatch, setOpenBatch] = useState(null);   // expanded batch key
+  const [delBatch, setDelBatch]   = useState(null);
+  const [editDate, setEditDate]   = useState(null);   // { kind:'single'|'batch', … }
 
-  useEffect(() => {
+  // Extracted from the effect so the delete dialog can re-run it.
+  const load = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams({ hub_id: hubId });
     if (fromDate) params.set('from', fromDate);
@@ -205,6 +295,8 @@ function HubPaymentsTab({ hubName, hubId, onExport }) {
       .finally(() => setLoading(false));
   }, [hubId, fromDate, toDate]);
 
+  useEffect(() => { load(); }, [load]);
+
   // Client-side search: PI# or reference_no
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -214,6 +306,19 @@ function HubPaymentsTab({ hubName, hubId, onExport }) {
       (p.reference_no || '').toLowerCase().includes(q)
     );
   }, [payments, search]);
+
+  // Back to page 1 whenever the result set changes — searching while on page 3
+  // otherwise shows an empty page with a paginator still pointing at it.
+  useEffect(() => { setPage(1); }, [search, fromDate, toDate, hubId, pageSize]);
+
+  // Group BEFORE paginating: a page of 10 shows 10 payments as the user
+  // understands them. Paginating raw rows first would let one bulk payment of
+  // six invoices take most of a page on its own.
+  const entries   = useMemo(() => groupPaymentsByBatch(filtered), [filtered]);
+  const paginated = useMemo(
+    () => entries.slice((page - 1) * pageSize, page * pageSize),
+    [entries, page, pageSize]
+  );
 
   const filteredTotal = useMemo(
     () => filtered.reduce((s, p) => s + parseFloat(p.amount), 0),
@@ -305,41 +410,155 @@ function HubPaymentsTab({ hubName, hubId, onExport }) {
           {hasFilters ? 'No payments match your filters.' : `No payments recorded for ${hubName} yet.`}
         </div>
       ) : (
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
+        /* minWidth 900, not 600. At 600 the table FITS a normal desktop panel,
+           so `overflowX: auto` never triggered and the columns wrapped instead —
+           "Bank Transfer" over two lines, "PI-000041" broken across the date.
+           Wide enough to overflow is what makes the scroll appear; nowrap on
+           the cells below is what stops the wrapping in the first place. */
+        <div style={{ overflowX:'auto' }} className="po-hist-scroll">
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:900 }}>
             <thead>
               <tr>
-                {['Date & Time','PI #','Vehicle','Amount','Method','Reference','By'].map(h => (
-                  <th key={h} style={{ padding:'9px 14px', fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em', borderBottom:'1px solid var(--border)', background:'var(--bg-soft)', textAlign: h==='Amount'?'right':'left', whiteSpace:'nowrap' }}>{h}</th>
+                {['Date & Time','PI #','Vehicle','Amount','Method','Reference','By', ...(canDelete ? [''] : [])].map((h, hi) => (
+                  <th key={h||`act${hi}`} style={{ padding:'9px 14px', fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em', borderBottom:'1px solid var(--border)', background:'var(--bg-soft)', textAlign: h==='Amount'?'right':'left', whiteSpace:'nowrap', width: h===''?44:undefined }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p, i) => (
-                <tr key={p.id} style={{ background: i%2===0?undefined:'var(--bg-soft)' }}>
-                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(p.paid_at)}</td>
-                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
-                    <button onClick={() => navigate(p.purchase_invoice_token ? `/purchase-invoices/${p.purchase_invoice_token}` : '/purchase-invoices', p.purchase_invoice_token ? undefined : { state:{ openId: p.purchase_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
-                      PI-{String(p.purchase_invoice_id).padStart(6,'0')}
-                    </button>
-                  </td>
-                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
-                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
-                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}><MethodBadge method={p.method}/></td>
-                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</td>
-                  <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.created_by_name||'—'}</td>
-                </tr>
-              ))}
+              {paginated.map((e, i) => {
+                const zebra = i%2===0 ? undefined : 'var(--bg-soft)';
+                const td = { padding:'10px 14px', borderBottom:'1px solid var(--border)' };
+
+                // ── One payment, one invoice ──
+                if (e.kind === 'single') {
+                  const p = e.payment;
+                  return (
+                    <tr key={e.key} style={{ background: zebra }}>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(p.paid_at)}</td>
+                      <td style={td}><PiLink p={p} navigate={navigate}/></td>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
+                      <td style={{ ...td, fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
+                      <td style={td}><MethodBadge method={p.method}/></td>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</td>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.created_by_name||'—'}</td>
+                      {canDelete && (
+                        <td style={{ ...td, textAlign:'right', whiteSpace:'nowrap' }}>
+                          <button type="button" className="po-act-btn" title="Change the payment date"
+                            aria-label={`Change date of payment of ${fmt(p.amount)}`}
+                            onClick={() => setEditDate({ kind:'single', payment:p })}><CalendarClock size={13}/></button>
+                          <button type="button" className="po-del-btn" title="Delete this payment"
+                            aria-label={`Delete payment of ${fmt(p.amount)}`}
+                            onClick={() => setDelPayment(p)}><Trash2 size={13}/></button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                }
+
+                // ── One payment, several invoices ──
+                const open = openBatch === e.key;
+                return (
+                  <Fragment key={e.key}>
+                    <tr style={{ background: zebra, cursor:'pointer' }} onClick={() => setOpenBatch(open ? null : e.key)}>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(e.paid_at)}</td>
+                      <td style={td}>
+                        <span className="po-batch-chip">
+                          <ChevDown size={12} style={{ transform: open ? 'none' : 'rotate(-90deg)', transition:'transform .12s' }}/>
+                          <Layers size={11}/> {e.payments.length} invoices
+                        </span>
+                      </td>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>—</td>
+                      <td style={{ ...td, fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(e.amount)}</td>
+                      <td style={td}><MethodBadge method={e.method}/></td>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.reference_no||'—'}</td>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.created_by_name||'—'}</td>
+                      {canDelete && (
+                        <td style={{ ...td, textAlign:'right', whiteSpace:'nowrap' }} onClick={ev => ev.stopPropagation()}>
+                          <button type="button" className="po-act-btn" title="Change the date on the whole bulk payment"
+                            aria-label={`Change date of bulk payment of ${fmt(e.amount)}`}
+                            onClick={() => setEditDate(e)}><CalendarClock size={13}/></button>
+                          <button type="button" className="po-del-btn" title="Reverse this whole bulk payment"
+                            aria-label={`Reverse bulk payment of ${fmt(e.amount)}`}
+                            onClick={() => setDelBatch(e)}><Trash2 size={13}/></button>
+                        </td>
+                      )}
+                    </tr>
+                    {open && e.payments.map(p => (
+                      <tr key={p.id} className="po-batch-child">
+                        <td style={{ ...td, fontSize:11, color:'var(--text-muted)' }}></td>
+                        <td style={td}><PiLink p={p} navigate={navigate}/></td>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
+                        <td style={{ ...td, fontSize:12.5, fontWeight:600, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
+                        <td style={td}/><td style={td}/><td style={td}/>
+                        {canDelete && (
+                          <td style={{ ...td, textAlign:'right' }}>
+                            {/* Deletes only THIS invoice's share, leaving the
+                                rest of the batch intact. */}
+                            <button type="button" className="po-del-btn" title="Delete only this invoice's share"
+                              aria-label={`Delete ${fmt(p.amount)} from PI-${String(p.purchase_invoice_id).padStart(6,'0')}`}
+                              onClick={() => setDelPayment(p)}><Trash2 size={12}/></button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {!loading && filtered.length > 0 && (
+        <PaginationBar
+          page={page}
+          total={filtered.length}
+          pageSize={pageSize}
+          onPage={setPage}
+          onPageSize={setPageSize}
+          noun="payment"
+        />
+      )}
+
+      {delPayment && (
+        <DeleteHubPaymentDialog
+          payment={delPayment}
+          piId={delPayment.purchase_invoice_id}
+          showToast={showToast}
+          onClose={() => setDelPayment(null)}
+          /* Refetch rather than splice: deleting changes the invoice's paid
+             total, which the hub summary above this table also shows. */
+          onDeleted={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {delBatch && (
+        <DeletePaymentBatchDialog
+          batch={delBatch}
+          showToast={showToast}
+          onClose={() => setDelBatch(null)}
+          onDeleted={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {editDate && (
+        <EditPaymentDateDialog
+          target={editDate}
+          showToast={showToast}
+          onClose={() => setEditDate(null)}
+          /* Refetch: a re-dated row changes position in a list ordered by
+             paid_at, and may leave the active date filter entirely. */
+          onSaved={() => { load(); onChanged?.(); }}
+        />
       )}
     </div>
   );
 }
 
 // ── Global Payment History Tab ────────────────────────────────────────────────
-function GlobalPaymentHistory({ onExport }) {
+function GlobalPaymentHistory({ onExport, showToast, onChanged }) {
+  const canDelete = useCan(...PAYMENT_PERMS);
+  const [delPayment, setDelPayment] = useState(null);
   const navigate   = useNavigate();
   const [payments, setPayments] = useState([]);
   const [byHub, setByHub]       = useState([]);
@@ -349,8 +568,16 @@ function GlobalPaymentHistory({ onExport }) {
   const [search, setSearch]     = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate]     = useState('');
+  const [page, setPage]         = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [openBatch, setOpenBatch] = useState(null);   // expanded batch key
+  const [delBatch, setDelBatch]   = useState(null);
+  const [editDate, setEditDate]   = useState(null);   // { kind:'single'|'batch', … }
 
-  useEffect(() => {
+  // Extracted from the effect so the delete dialog can re-run it. The per-hub
+  // totals above the table come from the same response, so a partial refresh
+  // would leave them disagreeing with the rows.
+  const load = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams();
     if (hubFilter) params.set('hub_id', hubFilter);
@@ -363,6 +590,8 @@ function GlobalPaymentHistory({ onExport }) {
       .finally(() => setLoading(false));
   }, [hubFilter, fromDate, toDate]);
 
+  useEffect(() => { load(); }, [load]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return payments;
@@ -374,7 +603,16 @@ function GlobalPaymentHistory({ onExport }) {
     );
   }, [payments, search]);
 
-  const hubNames = useMemo(() => [...new Set(payments.map(p=>p.hub_name).filter(Boolean))].sort(), [payments]);
+  // Back to page 1 whenever the result set changes — searching while on page 3
+  // otherwise shows an empty page with a paginator still pointing at it.
+  useEffect(() => { setPage(1); }, [search, hubFilter, fromDate, toDate, pageSize]);
+
+  // Group BEFORE paginating — see the note in HubPaymentsTab.
+  const entries   = useMemo(() => groupPaymentsByBatch(filtered), [filtered]);
+  const paginated = useMemo(
+    () => entries.slice((page - 1) * pageSize, page * pageSize),
+    [entries, page, pageSize]
+  );
 
   return (
     <div>
@@ -451,40 +689,147 @@ function GlobalPaymentHistory({ onExport }) {
         <div style={{ padding:40, textAlign:'center', color:'var(--text-muted)', fontSize:13 }}>No payments found.</div>
       ) : (
         <div className="card" style={{ overflow:'hidden' }}>
-          <div style={{ overflowX:'auto' }}>
-            <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
+          {/* minWidth 1050: this table has one more column than the hub tab
+              (Hub), so it needs more room before it overflows — see the note
+              on the hub table above. */}
+          <div style={{ overflowX:'auto' }} className="po-hist-scroll">
+            <table style={{ width:'100%', borderCollapse:'collapse', minWidth:1050 }}>
               <thead>
                 <tr>
-                  {['Date & Time','PI #','Hub','Vehicle','Amount','Method','Reference','By'].map(h => (
-                    <th key={h} style={{ padding:'9px 14px', fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em', borderBottom:'1px solid var(--border)', background:'var(--bg-soft)', textAlign:h==='Amount'?'right':'left', whiteSpace:'nowrap' }}>{h}</th>
+                  {['Date & Time','PI #','Hub','Vehicle','Amount','Method','Reference','By', ...(canDelete ? [''] : [])].map((h, hi) => (
+                    <th key={h||`act${hi}`} style={{ padding:'9px 14px', fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em', borderBottom:'1px solid var(--border)', background:'var(--bg-soft)', textAlign:h==='Amount'?'right':'left', whiteSpace:'nowrap', width: h===''?44:undefined }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p, i) => (
-                  <tr key={p.id} style={{ background: i%2===0?undefined:'var(--bg-soft)' }}>
-                    <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(p.paid_at)}</td>
-                    <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
-                      <button onClick={()=>navigate(p.purchase_invoice_token ? `/purchase-invoices/${p.purchase_invoice_token}` : '/purchase-invoices', p.purchase_invoice_token ? undefined : { state:{ openId:p.purchase_invoice_id } })} style={{ background:'none', border:'none', padding:0, cursor:'pointer', fontWeight:700, fontSize:13, color:'var(--primary)', fontFamily:'inherit' }}>
-                        PI-{String(p.purchase_invoice_id).padStart(6,'0')}
-                      </button>
-                    </td>
-                    <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, fontWeight:600 }}>{p.hub_name||'—'}</td>
-                    <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
-                    <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
-                    <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)' }}><MethodBadge method={p.method}/></td>
-                    <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</td>
-                    <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{p.created_by_name||'—'}</td>
-                  </tr>
-                ))}
+                {paginated.map((e, i) => {
+                  const zebra = i%2===0 ? undefined : 'var(--bg-soft)';
+                  const td = { padding:'10px 14px', borderBottom:'1px solid var(--border)' };
+
+                  if (e.kind === 'single') {
+                    const p = e.payment;
+                    return (
+                      <tr key={e.key} style={{ background: zebra }}>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(p.paid_at)}</td>
+                        <td style={td}><PiLink p={p} navigate={navigate}/></td>
+                        <td style={{ ...td, fontSize:12, fontWeight:600 }}>{p.hub_name||'—'}</td>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
+                        <td style={{ ...td, fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
+                        <td style={td}><MethodBadge method={p.method}/></td>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</td>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.created_by_name||'—'}</td>
+                        {canDelete && (
+                          <td style={{ ...td, textAlign:'right', whiteSpace:'nowrap' }}>
+                            <button type="button" className="po-act-btn" title="Change the payment date"
+                              aria-label={`Change date of payment of ${fmt(p.amount)}`}
+                              onClick={() => setEditDate({ kind:'single', payment:p })}><CalendarClock size={13}/></button>
+                            <button type="button" className="po-del-btn" title="Delete this payment"
+                              aria-label={`Delete payment of ${fmt(p.amount)}`}
+                              onClick={() => setDelPayment(p)}><Trash2 size={13}/></button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  }
+
+                  const open = openBatch === e.key;
+                  return (
+                    <Fragment key={e.key}>
+                      <tr style={{ background: zebra, cursor:'pointer' }} onClick={() => setOpenBatch(open ? null : e.key)}>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{fmtDateTime(e.paid_at)}</td>
+                        <td style={td}>
+                          <span className="po-batch-chip">
+                            <ChevDown size={12} style={{ transform: open ? 'none' : 'rotate(-90deg)', transition:'transform .12s' }}/>
+                            <Layers size={11}/> {e.payments.length} invoices
+                          </span>
+                        </td>
+                        <td style={{ ...td, fontSize:12, fontWeight:600 }}>{e.hub_name||'—'}</td>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>—</td>
+                        <td style={{ ...td, fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(e.amount)}</td>
+                        <td style={td}><MethodBadge method={e.method}/></td>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.reference_no||'—'}</td>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.created_by_name||'—'}</td>
+                        {canDelete && (
+                          <td style={{ ...td, textAlign:'right', whiteSpace:'nowrap' }} onClick={ev => ev.stopPropagation()}>
+                            <button type="button" className="po-act-btn" title="Change the date on the whole bulk payment"
+                              aria-label={`Change date of bulk payment of ${fmt(e.amount)}`}
+                              onClick={() => setEditDate(e)}><CalendarClock size={13}/></button>
+                            <button type="button" className="po-del-btn" title="Reverse this whole bulk payment"
+                              aria-label={`Reverse bulk payment of ${fmt(e.amount)}`}
+                              onClick={() => setDelBatch(e)}><Trash2 size={13}/></button>
+                          </td>
+                        )}
+                      </tr>
+                      {open && e.payments.map(p => (
+                        <tr key={p.id} className="po-batch-child">
+                          <td style={td}/>
+                          <td style={td}><PiLink p={p} navigate={navigate}/></td>
+                          <td style={td}/>
+                          <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
+                          <td style={{ ...td, fontSize:12.5, fontWeight:600, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
+                          <td style={td}/><td style={td}/><td style={td}/>
+                          {canDelete && (
+                            <td style={{ ...td, textAlign:'right' }}>
+                              <button type="button" className="po-del-btn" title="Delete only this invoice's share"
+                                aria-label={`Delete ${fmt(p.amount)} from PI-${String(p.purchase_invoice_id).padStart(6,'0')}`}
+                                onClick={() => setDelPayment(p)}><Trash2 size={12}/></button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          {/* Total is over the whole FILTERED set, not the visible page — a
+              running total that changes as you page through is not a total. */}
           <div style={{ padding:'10px 16px', background:'var(--bg-soft)', borderTop:'1px solid var(--border)', display:'flex', justifyContent:'space-between' }}>
             <span style={{ fontSize:12, color:'var(--text-muted)' }}>{filtered.length} record{filtered.length!==1?'s':''}</span>
             <span style={{ fontSize:13, fontWeight:800, color:'#16a34a' }}>{fmt(filtered.reduce((s,p)=>s+parseFloat(p.amount),0))}</span>
           </div>
+          <PaginationBar
+            page={page}
+            total={filtered.length}
+            pageSize={pageSize}
+            onPage={setPage}
+            onPageSize={setPageSize}
+            noun="payment"
+          />
         </div>
+      )}
+
+      {delPayment && (
+        <DeleteHubPaymentDialog
+          payment={delPayment}
+          piId={delPayment.purchase_invoice_id}
+          showToast={showToast}
+          onClose={() => setDelPayment(null)}
+          /* load() refreshes this table; onChanged tells the page to reload the
+             payouts buckets, since the invoice may have returned to unpaid. */
+          onDeleted={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {delBatch && (
+        <DeletePaymentBatchDialog
+          batch={delBatch}
+          showToast={showToast}
+          onClose={() => setDelBatch(null)}
+          onDeleted={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {editDate && (
+        <EditPaymentDateDialog
+          target={editDate}
+          showToast={showToast}
+          onClose={() => setEditDate(null)}
+          /* Refetch: a re-dated row changes position in a list ordered by
+             paid_at, and may leave the active date filter entirely. */
+          onSaved={() => { load(); onChanged?.(); }}
+        />
       )}
     </div>
   );
@@ -713,7 +1058,7 @@ function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
 // ── Invoice Panel (with tabs) ─────────────────────────────────────────────────
 const PAGE_SIZES = [10, 25, 50];
 
-function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkSuccess, onExport }) {
+function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkSuccess, onExport, showToast, onChanged }) {
   const navigate    = useNavigate();
   const [tab, setTab]           = useState('invoices');
   const [page, setPage]         = useState(1);
@@ -897,7 +1242,7 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
       )}
 
       {/* Payments tab */}
-      {tab==='payments' && <HubPaymentsTab hubName={hubName} hubId={hubId} onExport={onExport}/>}
+      {tab==='payments' && <HubPaymentsTab hubName={hubName} hubId={hubId} onExport={onExport} showToast={showToast} onChanged={onChanged}/>}
 
       {/* Bulk payment modal */}
       {bulkModal && selectedInvoices.length > 0 && (
@@ -1324,6 +1669,8 @@ export default function PayoutsPage() {
                     onViewPayments={setViewPaymentsPi}
                     onBulkSuccess={handleBulkPaySuccess}
                     onExport={handleExport}
+                    showToast={showToast}
+                    onChanged={load}
                   />
                 )}
               </div>
@@ -1346,10 +1693,10 @@ export default function PayoutsPage() {
       )}
 
       {/* Payment History tab */}
-      {mainTab==='history' && <GlobalPaymentHistory onExport={handleExport}/>}
+      {mainTab==='history' && <GlobalPaymentHistory onExport={handleExport} showToast={showToast} onChanged={load}/>}
 
       {payPi && <PayModal pi={payPi} onClose={()=>setPayPi(null)} onSuccess={handlePaySuccess}/>}
-      {viewPaymentsPi && <PIPaymentsModal pi={viewPaymentsPi} onClose={()=>setViewPaymentsPi(null)}/>}
+      {viewPaymentsPi && <PIPaymentsModal pi={viewPaymentsPi} onClose={()=>setViewPaymentsPi(null)} showToast={showToast} onChanged={load}/>}
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
     </div>
   );
