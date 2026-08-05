@@ -6,6 +6,7 @@ import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { useCan } from '../auth/AuthContext.jsx';
 import DeleteHubPaymentDialog from '../components/DeleteHubPaymentDialog.jsx';
 import PaginationBar from '../components/PaginationBar.jsx';
+import HoverCard from '../components/HoverCard.jsx';
 import DeletePaymentBatchDialog from '../components/DeletePaymentBatchDialog.jsx';
 import EditPaymentDateDialog from '../components/EditPaymentDateDialog.jsx';
 import { groupPaymentsByBatch } from '../lib/groupPayments.js';
@@ -39,6 +40,27 @@ function PiLink({ p, navigate }) {
       PI-{String(p.purchase_invoice_id).padStart(6,'0')}
     </button>
   );
+}
+
+/**
+ * Has the customer paid us for this job yet?
+ *
+ * "Awaiting payment" on a payout row is only a DISPLAY label — it comes from
+ * payout_due_date being NULL, and nothing in addHubPayment or bulkPayment ever
+ * looks at the customer invoice. So paying a hub before the customer has paid
+ * is permitted, and sometimes deliberate (fronting a hub). It is also exactly
+ * what a mis-click on the wrong row looks like.
+ *
+ * Hence: warn, do not block. This returns what the warning needs, or null when
+ * there is nothing to say.
+ */
+function customerPaymentGap(pi) {
+  if (!pi?.customer_invoice_id) return null;          // no CI linked — nothing to compare
+  const total = Number(pi.ci_grand_total || 0);
+  const paid  = Number(pi.ci_amount_paid || 0);
+  const due   = total - paid;
+  if (due <= 0.01) return null;                        // customer has settled
+  return { total, paid, due, partial: paid > 0.01 };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -83,6 +105,7 @@ function PayModal({ pi, onClose, onSuccess }) {
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState(null);
   const balance = parseFloat(pi.grand_total) - parseFloat(pi.amount_paid || 0);
+  const gap = customerPaymentGap(pi);
   const field = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
 
   async function submit(e) {
@@ -113,6 +136,27 @@ function PayModal({ pi, onClose, onSuccess }) {
         <div style={{ display:'flex', alignItems:'center', gap:8, background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#166534', marginBottom:16 }}>
           <CreditCard size={14}/> Balance due: <strong>{fmt(balance)}</strong>
         </div>
+
+        {/* Amber, not red, and above the form rather than beside the submit
+            button: this is information to weigh before filling anything in,
+            not an error to correct. The figures are already on the row (the
+            CI hover card uses the same fields), so this costs no extra call. */}
+        {gap && (
+          <div style={{ display:'flex', gap:9, alignItems:'flex-start', background:'#fffbeb', border:'1px solid #fcd34d', borderRadius:8, padding:'10px 14px', fontSize:12.5, color:'#92400e', marginBottom:16 }}>
+            <AlertTriangle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+            <div>
+              <strong>
+                {gap.partial
+                  ? 'The customer has only partly paid this job.'
+                  : 'The customer has not paid this job yet.'}
+              </strong>
+              <div style={{ marginTop:3, opacity:0.9 }}>
+                CI-{String(pi.customer_invoice_id).padStart(6,'0')} — {fmt(gap.paid)} of {fmt(gap.total)} received,
+                {' '}<strong>{fmt(gap.due)} still due</strong>. Paying the hub now means paying out before you have been paid.
+              </div>
+            </div>
+          </div>
+        )}
         <form onSubmit={submit} style={{ display:'flex', flexDirection:'column', gap:12 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
@@ -948,9 +992,14 @@ function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
       const bal = r2(parseFloat(pi.grand_total) - parseFloat(pi.amount_paid||0));
       const pay = r2(Math.min(remaining, bal));
       remaining = r2(remaining - pay);
-      return { ...pi, balance: bal, pay };
+      return { ...pi, balance: bal, pay, gap: customerPaymentGap(pi) };
     });
   }, [amount, sorted]);
+
+  // Which of the selected invoices has the customer not paid us for?
+  // Counted over the rows that will actually receive money — a row the
+  // distribution skips (pay = 0) is not a decision being made right now.
+  const unpaidByCustomer = useMemo(() => distribution.filter(d => d.pay > 0 && d.gap), [distribution]);
 
   async function submit(e) {
     e.preventDefault();
@@ -1007,6 +1056,22 @@ function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
             </div>
           </div>
 
+          {unpaidByCustomer.length > 0 && (
+            <div style={{ display:'flex', gap:9, alignItems:'flex-start', background:'#fffbeb', border:'1px solid #fcd34d', borderRadius:8, padding:'10px 14px', fontSize:12.5, color:'#92400e', marginBottom:16 }}>
+              <AlertTriangle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+              <div>
+                <strong>
+                  {unpaidByCustomer.length} of these {distribution.filter(d=>d.pay>0).length} payments
+                  {unpaidByCustomer.length===1 ? ' is' : ' are'} for a job the customer has not fully paid.
+                </strong>
+                <div style={{ marginTop:3, opacity:0.9 }}>
+                  {fmt(unpaidByCustomer.reduce((s,d)=>s+d.gap.due,0))} is still owed to you across
+                  {' '}{unpaidByCustomer.length===1 ? 'that invoice' : 'those invoices'} — marked <strong>⚠</strong> below.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Distribution preview */}
           <div>
             <div style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em', marginBottom:8 }}>Payment Distribution Preview</div>
@@ -1022,7 +1087,13 @@ function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
                 <tbody>
                   {distribution.map((d,i)=>(
                     <tr key={d.id} style={{ background: i%2===0?undefined:'var(--bg-soft)' }}>
-                      <td style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700, color:'var(--primary)' }}>PI-{String(d.id).padStart(6,'0')}</td>
+                      <td style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700, color:'var(--primary)' }}>
+                        PI-{String(d.id).padStart(6,'0')}
+                        {d.pay>0 && d.gap && (
+                          <span title={`Customer still owes ${fmt(d.gap.due)} on CI-${String(d.customer_invoice_id).padStart(6,'0')}`}
+                                style={{ color:'#d97706', marginLeft:5, cursor:'help' }}>⚠</span>
+                        )}
+                      </td>
                       <td style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', fontSize:13, textAlign:'right', color:'#ef4444', fontWeight:600 }}>{fmt(d.balance)}</td>
                       <td style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', fontSize:13, textAlign:'right', fontWeight:700, color: d.pay>=d.balance?'#16a34a':'#d97706' }}>{d.pay>0?fmt(d.pay):'—'}</td>
                       <td style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', fontSize:11 }}>
@@ -1173,9 +1244,35 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                           {isOverdue && <span style={{ fontSize:10, fontWeight:700, background:'#fee2e2', color:'#991b1b', padding:'1px 6px', borderRadius:99 }}>OVERDUE</span>}
                         </div>
                         {pi.customer_invoice_id && (
-                          <button onClick={()=>navigate(pi.customer_invoice_token ? `/customer-invoices/${pi.customer_invoice_token}` : '/customer-invoices', pi.customer_invoice_token ? undefined : { state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, marginTop:2, cursor:'pointer', fontWeight:700, fontSize:11, color:'var(--text-muted)', fontFamily:'inherit' }}>
-                            CI-{String(pi.customer_invoice_id).padStart(6,'0')}
-                          </button>
+                          <HoverCard
+                            width={210}
+                            card={<>
+                              <span style={{ fontSize:11, fontWeight:800, color:'var(--text-muted)', letterSpacing:'0.04em', paddingBottom:5, borderBottom:'1px solid var(--border)' }}>
+                                CI-{String(pi.customer_invoice_id).padStart(6,'0')}
+                              </span>
+                              <span className="po-ci-row"><span>Total</span><strong>{fmt(pi.ci_grand_total)}</strong></span>
+                              <span className="po-ci-row"><span>Paid</span><strong style={{ color:'#16a34a' }}>{fmt(pi.ci_amount_paid)}</strong></span>
+                              {/* Balance is derived, not stored — showing it saves
+                                  the reader the subtraction, and zero is the normal
+                                  case worth confirming. */}
+                              <span className="po-ci-row">
+                                <span>Balance</span>
+                                <strong style={{ color:(Number(pi.ci_grand_total||0)-Number(pi.ci_amount_paid||0))>0.01 ? '#dc2626' : 'var(--text-muted)' }}>
+                                  {fmt(Math.max(0, Number(pi.ci_grand_total||0)-Number(pi.ci_amount_paid||0)))}
+                                </strong>
+                              </span>
+                              {/* The date the payout schedule is anchored to —
+                                  this is what explains the Due Date column. */}
+                              <span className="po-ci-row po-ci-row--sep">
+                                <span>Customer paid</span>
+                                <strong>{pi.ci_last_paid_at ? fmtDate(pi.ci_last_paid_at) : 'Not yet'}</strong>
+                              </span>
+                            </>}
+                          >
+                            <button onClick={()=>navigate(pi.customer_invoice_token ? `/customer-invoices/${pi.customer_invoice_token}` : '/customer-invoices', pi.customer_invoice_token ? undefined : { state:{ openId:pi.customer_invoice_id } })} style={{ background:'none', border:'none', padding:0, marginTop:2, cursor:'pointer', fontWeight:700, fontSize:11, color:'var(--text-muted)', fontFamily:'inherit' }}>
+                              CI-{String(pi.customer_invoice_id).padStart(6,'0')}
+                            </button>
+                          </HoverCard>
                         )}
                       </td>
                       <td style={{ padding:'11px 14px', borderBottom:'1px solid var(--border)', fontSize:13, color:'var(--text-muted)' }}>{pi.vehicle_number||'—'}</td>

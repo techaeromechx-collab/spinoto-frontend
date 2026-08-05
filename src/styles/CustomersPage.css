@@ -329,6 +329,36 @@
      stacking extra padding on top of it (which was pushing this page's
      content noticeably further in than every other page in the app). */
   .cust-detail-page { min-height:100%; display:flex; flex-direction:column; }
+
+  /* ── Full-bleed detail view ──────────────────────────────────────────────
+     Matches the list it was opened from. The page root loses its side padding;
+     the sticky header and the profile body put it back on themselves, so the
+     content still has breathing room while the header's bottom rule and the
+     tab tables' dividers reach the window edge.
+
+     .content's padding is already cancelled by .content:has(.lb-page) in
+     listLayout.css — this only handles what the page paints itself. */
+  .cust-detail-page.lb-page { padding: 0 0 40px; }
+
+  /* The three regions that need the inset put back, named explicitly rather
+     than with a `> *` rule — the children here are a sticky header, a body, and
+     two conditional loading/error divs, and a blanket child selector would also
+     pad whatever gets added next without anyone deciding it should be. */
+  .cust-detail-page.lb-page .cust-detail-hdr,
+  .cust-detail-page.lb-page .cust-detail-loading,
+  .cust-detail-page.lb-page .cust-detail-err,
+  .cust-detail-page.lb-page .cust-detail-body {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  /* …except the tab table, which is the one thing that SHOULD reach the edge.
+     .cust-tab-content is inside .cust-detail-body, so it has to give the inset
+     back for the table to bleed, then the toolbar above it re-applies its own. */
+  .cust-detail-page.lb-page .cust-tab-content { margin-left: -20px; margin-right: -20px; }
+  .cust-detail-page.lb-page .cds-toolbar { padding-left: 20px; padding-right: 20px; }
+  .cust-detail-page.lb-page .cust-tab-content .pgbar,
+  .cust-detail-page.lb-page .cust-tab-content .cust-empty { padding-left: 20px; padding-right: 20px; }
   .cust-detail-hdr { display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px solid var(--border); flex-shrink:0; min-height:52px; background:var(--bg); position:sticky; top:0; z-index:10; }
   .cust-back-btn { display:inline-flex; align-items:center; gap:5px; border:1.5px solid var(--border); background:var(--bg); color:var(--text-muted); font-size:12px; font-weight:700; padding:5px 12px; border-radius:8px; cursor:pointer; transition:all .15s; white-space:nowrap; flex-shrink:0; }
   .cust-back-btn:hover { background:var(--bg-soft); color:var(--text); border-color:var(--text-muted); }
@@ -441,7 +471,7 @@
   }
 
   /* Appointments tab toolbar (search / status / date range / new appt) */
-  .cds-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .cds-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid var(--border); }
   .cds-filter-select { padding: 6px 9px; border: 1.5px solid var(--border); border-radius: 7px; font-size: 12px; background: var(--bg); color: var(--text); outline: none; }
   .cds-filter-select:focus { border-color: var(--primary); }
 

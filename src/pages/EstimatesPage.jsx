@@ -3435,6 +3435,8 @@ export default function EstimatesPage() {
 
   const [estimates, setEstimates] = react.useState([]);
   const [total, setTotal] = react.useState(0);
+  // Money total for EVERY row the current filters match, not just this page.
+  const [totals, setTotals] = react.useState(null);
   const [loading, setLoading] = react.useState(true);
 
   // Remember page/pageSize/filters across a full navigation away and back
@@ -3579,6 +3581,7 @@ export default function EstimatesPage() {
       const res = await api(`/api/estimates?${q.toString()}`, { signal: abortSignal() });
       setEstimates(res.items || []);
       setTotal(res.total ?? (res.items || []).length);
+      setTotals(res.totals || null);
       setLoading(false);
     } catch (e) {
       // A cancelled request is this code superseding itself, not a failure.
@@ -3991,6 +3994,10 @@ export default function EstimatesPage() {
               onPage={setPage}
               onPageSize={n => { setPageSize(n); setPage(1); }}
               noun="estimate"
+              /* One figure only. An estimate is a quote, not a receivable —
+                 there is no amount_paid on the table, and money against the
+                 job lives on the customer invoice that follows it. */
+              summary={totals && [{ label: 'quoted', value: fmt(totals.amount) }]}
             />
           </div>
         </>

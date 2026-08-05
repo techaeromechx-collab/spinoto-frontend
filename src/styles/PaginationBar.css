@@ -6,6 +6,20 @@
   }
   .pgbar-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .pgbar-info strong { color: var(--text); }
+
+  /* ── Money totals for the whole filtered set ──
+     Separated from the record count by a rule rather than another middot, so
+     "58 invoices" and "₹6,42,300 total" read as two different kinds of fact
+     instead of one long run-on. */
+  .pgbar-totals {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding-left: 12px; margin-left: 4px;
+    border-left: 1px solid var(--border);
+  }
+  .pgbar-total { white-space: nowrap; }
+  .pgbar-total strong { font-variant-numeric: tabular-nums; }
+  .pgbar-total--ok   strong { color: #16a34a; }
+  .pgbar-total--warn strong { color: #d97706; }
   .pgbar-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .pgbar-controls { display: flex; align-items: center; gap: 4px; }
   .pgbar-size { display: flex; align-items: center; }
@@ -35,5 +49,9 @@
   @media (max-width: 640px) {
     .pgbar { flex-direction: column; align-items: flex-start; gap: 8px; }
     .pgbar-controls { width: 100%; justify-content: center; }
+    /* The vertical rule and left padding assume the totals sit BESIDE the
+       record count. Once .pgbar-info wraps them onto their own line the rule
+       would hang under nothing, so it goes. */
+    .pgbar-totals { padding-left: 0; margin-left: 0; border-left: none; gap: 12px; }
     .pgbar-btn { min-width: 36px; height: 36px; font-size: 14px; }
   }

@@ -4,13 +4,14 @@
         .hb-toast--success { background:#16a34a; color:#fff; }
         .hb-toast--error   { background:#dc2626; color:#fff; }
         @keyframes hb-in { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
-        .hb-filters { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+        /* The list's filter row and pagination now come from listLayout.css
+           (.lb-toolbar / .lb-control) and PaginationBar. The .hb-search-* rules
+           below survive because the Manage Services modal still has its own
+           in-modal search box. */
         .hb-search-wrap { position:relative; flex:1; min-width:200px; }
         .hb-search-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; }
         .hb-search { width:100%; padding:8px 12px 8px 32px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; background:var(--bg); color:var(--text); outline:none; box-sizing:border-box; }
         .hb-search:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.1); }
-        .hb-filter-select { padding:8px 12px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; background:var(--bg); color:var(--text); outline:none; cursor:pointer; min-width:130px; }
-        .hb-filter-select:focus { border-color:var(--primary); }
         .hb-table { min-width:860px; }
         .hb-table th { white-space:nowrap; }
         .hb-table td { vertical-align:top; }
@@ -46,12 +47,6 @@
         .hbv-verified-banner { display:flex; align-items:center; flex-wrap:wrap; gap:8px; background:#dcfce7; border:1.5px solid #86efac; border-radius:10px; padding:10px 14px; margin:0 20px 0 20px; font-size:12px; color:#15803d; font-weight:600; }
         .hbv-btn-re-reject { margin-left:auto; background:#fff; color:#b91c1c; border:1.5px solid #fca5a5; border-radius:6px; padding:3px 10px; font-size:11px; font-weight:600; cursor:pointer; }
         .hbv-btn-re-reject:hover { background:#fee2e2; }
-        .hb-pagination { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted); }
-        .hb-pag-btns { display:flex; align-items:center; gap:6px; }
-        .hb-pag-btn { border:1.5px solid var(--border); background:var(--bg); border-radius:7px; padding:4px 8px; cursor:pointer; display:inline-flex; color:var(--text); }
-        .hb-pag-btn:disabled { opacity:.4; cursor:not-allowed; }
-        .hb-pag-btn:not(:disabled):hover { background:var(--bg-soft); }
-        .hb-pag-page { font-weight:600; font-size:12px; }
         .hb-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px; }
         .hb-modal { background:var(--bg); border-radius:16px; box-shadow:0 24px 64px rgba(0,0,0,.22); width:100%; max-width:640px; max-height:92vh; display:flex; flex-direction:column; overflow:hidden; }
         .hb-modal--view     { max-width:580px; }
@@ -195,7 +190,6 @@
         .hb-count-chip--cat { background:#e0f2fe; color:#0369a1; }
         .hb-count-chip--svc { background:#f0fdf4; color:#15803d; }
         @media (max-width:768px) {
-          .hb-filters { flex-direction:column; }
           .hb-search-wrap { min-width:unset; }
           .hb-row-2,.hb-row-3,.hb-doc-grid { grid-template-columns:1fr; }
           .hb-detail-grid { grid-template-columns:1fr; }
@@ -203,9 +197,6 @@
           .hb-modal { max-width:100%; border-radius:18px 18px 0 0; max-height:95dvh; }
           .hb-modal-hdr,.hb-modal-body,.hb-modal-ftr { padding-left:18px; padding-right:18px; }
           .hsm-toolbar { flex-direction:column; align-items:flex-start; }
-          .hb-pagination { flex-direction:column; gap:8px; text-align:center; }
-          .page-header { flex-direction:column; align-items:flex-start; gap:10px; }
-          .page-header .button { width:100%; justify-content:center; }
           .hbv-grid2,.hbv-grid3 { grid-template-columns:1fr; }
           .hb-card { padding:14px 16px; }
         }
@@ -213,7 +204,6 @@
         @media (max-width:480px) {
           .hb-row-2,.hb-row-3,.hb-doc-grid,.hbv-grid2,.hbv-grid3 { grid-template-columns:1fr; gap:10px; }
           .hb-modal-hdr,.hb-modal-body,.hb-modal-ftr { padding-left:14px; padding-right:14px; }
-          .hb-filters { gap:8px; }
           .hb-card { border-radius:10px; }
           .hb-detail-row { padding:10px 14px; }
         }

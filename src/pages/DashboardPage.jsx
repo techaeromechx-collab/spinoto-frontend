@@ -27,6 +27,55 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import '../styles/DashboardPage.css';
 
+/**
+ * The invoice statuses the Hub Performance card can show, in tab order.
+ *
+ * `cancelled` is deliberately absent — a leaderboard of cancelled invoices is
+ * not performance, and the backend excludes them from the aggregate entirely.
+ *
+ * Order runs settled → unsettled, so the default tab is the leftmost one.
+ */
+const HUB_STATUS_TABS = [
+  // "All" is every live invoice, so its count always equals the sum of the
+  // four status tabs beside it — cancelled is excluded in the query's JOIN,
+  // not per-status, which is what keeps that identity true.
+  { key: 'all',            label: 'All' },
+  { key: 'paid',           label: 'Paid' },
+  { key: 'partially_paid', label: 'Partially Paid' },
+  { key: 'approved',       label: 'Approved' },
+  { key: 'generated',      label: 'Generated' },
+];
+
+/**
+ * Rank the hubs for one status tab and take the top slice.
+ *
+ * Money-ranked, per the card's purpose: a hub with two ₹40,000 invoices is
+ * outperforming one with five ₹800 invoices, and ranking by count would say
+ * the opposite.
+ *
+ * Every hub is returned, not a top slice: the card scrolls past six rather
+ * than truncating. Sorting still has to happen on the client, because the
+ * order depends on which tab is open — a hub sitting 9th by paid value can be
+ * 1st by approved value, so an ORDER BY on one status could not serve the
+ * others.
+ */
+function rankHubs(all, status) {
+  return (all || [])
+    .map(h => ({
+      hub_id: h.hub_id,
+      hub_name: h.hub_name,
+      count: Number(h[`${status}_count`] || 0),
+      value: Number(h[`${status}_value`] || 0),
+    }))
+    // Value first; count breaks a value tie; name breaks that, so the order is
+    // stable across refetches instead of drifting with whatever Postgres
+    // happened to return (the old query had no tiebreaker at all, and three
+    // hubs on zero could reshuffle between refreshes).
+    .sort((a, b) => b.value - a.value
+                 || b.count - a.count
+                 || String(a.hub_name).localeCompare(String(b.hub_name)));
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -40,7 +89,15 @@ export default function DashboardPage() {
   const [todayEvents,  setTodayEvents]  = useState([]);
   const [eventsDone,   setEventsDone]   = useState({});
   const [pipelineFilter, setPipelineFilter] = useState('month');
-  const [hubFilter,      setHubFilter]      = useState('month');
+  // All Time by default: a hub that did no work this month still belongs on
+  // the list, and on a young dataset a month view is mostly empty rows.
+  const [hubFilter,      setHubFilter]      = useState('all');
+  // Which invoice status the card is showing. 'all' by default — the whole
+  // picture first, with the status splits one click away.
+  //
+  // Not to be confused with hubFilter above, whose 'all' means All Time. The
+  // two are unrelated: hubStatus picks a status, hubFilter picks a period.
+  const [hubStatus,      setHubStatus]      = useState('all');
   const [hubLoading,     setHubLoading]     = useState(false);
   const [hubPerfData,    setHubPerfData]    = useState(null);
   const [teamPerfFilter, setTeamPerfFilter] = useState('month');
@@ -223,7 +280,8 @@ export default function DashboardPage() {
       .finally(() => setTeamPerfLoading(false));
   }, [teamPerfFilter, canViewDashTeamPerf]);
 
-  // Hub performance filter
+  // Hub performance filter. Only the PERIOD refetches — every status already
+  // arrives in the same payload, so switching tabs is pure client-side work.
   useEffect(() => {
     if (!canViewDashHubPerformance) return;
     setHubLoading(true);
@@ -731,42 +789,99 @@ export default function DashboardPage() {
                   <option value="month">This Month</option>
                   <option value="all">All Time</option>
                 </select>
-                <Link to="/appointments" className="db-view-all">View all <ArrowRight size={12} /></Link>
+                {/* Straight into the Hub Revenue report rather than the raw
+                    invoice list — this card is a summary of that report, and
+                    the tab is carried in the URL so the link survives a
+                    reload and can be shared. */}
+                <Link to="/reports?tab=hub-revenue" className="db-view-all">View all <ArrowRight size={12} /></Link>
               </div>
             </div>
-            {(loading || hubLoading) ? <SkeletonList n={4} h={32} /> : !(hubPerfData ?? dashStats?.hub_performance)?.length ? (
-              <div className="db-empty" style={{ padding: 20 }}>
-                <Building2 size={20} style={{ opacity: 0.2 }} />
-                <div>No hub data yet</div>
-              </div>
-            ) : (
-              <div className="db-hub-list">
-                {(() => {
-                  const hubs = hubPerfData ?? dashStats.hub_performance;
-                  const maxApts = Math.max(...hubs.map(h => h.appointment_count), 1);
-                  return hubs.map((h, i) => (
-                    <motion.div key={h.hub_name} className="db-hub-row"
+
+            {/* ── Status tabs ──
+                Rendered outside the loading branch so they do not disappear
+                and reappear when the period changes — the tab strip is
+                navigation, and navigation that vanishes mid-interaction is
+                worse than navigation that briefly shows stale counts. */}
+            <div className="db-hub-tabbar">
+              {HUB_STATUS_TABS.map(t => {
+                const hubs = hubPerfData ?? dashStats?.hub_performance ?? [];
+                const n = hubs.reduce((a, h) => a + Number(h[`${t.key}_count`] || 0), 0);
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    className={`db-hub-tab${hubStatus === t.key ? ' db-hub-tab--active' : ''}`}
+                    onClick={() => setHubStatus(t.key)}
+                  >
+                    {t.label}
+                    {n > 0 && <span className="db-hub-tab-n">{n}</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            {(loading || hubLoading) ? <SkeletonList n={4} h={32} /> : (() => {
+              const all = hubPerfData ?? dashStats?.hub_performance ?? [];
+
+              const rows = rankHubs(all, hubStatus);
+
+              // "No all invoices in this period" is not a sentence — the All
+              // tab needs the status word dropped entirely.
+              const label = hubStatus === 'all'
+                ? ''
+                : ` ${HUB_STATUS_TABS.find(t => t.key === hubStatus)?.label.toLowerCase()}`;
+
+              // "No hubs at all" and "no invoices in this slice" are different
+              // problems and get different copy — the second one is normal and
+              // should not read like something is broken.
+              if (!all.length) return (
+                <div className="db-empty" style={{ padding: 20 }}>
+                  <Building2 size={20} style={{ opacity: 0.2 }} />
+                  <div>No hub data yet</div>
+                </div>
+              );
+              if (!rows.some(r => r.count > 0)) return (
+                <div className="db-empty" style={{ padding: 20 }}>
+                  <Building2 size={20} style={{ opacity: 0.2 }} />
+                  <div>No{label} invoices in this period</div>
+                </div>
+              );
+
+              return (
+                <div className="db-hub-list">
+                  {/* The header sits OUTSIDE the scroller so it stays put while
+                      the rows move. Making it position:sticky inside would
+                      work too, but a sticky row inside a short scroll box
+                      tends to overlap the first row mid-scroll. */}
+                  <div className="db-hub-hd">
+                    <span className="db-hub-hd-spacer" />
+                    <span className="db-hub-hd-name">Hub</span>
+                    <span className="db-hub-hd-num">Invoices</span>
+                    <span className="db-hub-hd-num db-hub-hd-val">Value</span>
+                  </div>
+                  <div className="db-hub-scroll">
+                  {rows.map((r, i) => (
+                    <motion.div
+                      /* Keyed on hub_id, not name: the list reorders when the
+                         tab changes, and a name key would make React reuse the
+                         wrong row's animation state. */
+                      key={r.hub_id ?? r.hub_name}
+                      className={`db-hub-row${r.count === 0 ? ' db-hub-row--zero' : ''}`}
                       initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.06 }}>
-                      <div className="db-hub-avatar">{h.hub_name.charAt(0)}</div>
-                      <div className="db-hub-info">
-                        <div className="db-hub-name">{h.hub_name}</div>
-                        <div className="db-hub-track">
-                          <motion.div className="db-hub-fill"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${(h.appointment_count / maxApts) * 100}%` }}
-                            transition={{ duration: 0.6, delay: 0.05 * i, ease: 'easeOut' }} />
-                        </div>
-                      </div>
-                      <div className="db-hub-right">
-                        <span className="db-hub-count">{h.appointment_count}</span>
-                        {Number(h.total_value) > 0 && <span className="db-hub-val">₹{fmtINR(Number(h.total_value))}</span>}
+                      transition={{ delay: i * 0.05 }}
+                    >
+                      <div className="db-hub-avatar">{r.hub_name.charAt(0)}</div>
+                      <div className="db-hub-name">{r.hub_name}</div>
+                      <div className="db-hub-num">{r.count}</div>
+                      <div className="db-hub-num db-hub-num--val">
+                        {r.count === 0 ? '—' : `₹${fmtINRFull(r.value)}`}
                       </div>
                     </motion.div>
-                  ));
-                })()}
-              </div>
-            )}
+                  ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1789,6 +1904,22 @@ function fmtShortDate(d) {
     : null;
   const dt = ymd ? new Date(ymd[0], ymd[1] - 1, ymd[2]) : new Date(d);
   return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+}
+
+/**
+ * Full rupee amount, Indian digit grouping, no abbreviation — ₹1,10,000 rather
+ * than fmtINR's ₹1.1L.
+ *
+ * Separate from fmtINR on purpose: fmtINR's compact form is right for the
+ * chart axes and the small stat chips it serves across this page, where space
+ * is tight and one significant decimal is enough. It is wrong where the figure
+ * is the point and people will reconcile it against an invoice — ₹1.1L could
+ * be anything from ₹1,05,000 to ₹1,14,999.
+ *
+ * Rounded to whole rupees: paise on a hub total is noise.
+ */
+function fmtINRFull(n) {
+  return Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
 }
 
 function fmtINR(n) {

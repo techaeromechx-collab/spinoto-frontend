@@ -1517,6 +1517,9 @@ export default function CustomerInvoicesPage() {
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  // Money totals for EVERY row the current filters match, not just this page.
+  // They come from the server for exactly that reason.
+  const [totals, setTotals] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Remember page/pageSize/filters across a full navigation away and back —
@@ -1653,6 +1656,7 @@ export default function CustomerInvoicesPage() {
       const res = await api(`/api/customer-invoices?${q.toString()}`, { signal: abortSignal() });
       setItems(res.items || []);
       setTotal(res.total ?? (res.items || []).length);
+      setTotals(res.totals || null);
       setLoading(false);
     } catch (e) {
       // A cancelled request is this code superseding itself, not a failure.
@@ -2092,6 +2096,11 @@ export default function CustomerInvoicesPage() {
             onPage={setPage}
             onPageSize={n => { setPageSize(n); setPage(1); }}
             noun="invoice"
+            summary={totals && [
+              { label: 'total',    value: fmt(totals.amount) },
+              { label: 'received', value: fmt(totals.paid), tone: 'ok' },
+              { label: 'due',      value: fmt(totals.due),  tone: 'warn' },
+            ]}
           />
         </>
       )}

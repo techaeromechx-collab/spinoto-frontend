@@ -7,10 +7,14 @@ import {
   Phone, Calendar, Eye, Pencil, Mail, StickyNote, Check,
   Car, Network, MessageCircle, Plus, Trash2, FileText, Building2,
   IndianRupee, BarChart3, Wallet, AlertCircle,
+  ArrowDown,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
+import { useDebouncedSearch } from '../hooks/useDebouncedSearch.js';
+import { usePageSearch } from '../lib/pageSearchStore.js';
+import '../styles/listLayout.css';
 import '../styles/CustomersPage.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -772,7 +776,11 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
   }
 
   return (
-    <div className="cust-detail-page">
+    /* lb-page cancels the app wrapper's padding and max-width so the profile
+       runs edge to edge, matching the list you arrived from. The cards INSIDE
+       keep their frames — they are bounded objects (contact details, a vehicle,
+       a GST record) and a full-bleed card is not a card. */
+    <div className="cust-detail-page lb-page">
 
       {/* ── Top header bar ── */}
       <div className="cust-detail-hdr">
@@ -1269,42 +1277,58 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                 <div className="cust-empty">No appointments yet.</div>
               ) : (
                 <>
+                  {/* Same pill controls as every list toolbar. This search
+                      stays IN the page rather than moving to the top bar: the
+                      top bar belongs to the customer list behind this view, and
+                      one box cannot mean two things at once. */}
                   <div className="cds-toolbar">
-                    <div className="cust-search-wrap" style={{ maxWidth: 220 }}>
-                      <Search size={13} className="cust-search-icon"/>
-                      <input className="cust-search" placeholder="Search appointments…"
+                    <div style={{ position: 'relative', flex: '0 0 auto' }}>
+                      <Search size={13} style={{ position:'absolute', left:11, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)' }}/>
+                      <input className="lb-control" style={{ paddingLeft: 30, minWidth: 200 }}
+                        placeholder="Search appointments…"
                         value={apptSearch}
                         onChange={e => { setApptSearch(e.target.value); setApptPage(1); }}/>
                     </div>
-                    <select className="cds-filter-select" value={apptStatusFilter}
+                    <select className="lb-control" value={apptStatusFilter}
                       onChange={e => { setApptStatusFilter(e.target.value); setApptPage(1); }}>
                       <option value="">All statuses</option>
                       {apptStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
-                    <input type="date" className="cds-filter-select" value={apptDateFrom}
+                    <input type="date" className="lb-control" value={apptDateFrom}
                       onChange={e => { setApptDateFrom(e.target.value); setApptPage(1); }}/>
-                    <input type="date" className="cds-filter-select" value={apptDateTo}
+                    <input type="date" className="lb-control" value={apptDateTo}
                       onChange={e => { setApptDateTo(e.target.value); setApptPage(1); }}/>
-                    <button className="cust-hdr-btn cust-hdr-btn--edit" style={{ marginLeft: 'auto' }}
-                      onClick={() => navigate('/appointments', { state: { prefillCustomer: {
-                        mobile: data.mobile, customer_name: data.customer_name, whatsapp: data.whatsapp,
-                      } } })}>
-                      <Plus size={13}/> <span>New Appointment</span>
-                    </button>
+                    <div className="lb-toolbar-right">
+                      <button className="lb-control lb-primary"
+                        onClick={() => navigate('/appointments', { state: { prefillCustomer: {
+                          mobile: data.mobile, customer_name: data.customer_name, whatsapp: data.whatsapp,
+                        } } })}>
+                        <Plus size={14}/> <span>New Appointment</span>
+                      </button>
+                    </div>
                   </div>
 
                   {filteredAppts.length === 0 ? (
                     <div className="cust-empty">No appointments match these filters.</div>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    /* lb-list gives this the same header band, dividers and
+                       sticky behaviour as the main lists. The inline padding and
+                       uppercase styling that used to sit on each <th> is gone —
+                       inline styles beat the shared rule, so leaving them would
+                       have silently kept the old look.
+                       A plain block comment, not {/* … *​/}: a JSX comment is
+                       only valid as a CHILD, and this position is a ternary
+                       branch — an expression. */
+                    <div className="lb-list">
+                    <div className="lb-scroll-x">
                       <table className="cust-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
-                          <tr style={{ textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
-                            <th style={{ padding: '8px 10px' }}>Appointment</th>
-                            <th style={{ padding: '8px 10px' }}>Date &amp; Time</th>
-                            <th style={{ padding: '8px 10px' }}>Vehicle</th>
-                            <th style={{ padding: '8px 10px' }}>Status</th>
-                            <th style={{ padding: '8px 10px', textAlign: 'right' }}>Amount</th>
+                          <tr>
+                            <th>Appointment</th>
+                            <th>Date &amp; Time</th>
+                            <th>Vehicle</th>
+                            <th>Status</th>
+                            <th style={{ textAlign: 'right' }}>Amount</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1331,6 +1355,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                           ))}
                         </tbody>
                       </table>
+                    </div>
                     </div>
                   )}
 
@@ -1534,14 +1559,21 @@ export default function CustomersPage() {
   const listStateRef = useRef(readListState('sp_customers_list_v1'));
   const ls = listStateRef.current;
 
-  const [search,        setSearch]        = useState(ls.search ?? '');
   const [page,          setPage]          = useState(ls.page ?? 1);
   const [pageSize,      setPageSize]      = useState(ls.pageSize ?? 10);
 
+  // The old version was a hand-rolled 350ms timer writing to an UNCONTROLLED
+  // input (defaultValue), so the box could not be cleared from code and a
+  // restored value never re-synced. The shared hook makes it controlled.
+  const { input: searchInput, setInput: setSearchInput, search, tooShort, minChars } =
+    useDebouncedSearch(ls.search ?? '');
+  const onSearchChange = useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
+
   // Persist whenever any of these change
   useEffect(() => {
-    writeListState('sp_customers_list_v1', { page, pageSize, search });
-  }, [page, pageSize, search]);
+    // searchInput, not search: restore the box exactly as they left it.
+    writeListState('sp_customers_list_v1', { search: searchInput, page, pageSize });
+  }, [page, pageSize, searchInput]);
 
   useListScrollRestore('sp_customers_list_v1', !loading);
 
@@ -1550,7 +1582,20 @@ export default function CustomersPage() {
   const { token } = useParams();
   const [selectedMobile, setSelectedMobile] = useState(() => location.state?.openMobile ?? null);
   const [detailEdit,     setDetailEdit]     = useState(false);
-  const searchTimer = useRef(null);
+
+  // Claim the top bar's search box. Declared AFTER selectedMobile because it
+  // reads it — `const` bindings are in the temporal dead zone until their own
+  // line runs, so calling this above the declaration throws on first render.
+  //
+  // The box is released while a customer's detail view is open: searching a
+  // list you cannot see is a control that appears to do nothing.
+  usePageSearch({
+    value: searchInput,
+    onChange: onSearchChange,
+    placeholder: 'Search customers by name or mobile',
+    hint: tooShort ? `${minChars}+ characters` : '',
+    enabled: !selectedMobile,
+  });
 
   const resolvedTokenRef = useRef(null);
   // Flips true the instant the user explicitly closes the detail view.
@@ -1614,10 +1659,6 @@ export default function CustomersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  function handleSearchChange(v) {
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => { setSearch(v); setPage(1); }, 350);
-  }
 
   // ── Full-page detail view ──
   if (selectedMobile) {
@@ -1639,31 +1680,31 @@ export default function CustomersPage() {
   const end   = Math.min(page * pageSize, total);
 
   return (
-    <div className="cust-page">
-      <header className="page-header">
-        <div>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Users size={20}/> Customers
-          </h2>
-          <p>Unified view of all customers — their leads, appointments, and spend.</p>
-        </div>
-      </header>
+    /* lb-page cancels the app wrapper's padding and max-width so the table runs
+       edge to edge. Only the list carries it — the detail view is a separate
+       early return further up and keeps its normal padding. */
+    <div className="cust-page lb-page">
+      {/* No title: the breadcrumb already reads "Home › Customers". This page
+          has no header actions at all, so the whole block goes. */}
 
       {error && <div className="banner error">{error}</div>}
 
-      {/* Search */}
-      <div className="cust-filters">
-        <div className="cust-search-wrap">
-          <Search size={14} className="cust-search-icon"/>
-          <input className="cust-search" placeholder="Search by name or mobile…"
-            defaultValue={search}
-            onChange={e => handleSearchChange(e.target.value)} />
+      {/* ── Toolbar ──
+          Search moved to the top bar (usePageSearch). That leaves only the
+          count here, since this page has no filters and no actions — but the
+          row still earns its place: without it the table's top border would
+          butt straight against the breadcrumb bar. */}
+      <div className="lb-toolbar">
+        <div className="lb-toolbar-right">
+          <span className="lb-count">{total} customer{total !== 1 ? 's' : ''}</span>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="card" style={{ overflowX: 'auto' }}>
-        <div style={{ overflowX: 'auto' }}>
+      {/* ── Table ──
+          Full bleed: no card, horizontal dividers only. One scroll container,
+          not the two nested ones this had. */}
+      <div className="lb-list">
+        <div className="cust-table-wrap lb-scroll-x">
           <table className="data-table cust-table">
             <thead>
               <tr>
@@ -1671,7 +1712,9 @@ export default function CustomersPage() {
                 <th>Contact</th>
                 <th style={{ textAlign: 'center' }}>Appointments</th>
                 <th style={{ textAlign: 'right' }}>Total Spend</th>
-                <th>Last Appointment</th>
+                {/* The list is ORDER BY agg.last_activity DESC on the server —
+                    this column, and only this one, states that. */}
+                <th className="lb-sorted">Last Appointment <ArrowDown size={12} className="lb-sort-icon"/></th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>

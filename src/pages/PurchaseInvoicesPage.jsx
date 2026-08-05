@@ -1293,6 +1293,8 @@ export default function PurchaseInvoicesPage() {
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  // Money totals for EVERY row the current filters match, not just this page.
+  const [totals, setTotals] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Remember page/pageSize/filters across a full navigation away and back —
@@ -1420,6 +1422,7 @@ export default function PurchaseInvoicesPage() {
       const res = await api(`/api/purchase-invoices?${q.toString()}`, { signal: abortSignal() });
       setItems(res.items || []);
       setTotal(res.total ?? (res.items || []).length);
+      setTotals(res.totals || null);
       setLoading(false);
     } catch (e) {
       // A cancelled request is this code superseding itself, not a failure.
@@ -1747,6 +1750,14 @@ export default function PurchaseInvoicesPage() {
             onPage={setPage}
             onPageSize={n => { setPageSize(n); setPage(1); }}
             noun="invoice"
+            /* "paid"/"outstanding", not "received"/"due": on a purchase
+               invoice the money flows the other way — this is what has gone
+               out to hubs and what they are still owed. */
+            summary={totals && [
+              { label: 'total',       value: fmt(totals.amount) },
+              { label: 'paid',        value: fmt(totals.paid), tone: 'ok' },
+              { label: 'outstanding', value: fmt(totals.due),  tone: 'warn' },
+            ]}
           />
         </>
       )}

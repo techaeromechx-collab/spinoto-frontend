@@ -76,6 +76,31 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* ── CI hover card ────────────────────────────────────────────────────────
+   The card itself is rendered by components/HoverCard.jsx, in a portal to
+   document.body — it cannot live here as an absolutely-positioned child,
+   because the invoice table sits inside BOTH an `overflow-x: auto` wrapper and
+   `.po-panel { overflow: hidden }`, either of which would clip it.
+
+   Only the row styling stays, since the card's contents are still written in
+   PayoutsPage.jsx. */
+.po-ci-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  color: var(--text-muted);
+}
+
+.po-ci-row strong { color: var(--text); font-weight: 700; }
+
+/* The payment date is the answer, not another figure — a rule above it says so
+   without needing a heading. */
+.po-ci-row--sep {
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+  margin-top: 1px;
+}
+
 /* ── Bulk payment rows ────────────────────────────────────────────────────
    A batch sits where its PI number would be, so the column still answers
    "which invoice" — with "several, click to see". */

@@ -4,10 +4,16 @@ import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import {
   Plus, Pencil, Eye, X, AlertCircle, CheckCircle2,
-  Network, Search, ChevronLeft, ChevronRight, ToggleLeft, ToggleRight,
+  Network, Search, ToggleLeft, ToggleRight,
   Layers, ChevronDown, ChevronUp, Clock, FileText, Upload, Trash2, Percent, Lock,
   Image, CreditCard, Car, Ruler, Wrench,
 } from 'lucide-react';
+import PaginationBar from '../components/PaginationBar.jsx';
+import { readListState, writeListState } from '../lib/listStatePersist.js';
+import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
+import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
+import { usePageSearch } from '../lib/pageSearchStore.js';
+import '../styles/listLayout.css';
 import '../styles/HubsPage.css';
 
 // ── Day options ───────────────────────────────────────────────────────────────
@@ -1764,17 +1770,50 @@ export default function HubsPage() {
   const [total, setTotal]                 = useState(0);
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState('');
-  const [search, setSearch]               = useState('');
-  const [filterActive, setFilterActive]   = useState('');
-  const [filterVc, setFilterVc]           = useState('');
-  const [stateFilter, setStateFilter]     = useState('');
-  const [page, setPage]                   = useState(1);
-  const LIMIT = 20;
+  // Remember filters/page across a full navigation away and back. Plain
+  // useState does not survive the unmount a route change causes; sessionStorage
+  // does, and clears on tab close so it never leaks between users on a shared
+  // machine.
+  const listStateRef = useRef(readListState('sp_hubs_list_v1'));
+  const ls = listStateRef.current;
+
+  const [filterActive, setFilterActive]   = useState(ls.filterActive ?? '');
+  const [filterVc, setFilterVc]           = useState(ls.filterVc ?? '');
+  const [stateFilter, setStateFilter]     = useState(ls.stateFilter ?? '');
+  const [page, setPage]                   = useState(ls.page ?? 1);
+  const [pageSize, setPageSize]           = useState(ls.pageSize ?? 10);
+
+  // `searchInput` is what the box shows; `search` is what the server is asked
+  // for — at most once per 300ms pause, and never below 2 characters.
+  //
+  // This replaces a hand-rolled 350ms timer that wrote to an UNCONTROLLED input
+  // (it had no `value`, only an onChange), which meant the box could not be
+  // cleared from code and a restored value could never be shown in it.
+  const { input: searchInput, setInput: setSearchInput, search, tooShort, minChars } =
+    useDebouncedSearch(ls.search ?? '');
+  const onSearchChange = useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
+
+  // Every load aborts the one before it. Without this, typing "mumbai" fires
+  // six overlapping requests and whichever returns last wins — which is not
+  // necessarily the one matching what is now in the box.
+  const abortSignal = useAbortController();
 
   const [allStates, setAllStates] = useState([]);
   const [modal, setModal]         = useState(null);
   const [toast, setToast]         = useState(null);
-  const searchTimer               = useRef(null);
+
+  // Claim the top bar's search box, same as the other seven list pages.
+  usePageSearch({
+    value: searchInput,
+    onChange: onSearchChange,
+    placeholder: 'Search HUBs by name, person, or number',
+    hint: tooShort ? `${minChars}+ characters` : '',
+  });
+
+  useEffect(() => {
+    // searchInput, not search: restore the box exactly as they left it.
+    writeListState('sp_hubs_list_v1', { search: searchInput, page, pageSize, filterActive, filterVc, stateFilter });
+  }, [searchInput, page, pageSize, filterActive, filterVc, stateFilter]);
 
   useEffect(() => {
     api('/api/locations/states')
@@ -1785,23 +1824,25 @@ export default function HubsPage() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const qs = new URLSearchParams({ page, limit: LIMIT });
+      const qs = new URLSearchParams({ page, limit: pageSize });
       if (search)       qs.set('search',       search);
       if (filterActive) qs.set('is_active',     filterActive);
       if (filterVc)     qs.set('vehicle_class', filterVc);
       if (stateFilter)  qs.set('state_id',      stateFilter);
-      const r = await api(`/api/hubs?${qs}`);
+      const r = await api(`/api/hubs?${qs}`, { signal: abortSignal() });
       setHubs(r.items); setTotal(r.total);
-    } catch (e) { setError(e.message); }
+    } catch (e) {
+      // An abort is this component cancelling its own request, not a failure —
+      // showing it as an error banner would flash red on every keystroke.
+      if (isAbortError(e)) return;
+      setError(e.message);
+    }
     finally { setLoading(false); }
-  }, [search, filterActive, filterVc, stateFilter, page]);
+  }, [search, filterActive, filterVc, stateFilter, page, pageSize, abortSignal]);
 
   useEffect(() => { load(); }, [load]);
 
-  function handleSearchChange(v) {
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => { setSearch(v); setPage(1); }, 350);
-  }
+  useListScrollRestore('sp_hubs_list_v1', !loading);
 
   function showToast(msg, type = 'success') {
     setToast({ msg, type });
@@ -1833,58 +1874,63 @@ export default function HubsPage() {
     } catch (e) { showToast(e.message, 'error'); }
   }
 
-  const totalPages = Math.ceil(total / LIMIT);
-  const start = (page - 1) * LIMIT + 1;
-  const end   = Math.min(page * LIMIT, total);
-
   return (
-    <div className="hb-page">
+    /* lb-page cancels the app wrapper's padding and max-width so the table runs
+       edge to edge, and matches the other seven list pages. */
+    <div className="hb-page lb-page">
       {toast && (
         <div className={`hb-toast hb-toast--${toast.type}`}>
           <CheckCircle2 size={14} /> {toast.msg}
         </div>
       )}
 
-      <header className="page-header">
-        <div>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Network size={20} /> HUBs</h2>
-          <p>Manage HUB (Aggregator) records, vehicle types, and service mappings.</p>
-        </div>
-        {canCreate && (
-          <button className="button primary" onClick={() => setModal({ mode: 'add' })}>
-            <Plus size={16} /> Add HUB
-          </button>
-        )}
-      </header>
+      {/* No page-header: the breadcrumb already names the page (it renders
+          "Home › Hubs" — the segment is lower-cased in the URL and title-cased
+          by CSS, so it reads "Hubs" rather than the sidebar's "HUBs"), and the
+          one action the header held (Add HUB) now sits in the toolbar beside
+          the count, same as Capture New Lead on the Leads page. */}
 
       {error && <div className="banner error">{error}</div>}
 
-      <div className="hb-filters">
-        <div className="hb-search-wrap">
-          <Search size={14} className="hb-search-icon" />
-          <input className="hb-search" placeholder="Search by name, person, or number…"
-            onChange={e => handleSearchChange(e.target.value)} />
-        </div>
-        <select className="hb-filter-select" value={filterVc}
+      {/* ── Toolbar ──
+          Search has moved to the top bar (usePageSearch), leaving the three
+          filters on the left and count + action on the right. */}
+      <div className="lb-toolbar">
+        <select className="lb-control" value={filterVc}
           onChange={e => { setFilterVc(e.target.value); setPage(1); }}>
           <option value="">All Vehicle Types</option>
           {VEHICLE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <select className="hb-filter-select" value={stateFilter}
+        <select className="lb-control" value={stateFilter}
           onChange={e => { setStateFilter(e.target.value); setPage(1); }}>
           <option value="">All States</option>
           {allStates.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <select className="hb-filter-select" value={filterActive}
+        <select className="lb-control" value={filterActive}
           onChange={e => { setFilterActive(e.target.value); setPage(1); }}>
           <option value="">All Status</option>
           <option value="true">Active</option>
           <option value="false">Inactive</option>
         </select>
+
+        <div className="lb-toolbar-right">
+          <span className="lb-count">{total} HUB{total !== 1 ? 's' : ''}</span>
+          {canCreate && (
+            <button type="button" className="lb-control lb-primary" onClick={() => setModal({ mode: 'add' })}>
+              <Plus size={15} /> Add HUB
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="card" style={{ overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+      {/* ── Table ──
+          Full bleed: no card, horizontal dividers only, and ONE scroll
+          container instead of the two nested ones this had. That is what lets
+          the header stick — a nested `overflow-x: auto` wrapper silently
+          becomes a scroll container on BOTH axes and pins the header to itself
+          rather than the viewport. */}
+      <div className="lb-list">
+        <div className="lb-scroll-x">
           <table className="data-table hb-table">
             <thead>
               <tr>
@@ -1904,8 +1950,8 @@ export default function HubsPage() {
                     <Network size={36} style={{ opacity: .25, marginBottom: 10 }} />
                     <div style={{ fontWeight: 600, marginBottom: 4 }}>No HUBs found</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      {search || filterActive || filterVc || stateFilter
-                        ? 'Try adjusting your filters.'
+                      {searchInput || filterActive || filterVc || stateFilter
+                        ? 'Try adjusting your search or filters.'
                         : canCreate ? 'Add your first HUB to get started.' : 'No HUBs have been created yet.'}
                     </div>
                   </div>
@@ -1975,17 +2021,14 @@ export default function HubsPage() {
           </table>
         </div>
 
-        {total > 0 && (
-          <div className="hb-pagination">
-            <span className="hb-pag-info">{start}–{end} of {total} HUB{total !== 1 ? 's' : ''}</span>
-            <div className="hb-pag-btns">
-              <button className="hb-pag-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}><ChevronLeft size={15} /></button>
-              <span className="hb-pag-page">{page} / {totalPages}</span>
-              <button className="hb-pag-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight size={15} /></button>
-            </div>
-          </div>
-        )}
       </div>
+
+      <PaginationBar
+        page={page} total={total} pageSize={pageSize}
+        onPage={setPage}
+        onPageSize={n => { setPageSize(n); setPage(1); }}
+        noun="HUB"
+      />
 
       {modal?.mode === 'add'      && <HubModal onClose={() => setModal(null)} onSaved={handleSaved} />}
       {modal?.mode === 'edit'     && <HubModal hub={modal.hub} onClose={() => setModal(null)} onSaved={handleSaved} />}

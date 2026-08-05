@@ -4,10 +4,13 @@ import { api } from '../api/client.js';
 import useSync from '../hooks/useSync.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { useCan } from '../auth/AuthContext.jsx';
+import { useDebouncedSearch } from '../hooks/useDebouncedSearch.js';
+import { usePageSearch } from '../lib/pageSearchStore.js';
 import {
   Plus, X, Search, RefreshCw, AlertCircle, CheckCircle2, XCircle,
-  ShieldAlert, Clock, Eye, Wrench, ChevronRight, BarChart3,
+  ShieldAlert, Clock, Eye, Wrench, ChevronRight, BarChart3, ArrowDown,
 } from 'lucide-react';
+import '../styles/listLayout.css';
 import '../styles/DiscountMasterPage.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -690,6 +693,37 @@ function StatCard({ label, value, sub, color }) {
   );
 }
 
+/**
+ * Analytics in a modal rather than a band above the table.
+ *
+ * It used to push the whole list down when opened — on a screen whose job is
+ * the list, a panel that displaces it is the wrong shape. The dialog also means
+ * the /stats fetch only happens when someone asks for it, which it already did
+ * (AnalyticsPanel mounts on toggle), but now closing genuinely unmounts rather
+ * than leaving a tall region collapsed above the rows.
+ *
+ * Same .modal-backdrop / .modal-box shell as the other four dialogs here, so it
+ * inherits the mobile bottom-sheet treatment in DiscountMasterPage.css.
+ */
+function AnalyticsModal({ onClose }) {
+  useEscapeClose(onClose);
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 900 }}>
+        <div className="modal-header">
+          <h3><BarChart3 size={17} style={{ verticalAlign: -3, marginRight: 6 }} />Claims Analytics</h3>
+          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+        </div>
+        {/* Scrolls inside the dialog: the monthly chart plus two tables is
+            taller than most windows. */}
+        <div style={{ padding: '20px 24px', maxHeight: '75vh', overflowY: 'auto' }}>
+          <AnalyticsPanel />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AnalyticsPanel() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -813,7 +847,10 @@ export default function ClaimsPage() {
   const [items, setItems]     = useState([]);
   const [counts, setCounts]   = useState({});
   const [loading, setLoading] = useState(true);
-  const [search, setSearch]   = useState('');
+  // Was undebounced: `search` fed straight into load()'s dep array, so every
+  // keystroke fired a request. Typing "warranty" was eight round trips.
+  const { input: searchInput, setInput: setSearchInput, search, tooShort, minChars } =
+    useDebouncedSearch('');
   const [filterStatus, setFilterStatus]     = useState('');
   const [filterValidity, setFilterValidity] = useState('');
 
@@ -864,6 +901,15 @@ export default function ClaimsPage() {
   useEffect(() => { load(); }, [load]);
   useSync('warranty_claims', load);
 
+  // Claim the top bar's search box. Claims open in modals, not an in-page
+  // detail view, so there is no state in which the box should be released.
+  usePageSearch({
+    value: searchInput,
+    onChange: setSearchInput,
+    placeholder: 'Search claims by code, customer, vehicle or item',
+    hint: tooShort ? `${minChars}+ characters` : '',
+  });
+
   function upsert(saved) {
     setItems(prev => {
       const exists = prev.find(x => x.id === saved.id);
@@ -884,41 +930,19 @@ export default function ClaimsPage() {
   const openTotal = (counts.registered || 0) + (counts.under_review || 0) + (counts.approved || 0);
 
   return (
-    <div className="discount-page">
-      {/* Header */}
-      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <ShieldAlert size={22} style={{ color: 'var(--primary)' }} />
-          <div>
-            <h2 style={{ margin: 0 }}>Claims</h2>
-            <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--text-muted)' }}>
-              Register warranty &amp; guarantee claims against paid invoices, validate them, and spin up redo jobs
-            </p>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-ghost" onClick={() => setShowAnalytics(v => !v)}>
-            <BarChart3 size={15} /> {showAnalytics ? 'Hide Analytics' : 'Analytics'}
-          </button>
-          {canCreate && (
-            <button className="btn btn-primary" onClick={() => setModal({ mode: 'register' })}>
-              <Plus size={16} /> Register Claim
-            </button>
-          )}
-        </div>
-      </div>
+    /* lb-page cancels the app wrapper's padding and max-width so the table runs
+       edge to edge. Claims open in modals rather than an in-page detail view,
+       so this applies always. */
+    <div className="discount-page lb-page">
+      {/* No title: the breadcrumb already reads "Home › Claims". Analytics and
+          Register Claim have moved into the toolbar row with the filters. */}
 
-      {showAnalytics && <AnalyticsPanel />}
-
-      {/* Filters */}
-      <div className="card" style={{ padding: '14px 18px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 0 }}>
-        <div style={{ position: 'relative', flex: '1 1 220px' }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input className="form-input" style={{ paddingLeft: 32 }}
-            placeholder="Search code / customer / vehicle / item…"
-            value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <select className="form-input" style={{ width: 170 }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+      {/* ── Toolbar ──
+          No card: filters sit directly on the page background, one row, actions
+          pushed right. Shared with the other list screens — see
+          styles/listLayout.css. The search box is in the top bar. */}
+      <div className="lb-toolbar">
+        <select className="lb-control" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
           <option value="">All statuses ({Object.values(counts).reduce((a, b) => a + b, 0)})</option>
           <option value="registered">Registered ({counts.registered || 0})</option>
           <option value="under_review">Under Review ({counts.under_review || 0})</option>
@@ -927,20 +951,39 @@ export default function ClaimsPage() {
           <option value="rejected">Rejected ({counts.rejected || 0})</option>
           <option value="cancelled">Cancelled ({counts.cancelled || 0})</option>
         </select>
-        <select className="form-input" style={{ width: 150 }} value={filterValidity} onChange={e => setFilterValidity(e.target.value)}>
+
+        <select className="lb-control" value={filterValidity} onChange={e => setFilterValidity(e.target.value)}>
           <option value="">All validity</option>
           <option value="valid">Valid</option>
           <option value="expired">Expired</option>
           <option value="manual">Manual check</option>
         </select>
-        <button className="btn btn-ghost" onClick={load} title="Refresh" style={{ flexShrink: 0 }}>
+
+        <button type="button" className="lb-control lb-icon-btn" onClick={load} title="Refresh">
           <RefreshCw size={15} />
         </button>
+
+        <div className="lb-toolbar-right">
+          <span className="lb-count">{items.length} claim{items.length !== 1 ? 's' : ''}</span>
+          {/* Always "Analytics", never "Hide Analytics": with a modal the
+              button sits behind the backdrop and cannot be clicked to close.
+              Offering an action that is unreachable is worse than not
+              offering it — the × and Escape are the way out. */}
+          <button type="button" className="lb-control" onClick={() => setShowAnalytics(true)}>
+            <BarChart3 size={15} /> Analytics
+          </button>
+          {canCreate && (
+            <button type="button" className="lb-control lb-primary" onClick={() => setModal({ mode: 'register' })}>
+              <Plus size={15} /> Register Claim
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+      {/* ── Table ──
+          Full bleed: no card, horizontal dividers only. */}
+      <div className="lb-list">
+        <div className="lb-scroll-x">
         <table className="data-table">
           <thead>
             <tr>
@@ -952,7 +995,9 @@ export default function ClaimsPage() {
               <th>Validity</th>
               <th>Status</th>
               <th>Hub</th>
-              <th>Claimed</th>
+              {/* The list is ORDER BY wc.created_at DESC on the server — this
+                  column, and only this one, states that. */}
+              <th className="lb-sorted">Claimed <ArrowDown size={12} className="lb-sort-icon"/></th>
               <th></th>
             </tr>
           </thead>
@@ -1013,6 +1058,8 @@ export default function ClaimsPage() {
       </div>
 
       {/* Modals */}
+      {showAnalytics && <AnalyticsModal onClose={() => setShowAnalytics(false)} />}
+
       {modal?.mode === 'register' && (
         <RegisterModal
           prefillMobile={prefillMobile}

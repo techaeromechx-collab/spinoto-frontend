@@ -10,8 +10,22 @@ import '../styles/PaginationBar.css';
  *   onPage      {fn}       called with new page number
  *   onPageSize  {fn}       called with new pageSize value
  *   noun        {string}   singular label e.g. "customer", "appointment" (default "record")
+ *   summary     {array}    optional money totals for the WHOLE filtered set, e.g.
+ *                          [{ label:'total', value:'₹6,42,300.00' },
+ *                           { label:'received', value:'₹4,10,000.00', tone:'ok' },
+ *                           { label:'due', value:'₹2,32,300.00', tone:'warn' }]
+ *
+ * On `summary`: the values arrive pre-formatted. This component stays
+ * currency- and locale-agnostic, and each page keeps using its own `fmt` — so
+ * the figure in the bar is formatted by exactly the same function as the
+ * figures in the rows above it, and cannot drift from them.
+ *
+ * These are SERVER totals covering every row the current filters match, not
+ * just the page on screen. Summing the rows client-side would report a
+ * different number at 10/page than at 100/page, which is the whole reason the
+ * API returns them.
  */
-export default function PaginationBar({ page, total, pageSize, onPage, onPageSize, noun = 'record' }) {
+export default function PaginationBar({ page, total, pageSize, onPage, onPageSize, noun = 'record', summary }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const end   = Math.min(page * pageSize, total);
@@ -27,12 +41,24 @@ export default function PaginationBar({ page, total, pageSize, onPage, onPageSiz
 
   return (
     <div className="pgbar">
-      {/* Left: record count */}
+      {/* Left: record count, then the money totals for everything matching */}
       <span className="pgbar-info">
         {total === 0
           ? `No ${noun}s`
           : <>Showing <strong>{start}–{end}</strong> of <strong>{total}</strong> {noun}{total !== 1 ? 's' : ''}</>
         }
+
+        {/* Hidden at zero results: "₹0.00 total · ₹0.00 received · ₹0.00 due"
+            is three ways of saying the "No invoices" already to its left. */}
+        {total > 0 && summary?.length > 0 && (
+          <span className="pgbar-totals">
+            {summary.map(s => (
+              <span key={s.label} className={`pgbar-total${s.tone ? ` pgbar-total--${s.tone}` : ''}`}>
+                <strong>{s.value}</strong> {s.label}
+              </span>
+            ))}
+          </span>
+        )}
       </span>
 
       {/* Right: page controls + size selector */}

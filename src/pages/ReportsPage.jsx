@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -7,7 +8,7 @@ import {
 import {
   LayoutDashboard, Users, TrendingUp, IndianRupee,
   ChevronUp, ChevronDown, Minus, RefreshCw, Calendar, FileDown,
-  X, CheckCircle2, Clock, AlertCircle, Phone, ChevronRight, Search, Info,
+  X, CheckCircle2, Clock, AlertCircle, Phone, ChevronRight, Search, Info, Filter, RotateCcw,
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { jsPDF } from 'jspdf';
@@ -115,17 +116,181 @@ function KpiCard({ label, value, icon: Icon, accent = '#3b82f6', sub, trend, pre
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+/**
+ * Build the CSV payload for whichever report tab is open.
+ *
+ * Pure and module-level so it can be exercised without mounting the page —
+ * the shape of an export is exactly the kind of thing that rots silently.
+ */
+/**
+ * A hub row's identity in the exclusion set.
+ *
+ * Invoices with no hub group under a single "No hub" row whose hub_id is null,
+ * and `null` cannot live in a Set alongside numeric ids without colliding with
+ * a hub whose id is genuinely 0 — so nulls get their own sentinel. This mirrors
+ * the backend's own keyOf() in getHubRevenue.
+ */
+export function hubKey(hubId) {
+  return (hubId === null || hubId === undefined) ? 'none' : String(hubId);
+}
+
+/**
+ * Re-derive the Hub Revenue payload with some hubs excluded.
+ *
+ * The arithmetic is deliberately identical to the reduce the API already runs
+ * over the same rows (getHubRevenue), so "all hubs" through this function
+ * reproduces the server's totals exactly rather than merely approximately.
+ * That is what makes excluding a hub trustworthy: the number you see with 9 of
+ * 10 hubs is built the same way as the number you saw with 10.
+ *
+ * Excluded rows are RETURNED, not dropped — the table greys them out and
+ * strikes them through instead of hiding them, so it stays obvious that a hub
+ * was excluded rather than simply having no invoices.
+ */
+export function applyHubExclusions(hubRev, excluded) {
+  const all = hubRev?.items || [];
+  const ex = excluded instanceof Set ? excluded : new Set(excluded || []);
+
+  const kept = all.filter(r => !ex.has(hubKey(r.hub_id)));
+  const removed = all.filter(r => ex.has(hubKey(r.hub_id)));
+
+  const ZERO = {
+    revenue: 0, collected: 0, hub_payable: 0, hub_payable_approved: 0,
+    our_take: 0, our_take_est: 0, outstanding_to_hub: 0, invoice_count: 0,
+  };
+  const sum = rows => rows.reduce((acc, row) => ({
+    revenue:              acc.revenue + Number(row.revenue || 0),
+    collected:            acc.collected + Number(row.collected || 0),
+    hub_payable:          acc.hub_payable + Number(row.hub_payable || 0),
+    hub_payable_approved: acc.hub_payable_approved + Number(row.hub_payable_approved || 0),
+    our_take:             acc.our_take + Number(row.our_take || 0),
+    our_take_est:         acc.our_take_est + Number(row.our_take_est || 0),
+    outstanding_to_hub:   acc.outstanding_to_hub + Number(row.outstanding_to_hub || 0),
+    invoice_count:        acc.invoice_count + Number(row.invoice_count || 0),
+  }), { ...ZERO });
+
+  return {
+    items: kept,                 // what the totals are built from
+    rows: all,                   // what the table renders, excluded ones included
+    total: sum(kept),
+    removed,                     // for the "excluding X" banner
+    removedTotal: sum(removed),
+    isFiltered: removed.length > 0,
+  };
+}
+
+export function buildCsvExport(tab, { hubRev, sortedUsers, byUserCount, from }) {
+  if (tab === 'hub-revenue') {
+    const items = hubRev?.items || [];
+    // RAW NUMBERS, not the "₹1,10,000" the table renders. A CSV gets opened in
+    // a spreadsheet, and a currency-formatted string lands as text that will
+    // not SUM. (The by-user branch below keeps its existing inr() formatting —
+    // changing that is a separate decision, not this one.)
+    const rows = items.map(r => [
+      r.hub_name,
+      Number(r.revenue || 0),
+      Number(r.collected || 0),
+      Number(r.hub_payable || 0),
+      Number(r.hub_payable_approved || 0),
+      Number(r.outstanding_to_hub || 0),
+      Number(r.our_take || 0),
+      Number(r.invoice_count || 0),
+    ]);
+    // A totals line, so the file reconciles against the summary cards above the
+    // table without the reader re-adding the column. Skipped for a single hub,
+    // where a TOTAL row would just repeat the row above it.
+    if (rows.length > 1) {
+      const t = hubRev?.total || {};
+      rows.push([
+        'TOTAL',
+        Number(t.revenue || 0), Number(t.collected || 0),
+        Number(t.hub_payable || 0), Number(t.hub_payable_approved || 0),
+        Number(t.outstanding_to_hub || 0), Number(t.our_take || 0),
+        Number(t.invoice_count || 0),
+      ]);
+    }
+    return {
+      name: `spinoto-hub-revenue-${from || 'all'}.csv`,
+      headers: ['Hub', 'Revenue', 'Collected', 'Total PI Amount', 'Approved',
+                'Outstanding to Hub', 'Our Take', 'Invoices'],
+      rows,
+      empty: items.length === 0,
+    };
+  }
+
+  const users = sortedUsers || [];
+  return {
+    name: `spinoto-report-${from || 'all'}.csv`,
+    headers: ['Name', 'Email', 'Leads', 'Converted', 'Conv. %', 'Pipeline', 'Realized'],
+    rows: users.map(u => [
+      u.user_name || '—', u.email,
+      u.total_leads, u.converted_leads,
+      pct(u.converted_leads, u.total_leads),
+      inr(u.total_revenue), inr(u.realized_revenue),
+    ]),
+    empty: (byUserCount ?? users.length) === 0,
+  };
+}
+
+const REPORT_TABS = ['overview', 'leads', 'by-user', 'analytics', 'hub-revenue'];
+
 export default function ReportsPage() {
-  const [tab, setTab] = useState('overview');   // 'overview' | 'leads' | 'by-user' | 'analytics' | 'hub-revenue'
+  // The tab lives in the URL so other pages can deep-link into it — the
+  // dashboard's Hub Performance card links straight to ?tab=hub-revenue — and
+  // so a reload or a shared link lands where the person actually was.
+  //
+  // An unknown or missing ?tab falls back to overview rather than rendering a
+  // blank page: the value is user-editable, it will be typo'd eventually.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab');
+  const rawTab = REPORT_TABS.includes(urlTab) ? urlTab : 'overview';
+
+  const setTab = useCallback(next => {
+    // replace, not push: tab switching should not stack a dozen history
+    // entries the back button has to chew through to leave the page.
+    setSearchParams(
+      prev => { const p = new URLSearchParams(prev); p.set('tab', next); return p; },
+      { replace: true }
+    );
+  }, [setSearchParams]);
   const [revTrend, setRevTrend] = useState([]);
   const [funnel, setFunnel] = useState([]);
   const [topPerf, setTopPerf] = useState({ top_hubs: [], top_services: [] });
   const [anlLoading, setAnlLoading] = useState(false);
   const [hubRev, setHubRev] = useState({ items: [], total: { revenue: 0, collected: 0, hub_payable: 0, hub_payable_approved: 0, our_take: 0, our_take_est: 0, outstanding_to_hub: 0, invoice_count: 0 } });
   const [hubRevLoading, setHubRevLoading] = useState(false);
+
+  // Hubs excluded from the Hub Revenue totals — "show me the number without
+  // QuickFix". Held as a Set of hubKey() strings so the null-hub row ("No hub")
+  // can be excluded like any other.
+  //
+  // Deliberately NOT reset when the date range changes: comparing two periods
+  // with the same hub excluded is the whole reason someone excludes one.
+  const [excludedHubs, setExcludedHubs] = useState(() => new Set());
+  const [showHubExcl, setShowHubExcl] = useState(false);
+
+  const toggleHubExcluded = useCallback(key => {
+    setExcludedHubs(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const hubView = useMemo(
+    () => applyHubExclusions(hubRev, excludedHubs),
+    [hubRev, excludedHubs]
+  );
   const [showHubRevInfo, setShowHubRevInfo] = useState(false);
-  const [preset, setPreset] = useState(30);           // days; 0 = all
-  const [dateRange, setDateRange] = useState(getPresetDates(30));
+  // All Time by default rather than the last 30 days. A report that silently
+  // hides everything older than a month makes totals look wrong to anyone who
+  // has not noticed the preset — and this page is where people come to
+  // reconcile figures, so the safe default is "everything".
+  //
+  // 0 means all: getPresetDates(0) returns empty from/to, and every fetch
+  // below only sends from/to when dateRange.from is set.
+  const [preset, setPreset] = useState(0);            // days; 0 = all
+  const [dateRange, setDateRange] = useState(getPresetDates(0));
 
   // ── Hub filter ───────────────────────────────────────────────────────────
   const [hubs, setHubs] = useState([]);
@@ -146,6 +311,11 @@ export default function ReportsPage() {
   const [revData, setRevData] = useState([]);
   const [byUser, setByUser] = useState([]);
   const [scope, setScope] = useState('all'); // 'all' | 'team' | 'own'
+
+  // The By User tab's BUTTON is hidden for single-person scopes, so an old
+  // link or a hand-typed ?tab=by-user would otherwise render a tab bar with
+  // nothing selected. Resolve it here, after scope is known.
+  const tab = (rawTab === 'by-user' && scope === 'own') ? 'overview' : rawTab;
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -324,6 +494,24 @@ export default function ReportsPage() {
     if (sortKey !== col) return <Minus size={11} style={{ opacity: 0.3 }} />;
     return sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />;
   }
+
+  // ── Export CSV ───────────────────────────────────────────────────────────
+  // Follows the active tab. This used to always emit the by-user table no
+  // matter which tab was open, so on Hub Revenue it either exported the wrong
+  // rows or sat disabled because byUser happened to be empty.
+  //
+  // Money goes out as RAW NUMBERS, not the "₹1,10,000" the table renders: a
+  // CSV is opened in a spreadsheet, and a currency-formatted string lands as
+  // text that will not SUM. The by-user export below keeps its existing
+  // inr() formatting — changing it is a separate call, not this one.
+  const csvExport = useMemo(
+    // hubView, not hubRev: an export that disagrees with the screen is a trap.
+    // You exclude a hub to get a number you are going to send someone.
+    () => buildCsvExport(tab, {
+      hubRev: hubView, sortedUsers, byUserCount: byUser.length, from: dateRange.from,
+    }),
+    [tab, hubView, sortedUsers, byUser.length, dateRange.from]
+  );
 
   // ── Export PDF ───────────────────────────────────────────────────────────
   function exportPDF() {
@@ -567,21 +755,9 @@ export default function ReportsPage() {
             Export PDF
           </button>
           <button className="rp-export-btn" style={{ background: '#16a34a' }}
-            onClick={() => {
-              const rows = sortedUsers.map(u => [
-                u.user_name || '—', u.email,
-                u.total_leads, u.converted_leads,
-                pct(u.converted_leads, u.total_leads),
-                inr(u.total_revenue), inr(u.realized_revenue),
-              ]);
-              downloadCSV(
-                `spinoto-report-${dateRange.from || 'all'}.csv`,
-                rows,
-                ['Name', 'Email', 'Leads', 'Converted', 'Conv. %', 'Pipeline', 'Realized'],
-              );
-            }}
-            disabled={loading || byUser.length === 0}
-            title="Export CSV"
+            onClick={() => downloadCSV(csvExport.name, csvExport.rows, csvExport.headers)}
+            disabled={loading || hubRevLoading || csvExport.empty}
+            title={tab === 'hub-revenue' ? 'Export hub revenue CSV' : 'Export CSV'}
           >
             <FileDown size={14} />
             CSV
@@ -1290,6 +1466,30 @@ export default function ReportsPage() {
             <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)', fontSize: 14 }}>Loading hub revenue…</div>
           ) : (
             <>
+              {/* The exclusion banner. The control that SETS it lives in the
+                  card header below, beside the title it changes; this only
+                  reports the consequence. Rendered directly rather than inside
+                  a wrapper — an always-present flex box holding one optional
+                  child is dead markup and an unexplained gap. */}
+              {hubView.isFiltered && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8,
+                    padding: '7px 12px', fontSize: 12.5, color: '#92400e',
+                    marginBottom: 12,
+                  }}>
+                    <span>
+                      Excluding <strong>{hubView.removed.map(r => r.hub_name).join(', ')}</strong>
+                      {' '}— <strong>{inr(hubView.removedTotal.revenue)}</strong> revenue and
+                      {' '}{hubView.removedTotal.invoice_count} invoice{hubView.removedTotal.invoice_count !== 1 ? 's' : ''} left out of every figure below.
+                    </span>
+                    <button type="button" onClick={() => setExcludedHubs(new Set())}
+                      style={{ border: 'none', background: 'none', color: '#92400e', fontWeight: 700, fontSize: 12, textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>
+                    Undo
+                  </button>
+                </div>
+              )}
+
               {/* Grand total */}
               <div className="anl-card">
                 <div className="anl-card-hd" style={{ flexWrap: 'wrap', gap: 10, position: 'relative' }}>
@@ -1303,6 +1503,69 @@ export default function ReportsPage() {
                   >
                     <Info size={12} />
                   </button>
+
+                  {/* Hub exclusions — immediately after the ⓘ, because it
+                      changes what the title beside it counts. No marginLeft
+                      auto: the date-range block further along the header
+                      already claims the free space and stays right. */}
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      className="rp-preset-btn"
+                      onClick={() => setShowHubExcl(v => !v)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+                    >
+                      <Filter size={13} />
+                      {excludedHubs.size === 0
+                        ? 'All hubs included'
+                        : `${hubView.items.length} of ${hubView.rows.length} hubs`}
+                      <ChevronDown size={13} style={{ opacity: 0.5 }} />
+                    </button>
+
+                    {showHubExcl && (
+                      <>
+                        <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowHubExcl(false)} />
+                        {/* Anchored left, following its trigger, which sits at
+                            the start of the header row. */}
+                        <div style={{
+                          position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 1000,
+                          minWidth: 280, maxHeight: 320, overflowY: 'auto',
+                          background: 'var(--panel, #fff)', border: '1px solid var(--border)',
+                          borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,.14)', padding: 6,
+                          fontWeight: 400,
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px 8px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)' }}>
+                              Include in totals
+                            </span>
+                            {excludedHubs.size > 0 && (
+                              <button type="button" onClick={() => setExcludedHubs(new Set())}
+                                style={{ border: 'none', background: 'none', color: 'var(--primary)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                                Reset
+                              </button>
+                            )}
+                          </div>
+                          {/* Driven by the ROWS in the report, not the hubs
+                              master list — a hub with no invoices this period
+                              has nothing to exclude, and "No hub" is not in the
+                              hubs table at all. */}
+                          {hubView.rows.map(r => {
+                            const k = hubKey(r.hub_id);
+                            const on = !excludedHubs.has(k);
+                            return (
+                              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12.5 }}>
+                                <input type="checkbox" checked={on} onChange={() => toggleHubExcluded(k)} style={{ cursor: 'pointer' }} />
+                                <span style={{ flex: 1, opacity: on ? 1 : 0.5 }}>{r.hub_name}</span>
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                                  {inr(r.revenue)}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
                   {showHubRevInfo && (
                     <div
                       style={{ position: 'absolute', top: '100%', left: 0, marginTop: 6, zIndex: 20, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', padding: '12px 14px', width: 420, maxWidth: '90vw', fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 400 }}
@@ -1360,31 +1623,31 @@ export default function ReportsPage() {
                 </div>
                 <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', padding: '14px 4px 6px', alignItems: 'baseline' }}>
                   <div>
-                    <div style={{ fontSize: 28, fontWeight: 800, color: '#16a34a' }}>{inr(hubRev.total.revenue)}</div>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: '#16a34a' }}>{inr(hubView.total.revenue)}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Billed revenue (invoice totals)</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 20, fontWeight: 700 }}>{inr(hubRev.total.collected)}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{inr(hubView.total.collected)}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Collected (payments received)</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: '#dc2626' }}>{inr(hubRev.total.hub_payable)}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#dc2626' }}>{inr(hubView.total.hub_payable)}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Total PI Amount (all statuses)</div>
                     <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
-                      <span style={{ color: '#16a34a', fontWeight: 700 }}>{inr(hubRev.total.hub_payable_approved)}</span> approved
+                      <span style={{ color: '#16a34a', fontWeight: 700 }}>{inr(hubView.total.hub_payable_approved)}</span> approved
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: '#ea580c' }}>{inr(hubRev.total.outstanding_to_hub)}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: '#ea580c' }}>{inr(hubView.total.outstanding_to_hub)}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Outstanding to Hub (not yet paid out)</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 20, fontWeight: 800, color: '#7c3aed' }}>{inr(hubRev.total.our_take)}</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#7c3aed' }}>{inr(hubView.total.our_take)}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Our take (same formula as Payouts)</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 20, fontWeight: 700 }}>{hubRev.total.invoice_count}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Customer invoice{hubRev.total.invoice_count !== 1 ? 's' : ''}</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{hubView.total.invoice_count}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Customer invoice{hubView.total.invoice_count !== 1 ? 's' : ''}</div>
                   </div>
                 </div>
               </div>
@@ -1395,7 +1658,7 @@ export default function ReportsPage() {
                   <TrendingUp size={15} style={{ color: '#3b82f6' }} />
                   Revenue by Hub
                 </div>
-                {hubRev.items.length === 0 ? (
+                {hubView.rows.length === 0 ? (
                   <div className="anl-empty">No customer invoices in this period.</div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
@@ -1410,35 +1673,65 @@ export default function ReportsPage() {
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#ea580c' }}>Outstanding to Hub</th>
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#7c3aed' }}>Our Take</th>
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Invoices</th>
+                          {/* Header for the per-row exclude toggle. Without it
+                              the head has 8 cells and the body has 9, and every
+                              column below drifts one to the left. */}
+                          <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)', width: 34 }} />
                         </tr>
                       </thead>
                       <tbody>
-                        {hubRev.items.map((row, i) => {
+                        {hubView.rows.map((row, i) => {
+                          const k = hubKey(row.hub_id);
+                          const off = excludedHubs.has(k);
+                          // Excluded rows stay VISIBLE, struck through. Hiding
+                          // them would make an excluded hub indistinguishable
+                          // from one with no invoices this period.
+                          const cell = {
+                            opacity: off ? 0.4 : 1,
+                            textDecoration: off ? 'line-through' : 'none',
+                          };
                           return (
                             <tr key={row.hub_id ?? `none-${i}`}>
-                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, fontWeight: 600, ...cell }}>
                                 {row.hub_name}
                               </td>
-                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', fontWeight: 700 }}>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right', fontWeight: 700 }}>
                                 {inr(row.revenue)}
                               </td>
-                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: 'var(--text-muted)' }}>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right', color: 'var(--text-muted)' }}>
                                 {inr(row.collected)}
                               </td>
-                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#dc2626' }}>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right', color: '#dc2626' }}>
                                 {inr(row.hub_payable)}
                               </td>
-                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#16a34a' }}>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right', color: '#16a34a' }}>
                                 {inr(row.hub_payable_approved)}
                               </td>
-                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#ea580c' }}>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right', color: '#ea580c' }}>
                                 {inr(row.outstanding_to_hub)}
                               </td>
-                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', fontWeight: 700, color: '#7c3aed' }}>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right', fontWeight: 700, color: '#7c3aed' }}>
                                 {inr(row.our_take)}
                               </td>
-                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right' }}>
                                 {row.invoice_count}
+                              </td>
+                              <td style={{ padding: '9px 6px', borderBottom: '1px solid var(--border)', textAlign: 'right', width: 34 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleHubExcluded(k)}
+                                  title={off ? `Include ${row.hub_name} in the totals` : `Exclude ${row.hub_name} from the totals`}
+                                  aria-label={off ? `Include ${row.hub_name}` : `Exclude ${row.hub_name}`}
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    width: 22, height: 22, padding: 0, borderRadius: 6, cursor: 'pointer',
+                                    border: '1px solid var(--border)',
+                                    background: off ? '#fffbeb' : 'transparent',
+                                    color: off ? '#b45309' : 'var(--text-muted)',
+                                  }}
+                                >
+                                  {off ? <RotateCcw size={12} /> : <X size={12} />}
+                                </button>
                               </td>
                             </tr>
                           );

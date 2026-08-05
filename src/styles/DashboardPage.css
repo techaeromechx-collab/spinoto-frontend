@@ -173,21 +173,115 @@
   .db-pipeline-kpi-div   { width: 1px; height: 34px; background: var(--border); margin: 0 18px; flex-shrink: 0; }
 
   /* ── Hub Performance ──────────────────────────────────────────────────── */
-  .db-hub-list  { flex: 1; display: flex; flex-direction: column; padding: 12px 18px; justify-content: space-evenly; }
-  .db-hub-row   { display: flex; align-items: center; gap: 10px; }
+  /* The progress bar is gone: with count AND value both shown, a bar could
+     only ever encode one of them, and it encoded the smaller story. Two
+     right-aligned numeric columns say more in less space. */
+
+  /* Five tabs do not fit the card's width, so they scroll sideways on one
+     line rather than wrapping — a wrapped strip pushed "Generated" onto a
+     second row and stole a row's worth of height from the list below.
+     nowrap is the fix; flex-wrap: wrap was the cause. */
+  .db-hub-tabbar {
+    display: flex; gap: 4px; padding: 10px 18px 0; flex-wrap: nowrap;
+    overflow-x: auto; overflow-y: hidden;
+    border-bottom: 1px solid var(--border);
+    /* Hide the scrollbar itself. It would sit on the 1px border and look like
+       a rendering fault; the row is short and drag/wheel still work. */
+    scrollbar-width: none; -ms-overflow-style: none;
+    /* Snap so a tab never comes to rest half cut off. */
+    scroll-snap-type: x proximity;
+  }
+  .db-hub-tabbar::-webkit-scrollbar { display: none; }
+  /* Chrome and Firefox drop a flex scroll container's trailing padding, so the
+     last tab butts against the card edge at full scroll. A zero-width pseudo
+     element with the same margin restores it. */
+  .db-hub-tabbar::after { content: ''; flex: 0 0 18px; }
+
+  .db-hub-tab {
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 27px; padding: 0 10px; margin-bottom: -1px;
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    font-family: inherit; font-size: 11.5px; font-weight: 600;
+    color: var(--text-muted); cursor: pointer; transition: color .12s;
+    /* Without this a flex item shrinks below its content and the labels
+       compress into ellipses instead of overflowing into the scroll. */
+    flex-shrink: 0; white-space: nowrap; scroll-snap-align: start;
+  }
+  .db-hub-tab:hover       { color: var(--primary); }
+  .db-hub-tab--active     { color: var(--primary); border-bottom-color: var(--primary); }
+  .db-hub-tab-n {
+    font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 999px;
+    background: var(--bg-soft); color: var(--text-muted);
+  }
+  .db-hub-tab--active .db-hub-tab-n {
+    background: color-mix(in srgb, var(--primary) 12%, var(--bg)); color: var(--primary);
+  }
+
+  /* min-height:0 is load-bearing. A flex child's default min-height is auto,
+     which means it refuses to shrink below its content — so the inner
+     scroller would never get a bounded height and the whole card would grow
+     instead of scrolling. */
+  .db-hub-list  { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 18px 12px; }
+
+  /* Scrolls once there are more than six hubs.
+     Row height: 8px padding + 30px avatar + 8px padding + 1px divider = 47px.
+     Six of those = 282px, so the seventh row is half-visible — which is the
+     point: a scroll area whose content ends exactly at its edge looks like it
+     has nothing more in it. */
+  .db-hub-scroll {
+    flex: 1; min-height: 0; max-height: 282px; overflow-y: auto;
+    /* Only the vertical axis. Pairing `auto` with `visible` is not allowed —
+       the browser silently promotes the other axis to `auto` too, which would
+       add a phantom horizontal scrollbar on narrow cards. */
+    overflow-x: hidden;
+    scrollbar-width: thin;
+  }
+  .db-hub-scroll::-webkit-scrollbar        { width: 6px; }
+  .db-hub-scroll::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 3px; }
+  .db-hub-scroll::-webkit-scrollbar-track  { background: transparent; }
+
+  .db-hub-hd {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0 6px; border-bottom: 1px solid var(--border);
+    font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--text-muted);
+  }
+  .db-hub-hd-spacer { width: 30px; flex-shrink: 0; }
+  .db-hub-hd-name   { flex: 1; min-width: 0; }
+  .db-hub-hd-num    { width: 56px; flex-shrink: 0; text-align: right; }
+  /* Wide enough for ₹12,34,567 — full amounts, not the ₹1.1L short form.
+     Must stay in step with .db-hub-num--val or the header drifts off its
+     column. */
+  .db-hub-hd-val    { width: 104px; }
+
+  .db-hub-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+  }
+  .db-hub-row:last-child { border-bottom: none; }
+  /* Hubs with nothing in this tab stay listed but recede — a column of zeroes
+     competing at full contrast with real figures is noise, not information. */
+  .db-hub-row--zero { opacity: .45; }
+
   .db-hub-avatar {
     width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
     background: linear-gradient(135deg, #0ea5e9, #38bdf8);
     color: #fff; font-size: 12px; font-weight: 800;
     display: flex; align-items: center; justify-content: center;
   }
-  .db-hub-info  { flex: 1; min-width: 0; }
-  .db-hub-name  { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .db-hub-track { height: 6px; background: var(--bg-soft); border-radius: 999px; overflow: hidden; }
-  .db-hub-fill  { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #0ea5e9, #38bdf8); }
-  .db-hub-right { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
-  .db-hub-count { font-size: 13px; font-weight: 800; color: #0ea5e9; }
-  .db-hub-val   { font-size: 10px; color: var(--text-muted); font-weight: 500; }
+  .db-hub-name {
+    flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Fixed widths + tabular figures so the numbers form a clean column down the
+     list. Proportional digits make ₹1,11,000 narrower than ₹98,000 and the
+     right edge ragged. */
+  .db-hub-num {
+    width: 56px; flex-shrink: 0; text-align: right;
+    font-size: 12px; font-weight: 600; color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .db-hub-num--val { width: 104px; font-size: 12.5px; font-weight: 800; color: var(--text); }
 
   /* ── Follow-ups ───────────────────────────────────────────────────────── */
   .db-followups { border: 1px solid var(--border); }
