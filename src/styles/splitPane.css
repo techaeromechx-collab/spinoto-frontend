@@ -10,7 +10,42 @@
      flush panel divided from the detail by its own right border rather than by
      a strip of page background. */
   gap: 0;
-  align-items: start;
+
+  /* Fills the scroll viewport exactly and scrolls NOTHING itself — each pane
+     owns its own overflow below. Previously the rail was `position: sticky`
+     inside the page's scroller, which meant one scrollbar served both panes:
+     scrolling the invoice dragged the rail's cards and its pager up and off
+     the top with it.
+
+     A viewport unit rather than a height:100% chain, because that chain would
+     run .page-scroll > .content > motion.div > .ci-page > here, and any one of
+     the four forgetting a definite height silently collapses it.
+     dvh, not vh: dvh tracks a mobile browser's collapsing address bar. */
+  height: calc(100dvh - var(--topbar-h));
+  overflow: hidden;
+
+  /* Explicit, so the row cannot be sized by its content. minmax(0, …) for the
+     same reason as the columns: an auto minimum would let the invoice's table
+     push the row taller than the container instead of scrolling. */
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* The page root must not add space around a pane that is already exactly the
+   height of the viewport: that space becomes an outer scrollbar and the whole
+   layout can drift again — a 40px green band under the invoice.
+
+   The roots are named explicitly rather than matched with a bare
+   `:has(> .sp-split)`. That version lost, silently: `:has()` takes the
+   specificity of its argument, so it scored (0,1,0) — a dead tie with
+   `.ci-page { padding-bottom: 40px }` — and CustomerInvoicesPage.css is
+   imported after splitPane.css, so the tie went to the padding. Qualifying by
+   the root lifts it to (0,2,0) and the import order stops mattering.
+
+   ADDING A SPLIT-PANE PAGE: add its root class here too. */
+.ci-page:has(> .sp-split),
+.pi-page:has(> .sp-split),
+.estimates-page:has(> .sp-split) {
+  padding-bottom: 0;
 }
 /* minmax(0, 1fr) above is load-bearing: a grid track's default min-width is
    auto, so the detail column would refuse to shrink below its widest child —
@@ -21,19 +56,17 @@
 .sp-split--collapsed .sp-rail { display: none; }
 
 .sp-rail {
-  position: sticky;
-  /* Flush to the top now that the page header above it is gone. */
-  top: 0;
   display: flex;
   flex-direction: column;
   /* height, not max-height. With max-height alone the rail shrinks to fit its
      contents, so a search that returns one result leaves the pager sitting
      directly under that single card halfway up the screen. A definite height
      lets .sp-rail-list take the slack (flex: 1) and pins the pager to the
-     bottom whatever the result count.
-     100dvh over 100vh: dvh tracks a mobile browser's collapsing address bar,
-     which vh does not. */
-  height: calc(100dvh - 56px);
+     bottom whatever the result count. 100% is the grid row, which .sp-split
+     has already sized to the viewport — so the pager sits on the bottom edge
+     of the screen and stays there while the invoice scrolls beside it. */
+  height: 100%;
+  min-height: 0;
   background: var(--panel);
   /* One border, on the side that divides the two panes. A full border plus a
      radius would read as a card floating in a gap that no longer exists. */
@@ -231,7 +264,14 @@
 .sp-rail-pgbtns button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .sp-rail-pgbtns button:disabled { opacity: .35; cursor: not-allowed; }
 
-.sp-detail { min-width: 0; }
+.sp-detail {
+  min-width: 0;
+  /* The only thing on this screen that scrolls. min-height:0 so it may shrink
+     below the invoice's natural height — without it the grid item grows to fit
+     its content and the overflow never engages. */
+  min-height: 0;
+  overflow-y: auto;
+}
 /* The detail is a card of its own; edge-to-edge means the PAGE has no margins,
    not that the invoice touches the window frame. */
 .sp-split .sp-detail > .est-detail-view { border-radius: 0; border-top: 0; border-right: 0; border-bottom: 0; }
@@ -247,7 +287,10 @@
 
 /* Printing an invoice must not print the list beside it. */
 @media print {
-  .sp-split { display: block; }
+  /* Undo the viewport sizing: a print job is not one screen tall, and a fixed
+     height with an inner scroller prints the first page and clips the rest. */
+  .sp-split { display: block; height: auto; overflow: visible; }
+  .sp-detail { overflow: visible; }
   .sp-rail, .sp-rail-restore { display: none !important; }
 }
 

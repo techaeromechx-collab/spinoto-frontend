@@ -82,6 +82,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import NewLeadModal from './NewLeadModal.jsx';
 import { api } from '../api/client.js';
 import { useTopbarSearch, clearPageSearch } from '../lib/pageSearchStore.js';
+import { useCrumbLabel } from '../lib/pageCrumbStore.js';
 import '../styles/AppShell.css';
 
 // Each nav item declares the permissions it requires (any of). An empty
@@ -204,6 +205,14 @@ export default function AppShell({ children }) {
   // A page that does not claim the box gets no box, rather than one that
   // silently does nothing.
   const pageSearch = useTopbarSearch();
+
+  // The last breadcrumb on a detail route is a raw token. The page that owns
+  // the record publishes a readable label for it (CI-000048); this reads that
+  // back. Computed at the top level because useCrumbLabel is a hook and the
+  // crumb itself is rendered inside a JSX IIFE further down.
+  const crumbSegments = location.pathname.split('/').filter(Boolean);
+  const crumbToken = crumbSegments.length === 2 ? crumbSegments[1] : null;
+  const crumbLabel = useCrumbLabel(crumbToken);
   const searchRef  = useRef(null);
 
   // ⌘K / Ctrl+K focuses it; Escape clears and blurs.
@@ -586,7 +595,15 @@ export default function AppShell({ children }) {
                       <ChevronRight size={12} className="mx-1" />
                       <Link to={`/${segments[0]}`} className="capitalize">{segments[0].replace(/-/g, ' ')}</Link>
                       <ChevronRight size={12} className="mx-1" />
-                      <span className="capitalize crumb-token">{segments[1]}</span>
+                      {/* The page publishes a human label for its token —
+                          "CI-000048" rather than "zuOAVWTsZ1vqUw". Falls back
+                          to the raw token, which is what shows for the moment
+                          before the record resolves, and for any detail page
+                          that publishes nothing. The URL is untouched either
+                          way; this is display only. */}
+                      <span className={crumbLabel ? 'crumb-token' : 'capitalize crumb-token'}>
+                        {crumbLabel || segments[1]}
+                      </span>
                     </>
                   );
                 }

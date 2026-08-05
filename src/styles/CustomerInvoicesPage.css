@@ -802,3 +802,47 @@
   .ci-totals-row { gap: 14px !important; }
   .ci-totals-row > div { min-width: 0 !important; flex: 1 1 100% !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Record Payment dialog
+   Replaces the permanent Add Payment bar that used to sit above the payments
+   table — five fields of noise on an invoice that is already settled.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ci-pay-backdrop {
+  position: fixed; inset: 0; z-index: 1200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.ci-pay-modal {
+  width: 100%; max-width: 560px; max-height: 90dvh;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+}
+.ci-pay-hd {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* In a 560px dialog the fields stack rather than fighting for a row. The
+   inline widths they carry were tuned for a full-width bar. */
+.ci-pay-modal form > div[style] > div[style] { flex: 1 1 100% !important; }
+.ci-pay-modal .form-input { width: 100%; }
+.ci-pay-modal .btn[type="submit"] { width: 100%; justify-content: center; margin-top: 4px; }
+
+@media (max-width: 560px) {
+  .ci-pay-backdrop { padding: 0; align-items: flex-end; }
+  .ci-pay-modal { max-width: 100%; border-radius: 16px 16px 0 0; max-height: 95dvh; }
+}
+
+/* The dialog is screen-only, like the bar it replaces. */
+@media print {
+  .ci-pay-backdrop { display: none !important; }
+}

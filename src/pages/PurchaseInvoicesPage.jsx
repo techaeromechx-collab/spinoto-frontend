@@ -13,6 +13,7 @@ import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
+import { usePageCrumb } from '../lib/pageCrumbStore.js';
 import {
   ReceiptText, RefreshCw, X, Eye, XCircle, SlidersHorizontal, ArrowDown,
   AlertCircle, CheckCircle2, Clock, Trash2, ChevronLeft, Printer, Download, FileText, MoreVertical, ChevronDown,
@@ -1498,6 +1499,11 @@ export default function PurchaseInvoicesPage() {
     if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
     return q;
   }, [search, hubFilter, statusFilter, vehicleTypeFilter]);
+
+  // Name the last breadcrumb. Without this it renders the raw public_token
+  // from the URL — "zuOAVWTsZ1vqUw" instead of "PI-000048". Display only:
+  // the URL keeps the token, so shared links and bookmarks are unaffected.
+  usePageCrumb(token, selectedId ? `PI-${String(selectedId).padStart(6, '0')}` : null);
 
   const rail = useDetailRail({
     endpoint: '/api/purchase-invoices',

@@ -14,6 +14,7 @@ import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch } from '../hooks/useDebouncedSearch.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
+import { usePageCrumb } from '../lib/pageCrumbStore.js';
 import '../styles/listLayout.css';
 import '../styles/CustomersPage.css';
 
@@ -1630,7 +1631,18 @@ export default function CustomersPage() {
     navigate('/customers');
   }
 
+  // Name for the breadcrumb. Customers have no document number, so the crumb
+  // shows who you are looking at — "Home > Customers > Lakshmi Venkat" instead
+  // of a token. Captured from the record the detail view has already loaded, so
+  // it costs no extra request.
+  const [crumbName, setCrumbName] = useState(null);
+  usePageCrumb(token, crumbName);
+
   function handleCustomerLoaded(item) {
+    // customer_name, not name — that is the field the API returns and the one
+    // the profile header itself renders. Falls back to the mobile number, which
+    // is the record's real key and is still better than a token.
+    if (item) setCrumbName(item.customer_name || item.mobile || null);
     if (closedRef.current) return;
     if (!item?.public_token || resolvedTokenRef.current === item.public_token) return;
     resolvedTokenRef.current = item.public_token;

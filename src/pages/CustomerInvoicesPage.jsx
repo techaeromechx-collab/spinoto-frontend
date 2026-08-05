@@ -16,6 +16,7 @@ import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
+import { usePageCrumb } from '../lib/pageCrumbStore.js';
 import {
   Receipt, Search, RefreshCw, X, Eye, Trash2, SlidersHorizontal, ArrowDown,
   AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, ChevronRight, Printer, Download, Car, ChevronDown, Pencil,
@@ -177,9 +178,18 @@ function InfoRow({ label, value }) {
   );
 }
 
-// ── Add Payment Form ──────────────────────────────────────────────────────────
-function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
-  const [form, setForm] = useState({ amount: '', method: 'cash', reference_no: '', notes: '', paid_at: '' });
+// ── Add Payment Modal ─────────────────────────────────────────────────────────
+// Was a permanent bar above the payments table. On a settled invoice that is
+// five fields of pure noise, and it was the widest block in the detail pane.
+// Now a dialog behind a single Record Payment button.
+function AddPaymentModal({ invoiceId, balance, onClose, onSuccess, showToast }) {
+  useEscapeClose(onClose);
+  // Amount pre-filled with the full balance — paying in full is the common
+  // case, so it should need no typing. Still editable for a part payment.
+  const [form, setForm] = useState({
+    amount: balance > 0 ? balance.toFixed(2) : '',
+    method: 'cash', reference_no: '', notes: '', paid_at: '',
+  });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState(null);
 
@@ -202,8 +212,10 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
           paid_at: form.paid_at || undefined, // blank = now
         },
       });
-      setForm({ amount: '', method: 'cash', reference_no: '', notes: '', paid_at: '' });
       showToast('Payment recorded.');
+      // Close first: onSuccess reloads the invoice, and leaving the dialog up
+      // over a reloading record makes it look like nothing happened.
+      onClose();
       onSuccess();
     } catch (ex) {
       setErr(ex.message || 'Failed to record payment.');
@@ -213,23 +225,36 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
   }
 
   return (
-    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-        <h5 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Add Payment</h5>
+    <div className="ci-pay-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ci-pay-modal" role="dialog" aria-modal="true" aria-label="Record payment">
+        <div className="ci-pay-hd">
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>Record Payment</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              Balance due <strong>{fmt(balance)}</strong>
+            </div>
+          </div>
+          <button type="button" className="btn btn-ghost" onClick={onClose} aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+
+    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 18px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <div className="quick-pay-btn-group">
           <button
             type="button"
             className="quick-pay-chip quick-pay-chip-cash"
             onClick={() => setForm(f => ({ ...f, amount: balance.toFixed(2), method: 'cash' }))}
           >
-            Pay Full Cash (₹{balance.toFixed(2)})
+            Full Cash
           </button>
           <button
             type="button"
             className="quick-pay-chip quick-pay-chip-upi"
             onClick={() => setForm(f => ({ ...f, amount: balance.toFixed(2), method: 'upi' }))}
           >
-            Pay Full UPI (₹{balance.toFixed(2)})
+            Full UPI
           </button>
         </div>
       </div>
@@ -299,6 +324,8 @@ function AddPaymentForm({ invoiceId, balance, onSuccess, showToast }) {
         </div>
       )}
     </form>
+      </div>
+    </div>
   );
 }
 
@@ -514,6 +541,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
 
   // Editable CI notes — independent of the estimate's notes (which are only
   // copied over once, at generation time).
+  const [showAddPayment, setShowAddPayment] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
@@ -738,6 +766,24 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
           {inv && <StatusBadge status={inv.status} />}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* First in the row, and the only filled button: recording a payment
+              is the action you came here to take, while Print and Download are
+              things you do with the result.
+
+              Hidden once the balance reaches zero rather than disabled — with
+              nothing left to pay, a permanently dead button is worse than none.
+              `ci-internal` keeps it off the printed invoice. */}
+          {canAddPayment && balance > 0.001 && (
+            <button
+              type="button"
+              className="btn btn-primary ci-internal"
+              onClick={() => setShowAddPayment(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
+            >
+              <Plus size={15} /> Record Payment
+            </button>
+          )}
+
           {/* Server-rendered themed PDF. Replaces the old window.print() of
               the on-screen layout, which ignored the configured theme, logo
               and accent colour entirely. */}
@@ -1408,19 +1454,16 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
             </div>{/* /right column */}
           </div>{/* /side-by-side row */}
 
-          {/* Add payment form — screen only */}
-          {canAddPayment && (
-            <div className="ci-internal" style={{
-              background: 'var(--bg-soft)', borderRadius: 12, padding: '16px 18px',
-              border: '1px solid var(--border)',
-            }}>
-              <AddPaymentForm
-                invoiceId={invoiceId}
-                balance={balance}
-                showToast={showToast}
-                onSuccess={async () => { await load(); onRefreshList(); }}
-              />
-            </div>
+          {/* The Add Payment bar used to sit here. It is a dialog now, opened
+              from the button beside the Payments heading — see showAddPayment. */}
+          {showAddPayment && (
+            <AddPaymentModal
+              invoiceId={invoiceId}
+              balance={balance}
+              showToast={showToast}
+              onClose={() => setShowAddPayment(false)}
+              onSuccess={async () => { await load(); onRefreshList(); }}
+            />
           )}
 
           {/* ── Invoice Footer ── */}
@@ -1819,6 +1862,11 @@ export default function CustomerInvoicesPage() {
     if (toDate) q.set('to', toDate);
     return q;
   }, [search, hubFilter, statusFilter, vehicleTypeFilter, fromDate, toDate]);
+
+  // Name the last breadcrumb. Without this it renders the raw public_token
+  // from the URL — "zuOAVWTsZ1vqUw" instead of "CI-000048". Display only:
+  // the URL keeps the token, so shared links and bookmarks are unaffected.
+  usePageCrumb(token, selectedId ? `CI-${String(selectedId).padStart(6, '0')}` : null);
 
   const rail = useDetailRail({
     endpoint: '/api/customer-invoices',
