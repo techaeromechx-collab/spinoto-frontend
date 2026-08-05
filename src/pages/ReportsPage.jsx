@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -177,6 +177,26 @@ export function applyHubExclusions(hubRev, excluded) {
     removedTotal: sum(removed),
     isFiltered: removed.length > 0,
   };
+}
+
+/**
+ * Deep link from a Hub Revenue row to that hub's customer invoices.
+ *
+ * The date range travels with it. Without that, clicking a row that reads
+ * "39 invoices" while the report is scoped to this month lands on a list of
+ * every invoice ever — which reads as a bug, not as a wider view.
+ *
+ * Returns null for the "No hub" row: those invoices have no hub_id, so no
+ * filter reproduces them, and a link that quietly shows something else is
+ * worse than no link.
+ */
+export function hubInvoicesLink(hubId, { from, to } = {}) {
+  if (hubId === null || hubId === undefined) return null;
+  const q = new URLSearchParams();
+  q.set('hub_ids', String(hubId));
+  if (from) q.set('from', from);
+  if (to)   q.set('to', to);
+  return `/customer-invoices?${q.toString()}`;
 }
 
 export function buildCsvExport(tab, { hubRev, sortedUsers, byUserCount, from }) {
@@ -1692,8 +1712,28 @@ export default function ReportsPage() {
                           };
                           return (
                             <tr key={row.hub_id ?? `none-${i}`}>
-                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, fontWeight: 600, ...cell }}>
-                                {row.hub_name}
+                              {/* `...cell` once, not twice — an earlier scripted
+                                  edit spread it in on top of the one already
+                                  here. Same result, but it read like one of the
+                                  two was doing something different. */}
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, fontWeight: 600 }}>
+                                {(() => {
+                                  const href = hubInvoicesLink(row.hub_id, dateRange);
+                                  // "No hub" has nothing to filter by, so it
+                                  // stays plain text rather than becoming a
+                                  // link that lands somewhere else.
+                                  if (!href) return row.hub_name;
+                                  return (
+                                    <Link
+                                      to={href}
+                                      className="rp-hub-link"
+                                      title={`View ${row.hub_name}'s customer invoices`}
+                                    >
+                                      {row.hub_name}
+                                      <ChevronRight size={12} className="rp-hub-link-arrow" />
+                                    </Link>
+                                  );
+                                })()}
                               </td>
                               <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right', fontWeight: 700 }}>
                                 {inr(row.revenue)}

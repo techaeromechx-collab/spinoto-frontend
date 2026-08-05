@@ -3385,6 +3385,11 @@ export default function LeadsPage() {
   function closeLead() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
+    // Cleared HERE, not left to the `[token]` effect — that effect only clears
+    // when `resolvedTokenRef.current` is still set, and the line above has just
+    // nulled it. Without this the lead stays open with the URL already back at
+    // /leads. See the same comment in CustomersPage.
+    setViewId(null);
     navigate('/leads');
   }
 

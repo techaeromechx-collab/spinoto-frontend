@@ -482,9 +482,22 @@ export default function AppShell({ children }) {
         <div
           className="sidebar-profile"
           onClick={() => {
-            // The old "Super Admin" profile tab (company details + role
-            // creator) now lives in the Settings module.
-            if (user?.is_super_admin) navigate('/settings?tab=business');
+            // Always the profile. A super admin used to be sent to
+            // /settings?tab=business instead — a leftover from when company
+            // details and the role creator lived on a profile tab and moved
+            // into the Settings module. The card says "View profile" and shows
+            // the signed-in person's name and avatar, so landing on company
+            // settings was simply the wrong destination.
+            //
+            // Settings is still reachable from the nav item above.
+            //
+            // Super admin is checked FIRST and lands on Overview. It cannot
+            // fall through to the MANAGE_USERS branch: can() returns true for
+            // super admins, but ProfilePage builds its Admin tab from
+            // `isAdmin = !is_super_admin && perm.has('MANAGE_USERS')` — so a
+            // super admin sent to ?tab=admin gets a tab bar with nothing
+            // selected and a body rendered under a heading that isn't there.
+            if (user?.is_super_admin) navigate('/profile?tab=overview');
             else if (can('MANAGE_USERS')) navigate('/profile?tab=admin');
             else if (can('VIEW_TEAM_LEADS')) navigate('/profile?tab=team');
             else navigate('/profile?tab=overview');
@@ -498,7 +511,10 @@ export default function AppShell({ children }) {
             <div className="sidebar-profile-info">
               <div className="sidebar-profile-name">{user?.name}</div>
               <div className="sidebar-profile-hint">
-                {user?.is_super_admin ? 'Super Admin Panel'
+                {/* "Super Admin Panel" described where this card used to go —
+                    the settings module. It goes to the profile now, so the
+                    subtitle names the role like it does for everyone else. */}
+                {user?.is_super_admin ? 'Super Admin'
                   : user?.role_name ? user.role_name
                   : 'View my profile'}
               </div>
@@ -784,9 +800,20 @@ export default function AppShell({ children }) {
 
         <div className="page-scroll">
           <section className="content">
+            {/* Keyed on the route SECTION, not the full pathname.
+                /customer-invoices/AAA and /customer-invoices/BBB are the same
+                screen showing a different record — keying on the whole path
+                made AnimatePresence unmount and rebuild the entire page every
+                time you clicked a row in a master-detail list. That threw away
+                the list rail's scroll position, page number and collapsed
+                state, flashed the plain list view for a frame while
+                `selectedId` was re-resolved from the token, and fired two
+                extra requests per click.
+                Moving BETWEEN screens still animates, which is what the
+                animation was for. */}
             <AnimatePresence mode="wait">
               <motion.div
-                key={location.pathname}
+                key={location.pathname.split('/')[1] || 'home'}
                 style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}

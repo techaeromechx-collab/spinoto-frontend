@@ -1617,6 +1617,16 @@ export default function CustomersPage() {
   function closeCustomer() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
+    // Cleared HERE, not left to the `[token]` effect. That effect only clears
+    // when `resolvedTokenRef.current` is still set — and the line above has
+    // just nulled it, so the guard is false and the profile would stay on
+    // screen with the URL already back at /customers.
+    //
+    // It used to work only because navigating changed the pathname, which
+    // changed AppShell's animation key and remounted the whole page. The key
+    // is now the route section, so the page survives and the reset has to be
+    // real. The other four detail pages already do this.
+    setSelectedMobile(null);
     navigate('/customers');
   }
 

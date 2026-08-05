@@ -1,0 +1,427 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Split pane — a paged list rail beside an open record.
+   Shared by Estimates, Purchase Invoices and Customer Invoices.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.sp-split {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  /* No gap and no padding: the page now runs edge to edge, and the rail is a
+     flush panel divided from the detail by its own right border rather than by
+     a strip of page background. */
+  gap: 0;
+  align-items: start;
+}
+/* minmax(0, 1fr) above is load-bearing: a grid track's default min-width is
+   auto, so the detail column would refuse to shrink below its widest child —
+   the line-items table — and push the rail off the screen instead of scrolling
+   itself. */
+
+.sp-split--collapsed { grid-template-columns: 0 minmax(0, 1fr); }
+.sp-split--collapsed .sp-rail { display: none; }
+
+.sp-rail {
+  position: sticky;
+  /* Flush to the top now that the page header above it is gone. */
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  /* height, not max-height. With max-height alone the rail shrinks to fit its
+     contents, so a search that returns one result leaves the pager sitting
+     directly under that single card halfway up the screen. A definite height
+     lets .sp-rail-list take the slack (flex: 1) and pins the pager to the
+     bottom whatever the result count.
+     100dvh over 100vh: dvh tracks a mobile browser's collapsing address bar,
+     which vh does not. */
+  height: calc(100dvh - 56px);
+  background: var(--panel);
+  /* One border, on the side that divides the two panes. A full border plus a
+     radius would read as a card floating in a gap that no longer exists. */
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.sp-rail-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sp-rail-count { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+
+/* ── Rail search ──
+   Filters the rail, and through the page's shared state the table behind it.
+   Takes the header row that used to hold the record count; the pager below
+   already says "1–15 of 48". */
+.sp-rail-search {
+  position: relative;
+  display: flex; align-items: center;
+  flex: 1; min-width: 0;
+}
+.sp-rail-search-icon {
+  position: absolute; left: 8px;
+  color: var(--text-muted); pointer-events: none;
+}
+.sp-rail-search input {
+  width: 100%; min-width: 0;
+  height: 28px; padding: 0 26px 0 26px;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); color: var(--text);
+  font-family: inherit; font-size: 12px;
+  outline: none; transition: border-color .12s;
+}
+.sp-rail-search input:focus { border-color: var(--primary); }
+/* Chrome and Safari draw their own clear affordance for type="search", which
+   would sit on top of ours. */
+.sp-rail-search input::-webkit-search-cancel-button { display: none; }
+.sp-rail-search-clear {
+  position: absolute; right: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0;
+  border: none; border-radius: 4px;
+  background: none; color: var(--text-muted); cursor: pointer;
+}
+.sp-rail-search-clear:hover { background: var(--bg-soft); color: var(--text); }
+
+.sp-rail-hint {
+  flex-shrink: 0;
+  padding: 4px 12px 0;
+  font-size: 10.5px; color: var(--text-muted);
+}
+.sp-rail-toggle, .sp-rail-restore {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text-muted); cursor: pointer;
+}
+.sp-rail-toggle:hover, .sp-rail-restore:hover { border-color: var(--primary); color: var(--primary); }
+.sp-rail-restore {
+  position: sticky; top: 10px; align-self: start;
+  margin: 10px 0 0 10px;
+}
+
+/* min-height:0 — a flex child will not shrink below its content otherwise, so
+   the list would grow the rail instead of scrolling inside it. */
+/* No padding: the cards are full-bleed rows now, so their dividers run the
+   whole width of the rail rather than stopping 6px short on each side. */
+.sp-rail-list {
+  flex: 1; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 0;
+  /* Scrollbar hidden, scrolling kept. In a 320px rail the track is a visible
+     stripe down the edge of every card; wheel, trackpad, drag and keyboard all
+     still work. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.sp-rail-list::-webkit-scrollbar { display: none; }
+
+/* Rows separated by a hairline, not floating rounded boxes. The 3px left edge
+   stays — transparent until selected — so selecting a row cannot shift the
+   text sideways. */
+.sp-card {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  background: transparent; font-family: inherit; cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+/* The pager below draws its own top border; two together read as a thick,
+   slightly-off double line. */
+.sp-card:last-child { border-bottom: 0; }
+.sp-card:hover { background: var(--bg-soft); }
+.sp-card--on {
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg));
+  /* Only the left edge is tinted. Colouring `border-color` outright would also
+     recolour the bottom divider, making the selected row's separator brighter
+     than every other one. */
+  border-left-color: var(--primary);
+}
+.sp-card:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.sp-card-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sp-card-code    { font-size: 11.5px; font-weight: 800; color: var(--primary); }
+.sp-card-date  { font-size: 10.5px; color: var(--text-muted); flex-shrink: 0; }
+/* Name + badges. The pair shrinks together and the NAME is what truncates —
+   a badge is two or three characters and clipping it makes it unreadable,
+   while a clipped name is still recognisable. */
+.sp-card-who {
+  display: flex; align-items: center; gap: 5px;
+  min-width: 0; flex: 1;
+}
+.sp-card-name  {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sp-card-badge {
+  flex-shrink: 0;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .02em;
+  padding: 1px 4px; border-radius: 4px;
+  color: #7c3aed; border: 1px solid #ddd6fe; background: transparent;
+}
+[data-theme="dark"] .sp-card-badge { color: #c4b5fd; border-color: #4c1d95; }
+
+/* Amber fill for the warranty-redo marker — the same #fef3c7 / #92400e pair the
+   invoice table uses for it. A marker that is purple in one view and amber in
+   another teaches the colour means nothing. */
+.sp-card-badge--warn {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+[data-theme="dark"] .sp-card-badge--warn {
+  background: #422006;
+  color: #fcd34d;
+  border-color: #78350f;
+}
+.sp-card-status { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; flex-shrink: 0; }
+.sp-card-sub {
+  font-size: 11px; color: var(--text-muted); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.sp-card-figs {
+  display: flex; gap: 12px; margin-top: 6px;
+  font-size: 11.5px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.sp-card-figs em {
+  display: block; font-style: normal; font-size: 9.5px; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em;
+}
+.sp-fig--due { color: #dc2626; margin-left: auto; text-align: right; }
+
+.sp-card-codete { padding: 12px 8px; text-align: center; font-size: 11.5px; color: var(--text-muted); }
+
+/* ── Rail pager ──
+   Pinned below the scrolling list, not inside it, so it stays reachable
+   wherever you are in the page. flex-shrink:0 keeps the flex column from
+   collapsing it when the list is long. */
+/* Loading and empty states inside the scrolling list. */
+.sp-rail-note { padding: 12px 8px; text-align: center; font-size: 11.5px; color: var(--text-muted); }
+
+.sp-rail-pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  flex-shrink: 0;
+  padding: 7px 9px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-muted);
+}
+.sp-rail-pgsize { display: flex; align-items: center; gap: 5px; font-weight: 600; }
+.sp-rail-pgsize select {
+  height: 24px; padding: 0 4px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text);
+  font-size: 11px; font-weight: 700; font-family: inherit; cursor: pointer;
+}
+/* Tabular figures so the range does not jitter the buttons sideways as the
+   numbers change width between pages. */
+.sp-rail-range { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.sp-rail-pgbtns { display: flex; gap: 3px; }
+.sp-rail-pgbtns button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text-muted); cursor: pointer;
+}
+.sp-rail-pgbtns button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.sp-rail-pgbtns button:disabled { opacity: .35; cursor: not-allowed; }
+
+.sp-detail { min-width: 0; }
+/* The detail is a card of its own; edge-to-edge means the PAGE has no margins,
+   not that the invoice touches the window frame. */
+.sp-split .sp-detail > .est-detail-view { border-radius: 0; border-top: 0; border-right: 0; border-bottom: 0; }
+
+/* Two panes need roughly 1100px before the detail starts losing more than the
+   rail is worth. Below that the rail is dropped entirely and the page behaves
+   exactly as it did before the split existed — the header's back button is
+   still the way out. */
+@media (max-width: 1100px) {
+  .sp-split { grid-template-columns: minmax(0, 1fr); }
+  .sp-rail, .sp-rail-restore { display: none; }
+}
+
+/* Printing an invoice must not print the list beside it. */
+@media print {
+  .sp-split { display: block; }
+  .sp-rail, .sp-rail-restore { display: none !important; }
+}
+
+/* Close sits apart from the action buttons — a divider and a margin, so it is
+   not the thing you hit when reaching for Print. */
+.ci-detail-close {
+  margin-left: 4px; padding: 6px 10px !important;
+  border-left: 1px solid var(--border); border-radius: 0 8px 8px 0;
+  color: var(--text-muted);
+}
+.ci-detail-close:hover { color: #dc2626; }
+
+/* ── The detail's close button ──
+   Each page's detail header ends with one of these. It is the only in-page way
+   back below 1100px, where the rail is hidden. Set apart from the action
+   buttons by a divider so it is not what you hit reaching for Print. */
+.ci-detail-close, .pi-detail-close, .est-detail-close {
+  margin-left: 4px;
+  padding: 6px 10px !important;
+  border-left: 1px solid var(--border);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-muted);
+}
+.ci-detail-close:hover, .pi-detail-close:hover, .est-detail-close:hover { color: #dc2626; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Mobile — shared by Estimates, Purchase Invoices and Customer Invoices
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Below 760px each list swaps its wide table for these cards. The swap happens
+   in JS (useMediaQuery), not by hiding a duplicate — rendering both would put
+   every row in the DOM twice, on the device least able to afford it.
+
+   These are the same cards the split-pane rail uses, so there is no second
+   mobile design to keep in step with the desktop one. */
+.sp-cardlist {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px 10px;
+}
+/* The rail styles them for a 320px column against a panel; in a list they are
+   full-width rows on the page background and need a visible edge of their own. */
+.sp-cardlist .sp-card {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  padding: 11px 13px;
+  background: var(--panel);
+}
+.sp-cardlist .sp-card:last-child { margin-bottom: 0; }
+.sp-cardlist .sp-card:active { background: var(--bg-soft); }
+/* No selected state in a list: nothing is open, so a highlight would be
+   claiming something that is not true. */
+.sp-cardlist .sp-card--on { background: var(--panel); }
+
+@media (max-width: 760px) {
+  /* Filters: two-across full-width controls instead of a squeezed single line. */
+  .lb-toolbar { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
+  .lb-toolbar .lb-control { flex: 1 1 calc(50% - 4px); min-width: 0; justify-content: center; }
+  .lb-toolbar-right { width: 100%; justify-content: space-between; }
+
+  /* Touch targets. 36px is the smallest comfortably hittable size; the desktop
+     values are tuned for a cursor. */
+  .lb-control, .pgbar-size-select { min-height: 36px; }
+
+  /* The money summary wraps onto its own line rather than squeezing three
+     figures beside the record count. */
+  .pgbar-totals { width: 100%; }
+
+  /* ── Detail header ──
+     A title plus three or four controls. Stacked, with the actions on their own
+     full-width row so Print/Download/Close are reachable without scrolling. */
+  .est-detail-header {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 12px 14px !important;
+  }
+  .est-detail-header > div:last-child { width: 100%; justify-content: flex-end; }
+  .est-detail-header .btn { flex: 1 1 auto; justify-content: center; }
+  /* Close keeps its own size — it is not an action and should not stretch to
+     match Print and Download. */
+  .est-detail-header .ci-detail-close,
+  .est-detail-header .pi-detail-close,
+  .est-detail-header .est-detail-close { flex: 0 0 auto; }
+
+  /* The detail body's generous desktop padding costs a third of a phone's
+     width. */
+  .est-detail-view > div[style] { padding-left: 14px !important; padding-right: 14px !important; }
+}
+
+@media (max-width: 480px) {
+  /* At this width the figures are what matter; the vehicle line can wrap
+     rather than truncate, since there is no column to protect. */
+  .sp-cardlist .sp-card-sub { white-space: normal; }
+  .sp-cardlist .sp-card-figs { gap: 10px; flex-wrap: wrap; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Detail skeleton — shown while a record loads
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.sk { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+
+/* Visually hidden, still announced. clip-path over display:none, which would
+   remove it from the accessibility tree entirely. */
+.sk-sr {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+.sk-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  background: var(--bg-soft); border-radius: 10px; padding: 16px 20px;
+}
+.sk-col { display: flex; flex-direction: column; gap: 10px; }
+
+.sk-line {
+  height: 10px; width: 100%;
+  border-radius: 4px;
+  background: var(--border);
+}
+.sk-line--label { width: 30%; height: 8px; opacity: 0.7; }
+
+.sk-table { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.sk-thead { height: 34px; background: var(--bg-soft); }
+.sk-tr {
+  display: flex; align-items: center; gap: 24px;
+  padding: 14px 16px; border-top: 1px solid var(--border);
+}
+.sk-tr .sk-line { flex: 0 0 auto; }
+
+.sk-foot { display: flex; justify-content: space-between; gap: 24px; }
+.sk-foot > .sk-line { align-self: flex-start; height: 56px; border-radius: 8px; }
+.sk-totals { flex: 0 0 240px; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+
+/* A sweep, not a pulse. A pulse dims the whole block in step, which at a glance
+   reads as the page flickering; a sweep travels and reads as progress. */
+.sk-line, .sk-thead {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: sk-sweep 1.25s ease-in-out infinite;
+}
+[data-theme="dark"] .sk-line,
+[data-theme="dark"] .sk-thead {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+@keyframes sk-sweep {
+  from { background-position: 150% 0; }
+  to   { background-position: -50% 0; }
+}
+
+/* Respect a reduced-motion preference: the skeleton still holds the layout,
+   it just stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  .sk-line, .sk-thead { animation: none; background-image: none; }
+}
+
+@media (max-width: 760px) {
+  .sk { padding: 14px; gap: 14px; }
+  .sk-grid { grid-template-columns: 1fr; gap: 14px; }
+  .sk-foot { flex-direction: column; }
+  .sk-totals { flex: 1 1 auto; }
+}

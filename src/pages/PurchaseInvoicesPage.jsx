@@ -4,6 +4,10 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { api } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
+import SplitPane, { RecordCard } from '../components/SplitPane.jsx';
+import DetailSkeleton from '../components/DetailSkeleton.jsx';
+import { useMediaQuery, MOBILE_LIST_QUERY } from '../hooks/useMediaQuery.js';
+import { useDetailRail } from '../hooks/useDetailRail.js';
 import { getRoundingFunction } from '../lib/math.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
@@ -247,6 +251,36 @@ function InfoRow({ label, value }) {
       <span style={{ fontSize: 14, color: 'var(--text)', fontWeight: 500 }}>{value || '—'}</span>
     </div>
   );
+}
+
+/**
+ * One purchase invoice, as the shared RecordCard wants it.
+ *
+ * Module level and used twice — by the split-pane rail and by the LIST view
+ * below 760px — so the two cannot describe the same invoice differently.
+ */
+function piCard(inv) {
+  const gt   = parseFloat(inv.grand_total ?? 0);
+  const pd   = parseFloat(inv.amount_paid ?? 0);
+  const bal  = Math.max(0, gt - pd);
+  const meta = STATUS_META[inv.status] || { color: 'var(--text-muted)', label: inv.status || '—' };
+  return {
+    id: inv.id,
+    code: `PI-${String(inv.id).padStart(6, '0')}`,
+    date: fmtDate(inv.invoice_date || inv.created_at),
+    name: inv.hub_name || inv.customer_name || '—',
+    sub: [inv.vehicle_number, [inv.make_name, inv.model_name].filter(Boolean).join(' ')]
+           .filter(Boolean).join(' • '),
+    status: meta.label,
+    statusColor: meta.color,
+    figures: [
+      { label: 'Total', value: fmt(gt) },
+      { label: 'Paid',  value: fmt(pd) },
+      // Owed TO the hub, and only when there is a balance — a "₹0.00" on every
+      // settled invoice is noise down the whole list.
+      ...(bal > 0.001 ? [{ label: 'Owed', value: fmt(bal), tone: 'due' }] : []),
+    ],
+  };
 }
 
 // ── Detail Drawer ─────────────────────────────────────────────────────────────
@@ -571,14 +605,27 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
               )}
             </div>
           )}
+
+          {/* Close. The page-header bar that held the back button is gone, and
+              below 1100px the rail is hidden too — this is the only in-page way
+              back at that size. Last in the row, past the actions, so it is not
+              hit while reaching for them. */}
+          <button
+            className="btn btn-ghost pi-detail-close"
+            onClick={onClose}
+            title="Close and return to the list"
+            aria-label="Close invoice"
+          >
+            <X size={16} />
+          </button>
         </div>
       </div>
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-          <Clock size={28} style={{ opacity: 0.3, marginBottom: 10 }} />
-          <p style={{ margin: 0 }}>Loading…</p>
-        </div>
+        /* A skeleton, not a centred spinner: a spinner collapses the pane to
+           nothing and then drops the real content in at a different height, so
+           the whole page jumps when it arrives. */
+        <DetailSkeleton rows={3} />
       ) : !inv ? null : (
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -1322,6 +1369,11 @@ export default function PurchaseInvoicesPage() {
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState(ls.vehicleTypeFilter ?? '');
   const [hubs, setHubs] = useState([]);
 
+  // Below this width the table stops being readable and the list switches to
+  // cards. Not CSS-only: rendering both and hiding one puts every row in the
+  // DOM twice, on the device least able to afford it.
+  const isNarrow = useMediaQuery(MOBILE_LIST_QUERY);
+
   // Persist whenever any of these change. searchInput, not search: restore the
   // box exactly as they left it, even mid-word.
   useEffect(() => {
@@ -1436,48 +1488,58 @@ export default function PurchaseInvoicesPage() {
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
+  // Filters for the split-pane rail, built from the SAME values the table uses
+  // so the two can never disagree about what is being listed.
+  const buildRailQuery = useCallback(() => {
+    const q = new URLSearchParams();
+    if (search) q.set('search', search);
+    if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
+    if (statusFilter) q.set('status', statusFilter);
+    if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
+    return q;
+  }, [search, hubFilter, statusFilter, vehicleTypeFilter]);
+
+  const rail = useDetailRail({
+    endpoint: '/api/purchase-invoices',
+    selectedId,
+    buildQuery: buildRailQuery,
+  });
+
   return (
     /* lb-page cancels the app wrapper's padding and max-width so the table runs
        edge to edge. The detail view deliberately does not get it. */
-    <div className={selectedId ? 'pi-page' : 'pi-page lb-page'}>
-      {/* ── Header ──
-          The list view has no title: the top bar's breadcrumb already names the
-          screen. The whole block is skipped rather than left empty, so the
-          toolbar rises to fill the gap.
+    /* lb-page on both views: the detail is one half of a split pane now and
+       wants the full width — the rail is what it sits against.
 
-          The DETAIL view keeps its header — the back button and the title are
-          the only thing telling you which view you are looking at, and for a
-          hub user the wording differs ("Sell Invoice"). */}
-      {selectedId && (
-        <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              className="btn btn-ghost"
-              onClick={closeInvoice}
-              style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
-            >
-              <ChevronLeft size={16} />
-              {isHubUser ? 'All Sell Invoices' : 'All Purchase Invoices'}
-            </button>
-            <div style={{ width: 1, height: 24, background: 'var(--border)' }} />
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10, fontSize: 18 }}>
-              <ReceiptText size={20} style={{ color: 'var(--primary)' }} />
-              {isHubUser ? 'Sell Invoice' : 'Purchase Invoice'} Detail
-            </h2>
-          </div>
-        </div>
-      )}
-
+       No detail header bar. The back button and title lived here; the
+       breadcrumb already names the screen and links back, and the bar cost the
+       split pane a row of height above every invoice. The detail's own header
+       carries a close button, which is the way out below 1100px where the rail
+       is hidden. */
+    <div className="pi-page lb-page">
       {selectedId ? (
-        /* ── Full-page Detail View ── */
-        <DetailDrawer
-          invoiceId={selectedId}
-          onClose={closeInvoice}
-          showToast={showToast}
-          onRefreshList={fetchInvoices}
-          isHubUser={isHubUser}
-          onLoaded={handleInvoiceLoaded}
-        />
+        <SplitPane
+          rail={rail}
+          selectedId={selectedId}
+          onSelect={openInvoice}
+          noun={isHubUser ? 'sell invoice' : 'purchase invoice'}
+          /* The rail's search box drives the PAGE's search state, not its own —
+             two independent searches would disagree the moment you closed the
+             detail and the table showed a different set. */
+          search={searchInput}
+          onSearch={onSearchChange}
+          searchHint={tooShort ? `${minChars}+ characters` : ''}
+          mapCard={piCard}
+        >
+          <DetailDrawer
+            invoiceId={selectedId}
+            onClose={closeInvoice}
+            showToast={showToast}
+            onRefreshList={fetchInvoices}
+            isHubUser={isHubUser}
+            onLoaded={handleInvoiceLoaded}
+          />
+        </SplitPane>
       ) : (
         <>
           {/* ── Toolbar ──
@@ -1645,6 +1707,22 @@ export default function PurchaseInvoicesPage() {
               <div className="lb-empty">
                 <ReceiptText size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
                 <p style={{ margin: 0 }}>No purchase invoices found.</p>
+              </div>
+            ) : isNarrow ? (
+              /* ── Card list ──
+                  Below 760px the table is behind a min-width wide enough that a
+                  phone shows two of its columns. These are the same cards the
+                  split-pane rail uses — one component, so the two views cannot
+                  drift apart. */
+              <div className="sp-cardlist">
+                {items.map(row => (
+                  <RecordCard
+                    key={row.id}
+                    card={{ ...piCard(row), raw: row }}
+                    selected={false}
+                    onSelect={openInvoice}
+                  />
+                ))}
               </div>
             ) : (
               <div className="pi-table-wrap lb-scroll-x">

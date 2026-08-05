@@ -1,8 +1,12 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { api, API_URL, getToken } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
+import SplitPane, { RecordCard } from '../components/SplitPane.jsx';
+import DetailSkeleton from '../components/DetailSkeleton.jsx';
+import { useMediaQuery, MOBILE_LIST_QUERY } from '../hooks/useMediaQuery.js';
+import { useDetailRail } from '../hooks/useDetailRail.js';
 import InvoiceExtrasEditor from '../components/InvoiceExtrasEditor.jsx';
 import InvoiceDateDialog from '../components/InvoiceDateDialog.jsx';
 import { openDocumentPdf, downloadDocumentPdf } from '../lib/documentPdf.js';
@@ -14,7 +18,7 @@ import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/u
 import { usePageSearch } from '../lib/pageSearchStore.js';
 import {
   Receipt, Search, RefreshCw, X, Eye, Trash2, SlidersHorizontal, ArrowDown,
-  AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, Printer, Download, Car, ChevronDown, Pencil,
+  AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, ChevronRight, Printer, Download, Car, ChevronDown, Pencil,
 } from 'lucide-react';
 import '../styles/listLayout.css';
 import '../styles/CustomerInvoicesPage.css';
@@ -435,6 +439,45 @@ function VehicleHistoryModal({ onClose }) {
   );
 }
 
+/**
+ * One customer invoice, as the shared RecordCard wants it.
+ *
+ * Module level and used twice — by the split-pane rail and by the LIST view
+ * below 760px. Written once so the two can never describe the same invoice
+ * differently.
+ */
+function ciCard(inv) {
+  const gt   = parseFloat(inv.grand_total ?? 0);
+  const pd   = parseFloat(inv.amount_paid ?? 0);
+  const bal  = Math.max(0, gt - pd);
+  const meta = STATUS_META[inv.status] || { color: 'var(--text-muted)', label: inv.status || '—' };
+  return {
+    id: inv.id,
+    code: `CI-${String(inv.id).padStart(6, '0')}`,
+    date: fmtDate(invoiceDate(inv)),
+    name: inv.is_b2b ? (inv.b2b_company_name || inv.customer_name) : inv.customer_name,
+    sub: [inv.vehicle_number, [inv.make_name, inv.model_name].filter(Boolean).join(' ')]
+           .filter(Boolean).join(' • '),
+    status: meta.label,
+    statusColor: meta.color,
+    // Same two markers the table shows beside the customer name, so a row does
+    // not lose information just because it is being read in the rail.
+    badges: [
+      ...(inv.is_b2b ? [{ label: 'B2B', title: 'B2B invoice' }] : []),
+      ...(inv.warranty_claim_id
+        ? [{ label: '🛡 REDO', title: 'Warranty redo invoice', tone: 'warn' }]
+        : []),
+    ],
+    figures: [
+      { label: 'Total', value: fmt(gt) },
+      { label: 'Paid',  value: fmt(pd) },
+      // Only when there IS one — a "₹0.00 due" on every settled invoice is a
+      // column of noise down the whole list.
+      ...(bal > 0.001 ? [{ label: 'Due', value: fmt(bal), tone: 'due' }] : []),
+    ],
+  };
+}
+
 // ── Detail Drawer ─────────────────────────────────────────────────────────────
 function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }) {
   const rawNavigate = useNavigate();
@@ -459,13 +502,15 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   // Separate from the Print spinner so the two buttons disable independently.
   const [themedPdfSaving, setThemedPdfSaving] = useState(false);
 
-  // Whether to include B2B billing details (Company Name/GST/Address) when
-  // printing — on-screen these always show regardless of this toggle.
-  const [includeB2bPrint, setIncludeB2bPrint] = useState(true);
-
-  // Whether to include the Notes box when printing — on-screen it always
-  // shows (when present) regardless of this toggle.
-  const [includeNotesPrint, setIncludeNotesPrint] = useState(true);
+  // B2B billing details and the Notes box always print.
+  //
+  // These were two header checkboxes, both defaulting to on, and were removed
+  // as clutter. Kept as constants rather than deleted outright: they are read
+  // by the `est-no-print` class logic further down, and inlining `true` at
+  // those two sites would leave a pair of conditions that look like dead code
+  // and read as if something is being suppressed.
+  const includeB2bPrint   = true;
+  const includeNotesPrint = true;
 
   // Editable CI notes — independent of the estimate's notes (which are only
   // copied over once, at generation time).
@@ -693,28 +738,6 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
           {inv && <StatusBadge status={inv.status} />}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {inv?.is_b2b && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={includeB2bPrint}
-                onChange={e => setIncludeB2bPrint(e.target.checked)}
-                style={{ width: 13, height: 13 }}
-              />
-              Include B2B details in print
-            </label>
-          )}
-          {inv?.notes && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={includeNotesPrint}
-                onChange={e => setIncludeNotesPrint(e.target.checked)}
-                style={{ width: 13, height: 13 }}
-              />
-              Include notes in print
-            </label>
-          )}
           {/* Server-rendered themed PDF. Replaces the old window.print() of
               the on-screen layout, which ignored the configured theme, logo
               and accent colour entirely. */}
@@ -759,14 +782,28 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
           >
             <Download size={15} /> {themedPdfSaving ? 'Saving…' : 'Download'}
           </button>
+
+          {/* Close. This is the only in-page way back now that the page-header
+              bar is gone, and it is the ONLY one below 1100px where the rail is
+              hidden too — the breadcrumb still works, but it is in a different
+              part of the screen entirely. Sits last, past the actions, so it
+              cannot be hit while reaching for Print. */}
+          <button
+            className="btn btn-ghost ci-detail-close"
+            onClick={onClose}
+            title="Close and return to the invoice list"
+            aria-label="Close invoice"
+          >
+            <X size={16} />
+          </button>
         </div>
       </div>
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-          <Clock size={28} style={{ opacity: 0.3, marginBottom: 10 }} />
-          <p style={{ margin: 0 }}>Loading…</p>
-        </div>
+        /* A skeleton, not a centred spinner: a spinner collapses the pane to
+           nothing and then drops the real content in at a different height, so
+           the whole page jumps when it arrives. */
+        <DetailSkeleton rows={3} />
       ) : !inv ? null : (
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
@@ -1500,6 +1537,56 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Main Page
+/**
+ * Filters arriving by URL, e.g. from the Hub Revenue report's
+ * /customer-invoices?hub_ids=3&from=2026-08-01&to=2026-08-31 links.
+ *
+ * A deep link is someone saying "show me exactly this", so it OVERRIDES the
+ * session-restored filters rather than merging with them — landing here with
+ * last week's status filter still applied would show a different set of rows
+ * than the number that was clicked.
+ *
+ * Only the keys actually present are overridden: `?hub_ids=3` alone must not
+ * silently wipe a date range the person set themselves, because they may have
+ * arrived from a link that only ever meant to say "this hub".
+ *
+ * Returns null when there is nothing to apply, so the caller can tell "no
+ * deep link" apart from "a deep link that clears everything".
+ */
+export function urlFilterSeed(searchStr) {
+  const q = new URLSearchParams(searchStr || '');
+  const seed = {};
+
+  const hubIds = q.get('hub_ids') ?? q.get('hub_id');
+  if (hubIds !== null) {
+    // Strings, not numbers: hubFilter is compared against String(h.id)
+    // throughout this page, and a numeric 3 would never match "3".
+    seed.hubFilter = hubIds.split(',').map(v => v.trim()).filter(Boolean);
+  }
+  // Dates go straight to the API, which casts them with ::date — a value
+  // Postgres cannot parse throws and 500s the whole list, so anything
+  // suspicious is dropped here rather than forwarded.
+  //
+  // Shape alone is not enough: /^\d{4}-\d{2}-\d{2}$/ happily accepts
+  // "2026-13-99". The round trip through Date is what rejects a month of 13 or
+  // a 31st of February — an invalid date normalises to some other day, so it
+  // no longer prints as what went in.
+  const isDate = v => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+    const d = new Date(`${v}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+  };
+  const from = q.get('from');
+  const to   = q.get('to');
+  if (from !== null) seed.fromDate = isDate(from) ? from : '';
+  if (to   !== null) seed.toDate   = isDate(to)   ? to   : '';
+
+  const status = q.get('status');
+  if (status !== null) seed.statusFilter = status;
+
+  return Object.keys(seed).length ? seed : null;
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 export default function CustomerInvoicesPage() {
   const { user } = useAuth();
@@ -1541,34 +1628,57 @@ export default function CustomerInvoicesPage() {
   // page 3 returns two results and shows you an empty page 3 of them.
   // useCallback because usePageSearch compares this by identity.
   const onSearchChange = useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
-  const [hubFilter, setHubFilter] = useState(() => ls.hubFilter ?? (user?.hub_id ? [String(user.hub_id)] : []));
+  // Read once, on mount. A ref rather than a live hook: this seeds initial
+  // state, and re-reading it on every render would fight the user the moment
+  // they changed a filter by hand while the query string still said otherwise.
+  const urlSeedRef = useRef(urlFilterSeed(location.search));
+  const seed = urlSeedRef.current;
+
+  const [hubFilter, setHubFilter] = useState(
+    // A hub user is scoped to their own hub and cannot widen it — the seed
+    // must not override that.
+    () => (user?.hub_id ? [String(user.hub_id)]
+                        : seed?.hubFilter ?? ls.hubFilter ?? [])
+  );
   const [showHubDropdown, setShowHubDropdown] = useState(false);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
-  const [statusFilter, setStatusFilter] = useState(ls.statusFilter ?? '');
+  const [statusFilter, setStatusFilter] = useState(seed?.statusFilter ?? ls.statusFilter ?? '');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState(ls.vehicleTypeFilter ?? '');
   // Invoice-date range — both optional; either can be set alone (open-ended).
-  const [fromDate, setFromDate] = useState(ls.fromDate ?? '');
-  const [toDate, setToDate] = useState(ls.toDate ?? '');
+  const [fromDate, setFromDate] = useState(seed?.fromDate ?? ls.fromDate ?? '');
+  const [toDate, setToDate] = useState(seed?.toDate ?? ls.toDate ?? '');
   const [hubs, setHubs] = useState([]);
 
-  // Persist whenever any of these change
+  // Below this width the invoice table stops being readable and the list
+  // switches to cards. Not CSS-only: rendering both and hiding one puts every
+  // row in the DOM twice, on the device least able to afford it.
+  const isNarrow = useMediaQuery(MOBILE_LIST_QUERY);
+
+  // ── Restored after the split-pane extraction ──
+  // The refactor that moved the rail into useDetailRail sliced from the rail's
+  // first line to fetchInvoices, and everything between went with it: the
+  // toast, the open/close plumbing, the token resolver and the filter count.
+  // The build stayed green because these are runtime references — only an
+  // undeclared-identifier pass catches it, and that is the check to run after
+  // any block deletion.
+
+  // Persist whenever any of these change. searchInput, not search: restore the
+  // box exactly as they left it, even mid-word.
   useEffect(() => {
-    // searchInput, not search: restore the box exactly as they left it, even
-    // mid-word. The hook re-derives the debounced value on mount.
-    writeListState('sp_customer_invoices_list_v1', { search: searchInput, page, pageSize, statusFilter, vehicleTypeFilter, hubFilter, fromDate, toDate });
+    writeListState('sp_customer_invoices_list_v1', {
+      search: searchInput, page, pageSize, statusFilter, vehicleTypeFilter, hubFilter, fromDate, toDate,
+    });
   }, [page, pageSize, searchInput, statusFilter, vehicleTypeFilter, hubFilter, fromDate, toDate]);
 
   useListScrollRestore('sp_customer_invoices_list_v1', !loading);
 
-  // How many of the filters hidden behind the funnel are actually on. A date
-  // range counts as one thing, not two, because that is how a person thinks of
-  // it — "filtered by date" is one decision even when both ends are set.
-  const hiddenFilterCount =
-    (vehicleTypeFilter ? 1 : 0) + ((fromDate || toDate) ? 1 : 0);
+  // How many of the filters hidden behind the funnel are actually on.
+  const hiddenFilterCount = (vehicleTypeFilter ? 1 : 0) + ((fromDate || toDate) ? 1 : 0);
 
-  // Auto-open a specific invoice if navigated here from Estimates page
-  const [selectedId, setSelectedId] = useState(() => location.state?.openId ?? null);
   const [showVehHistory, setShowVehHistory] = useState(false);
+
+  // Auto-open a specific invoice when navigated here from another page.
+  const [selectedId, setSelectedId] = useState(() => location.state?.openId ?? null);
   const [toast, setToast] = useState(null);
 
   // Claim the top bar's search box. Declared after selectedId because it reads
@@ -1577,7 +1687,7 @@ export default function CustomerInvoicesPage() {
   usePageSearch({
     value: searchInput,
     onChange: onSearchChange,
-    placeholder: 'Name, mobile, vehicle no. or CI-000048',
+    placeholder: 'Name, mobile, vehicle no. or CI-000012',
     hint: tooShort ? `${minChars}+ characters` : '',
     enabled: !selectedId,
   });
@@ -1585,12 +1695,11 @@ export default function CustomerInvoicesPage() {
   const showToast = useCallback((msg, type = 'success') => setToast({ msg, type }), []);
 
   const resolvedTokenRef = useRef(null);
-  // Flips true the instant the user explicitly closes the detail view.
-  // Guards against a slow/late-resolving fetch (from load(), the by-token
-  // resolver, or a re-load after Approve/Save) firing its onLoaded/navigate
-  // callback AFTER the user has already navigated back to the list — without
-  // this, a stale response could silently re-push the token URL back into
-  // the address bar even though the list is showing.
+  // Flips true the instant the user explicitly closes the detail view. Guards
+  // against a slow or late-resolving fetch firing its onLoaded/navigate
+  // callback AFTER the user has already gone back to the list — without this a
+  // stale response could silently re-push the token URL into the address bar
+  // while the list is showing.
   const closedRef = useRef(false);
 
   function openInvoice(inv) {
@@ -1603,10 +1712,10 @@ export default function CustomerInvoicesPage() {
   function closeInvoice() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
-    // Clear directly rather than relying solely on the `[token]` effect —
-    // inside the Hub Portal, `token` never exists (plain tab, not a routed
-    // /customer-invoices/:token) and navigate() is a no-op there for hub
-    // users, so that effect would never fire on close.
+    // Cleared directly rather than left to the `[token]` effect — inside the
+    // Hub Portal `token` never exists (plain tab, not a routed
+    // /customer-invoices/:token) and navigate() is a no-op for hub users, so
+    // that effect would never fire on close.
     setSelectedId(null);
     navigate('/customer-invoices');
   }
@@ -1618,28 +1727,55 @@ export default function CustomerInvoicesPage() {
     navigate(`/customer-invoices/${inv.public_token}`, { replace: true });
   }
 
+  // Resolve an inbound /customer-invoices/:token into a selectedId.
   useEffect(() => {
     if (!token) {
       // Only clear if we were previously showing a token-resolved invoice —
-      // don't stomp on a `selectedId` that came from location.state (e.g. an
-      // inbound deep link) before it's had a chance to resolve its own token.
+      // do not stomp a selectedId that came from location.state (an inbound
+      // deep link) before it has resolved its own token.
       if (resolvedTokenRef.current) setSelectedId(null);
       resolvedTokenRef.current = null;
       return;
     }
     closedRef.current = false;
-    if (resolvedTokenRef.current === token) return;
-    resolvedTokenRef.current = token;
-    api(`/api/customer-invoices/by-token/${token}`)
-      .then(r => { if (!closedRef.current) setSelectedId(r.item.id); })
-      .catch(() => { resolvedTokenRef.current = null; });
-  }, [token]);
 
-  useEffect(() => {
-    api('/api/hubs?is_active=true&limit=100')
-      .then(r => setHubs(r.items || []))
-      .catch(() => { });
-  }, []);
+    // openInvoice already knows the id and stores the token before navigating,
+    // so by the time this effect sees the new token the record is already
+    // selected. Without this guard every click fires a second, pointless
+    // request that resolves to the id we set a moment ago.
+    // The fetch still runs for a token that arrived from OUTSIDE — a pasted
+    // link, a bookmark, a cross-page navigation — which is what it is for.
+    if (resolvedTokenRef.current === token) return;
+
+    // Claimed BEFORE the request, so an effect re-run cannot fire a second one.
+    // Cleared again on failure so a retry is possible.
+    resolvedTokenRef.current = token;
+
+    // NO per-run "cancelled" flag here, and that omission is load-bearing.
+    //
+    // StrictMode runs every effect twice on mount: run, clean up, run again.
+    // With a cancel flag the sequence was:
+    //   1. run #1 claims the token and starts the request
+    //   2. cleanup #1 sets cancelled = true
+    //   3. run #2 sees the token already claimed and returns early
+    //   4. request #1 lands, sees its cancelled flag, and discards the result
+    // Nothing ever called setSelectedId, so arriving at /customer-invoices/:token
+    // from an Estimate, a Purchase Invoice, a bookmark or a reload showed the
+    // LIST with the correct URL. Dev only — a production build does not
+    // double-invoke — which is the worst way for it to fail.
+    //
+    // Without the flag, run #1's response still lands and opens the record.
+    // `closedRef` remains, and is the guard that actually matters: it stops a
+    // slow response re-opening a record the user has already closed.
+    // This is exactly how the Estimates and Purchase Invoices resolvers work,
+    // which is why neither of them ever had this bug.
+    api(`/api/customer-invoices/by-token/${token}`)
+      .then(res => { if (!closedRef.current && res?.item?.id) setSelectedId(res.item.id); })
+      .catch(() => {
+        resolvedTokenRef.current = null;
+        showToast('That invoice could not be opened.', 'error');
+      });
+  }, [token, showToast]);
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -1671,6 +1807,25 @@ export default function CustomerInvoicesPage() {
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
+  // Filters for the rail, built from the SAME values the table uses so the two
+  // can never disagree about what is being listed.
+  const buildRailQuery = useCallback(() => {
+    const q = new URLSearchParams();
+    if (search) q.set('search', search);
+    if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
+    if (statusFilter) q.set('status', statusFilter);
+    if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
+    if (fromDate) q.set('from', fromDate);
+    if (toDate) q.set('to', toDate);
+    return q;
+  }, [search, hubFilter, statusFilter, vehicleTypeFilter, fromDate, toDate]);
+
+  const rail = useDetailRail({
+    endpoint: '/api/customer-invoices',
+    selectedId,
+    buildQuery: buildRailQuery,
+  });
+
   async function handleExport() {
     try {
       const q = new URLSearchParams();
@@ -1700,9 +1855,11 @@ export default function CustomerInvoicesPage() {
   }
 
   return (
-    /* lb-page cancels the app wrapper's padding and max-width so the table runs
-       edge to edge. The detail view deliberately does not get it. */
-    <div className={selectedId ? 'ci-page' : 'ci-page lb-page'}>
+    /* lb-page cancels the app wrapper's padding and max-width. Both views get
+       it now: the detail used to be a lone A4 sheet that needed margins to sit
+       against, but as one half of a split pane it wants the full width — the
+       rail is what it sits against. */
+    <div className="ci-page lb-page">
       {/* ── Header ──
           The list view has no title: the top bar's breadcrumb already reads
           "Home › Customer Invoices", and repeating it under the breadcrumb was
@@ -1712,37 +1869,42 @@ export default function CustomerInvoicesPage() {
           The DETAIL view keeps its header — there the back button and "Invoice
           Detail" are the only thing telling you which of the two views you are
           looking at. */}
-      {selectedId && (
-        <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              className="btn btn-ghost"
-              onClick={closeInvoice}
-              style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
-            >
-              <ChevronLeft size={16} />
-              All Customer Invoices
-            </button>
-            <div style={{ width: 1, height: 24, background: 'var(--border)' }} />
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10, fontSize: 18 }}>
-              <Receipt size={20} style={{ color: 'var(--primary)' }} />
-              Invoice Detail
-            </h2>
-          </div>
-        </div>
-      )}
-
+      {/* No detail header bar. The back button and "Invoice Detail" title lived
+          here; the breadcrumb above already reads Home > Customer Invoices >
+          <token> and its middle segment links back, so this was a second copy
+          of navigation that already existed — and it cost the split pane a
+          whole row of height above every invoice. The detail's own header
+          carries a close button, which is the escape hatch below 1100px where
+          the rail is hidden. */}
       {showVehHistory && <VehicleHistoryModal onClose={() => setShowVehHistory(false)} />}
 
       {selectedId ? (
-        /* ── Full-page Detail View ── */
-        <DetailDrawer
-          invoiceId={selectedId}
-          onClose={closeInvoice}
-          showToast={showToast}
-          onRefreshList={fetchInvoices}
-          onLoaded={handleInvoiceLoaded}
-        />
+        /* ── Split pane: list rail + detail ──
+            Below 1100px the rail is hidden by CSS and the detail runs full
+            width — two panes in 900px would leave neither usable. The way back
+            there is the breadcrumb, or the close button in the detail's own
+            header bar. */
+        <SplitPane
+          rail={rail}
+          selectedId={selectedId}
+          onSelect={openInvoice}
+          noun="invoice"
+          /* The rail's search box drives the PAGE's search state, not its own —
+             two independent searches would disagree the moment you closed the
+             detail and the table showed a different set. */
+          search={searchInput}
+          onSearch={onSearchChange}
+          searchHint={tooShort ? `${minChars}+ characters` : ''}
+          mapCard={ciCard}
+        >
+          <DetailDrawer
+            invoiceId={selectedId}
+            onClose={closeInvoice}
+            showToast={showToast}
+            onRefreshList={fetchInvoices}
+            onLoaded={handleInvoiceLoaded}
+          />
+        </SplitPane>
       ) : (
         <>
           {/* ── Toolbar ──
@@ -1969,6 +2131,22 @@ export default function CustomerInvoicesPage() {
               <div className="lb-empty">
                 <Receipt size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
                 <p style={{ margin: 0 }}>No customer invoices found.</p>
+              </div>
+            ) : isNarrow ? (
+              /* ── Card list ──
+                  Below 760px the table is ten columns behind a 680px min-width,
+                  which on a phone is a horizontal scrollbar showing two of them.
+                  These are the same cards the split-pane rail uses — one
+                  component, so the two views cannot drift apart. */
+              <div className="sp-cardlist">
+                {items.map(inv => (
+                  <RecordCard
+                    key={inv.id}
+                    card={{ ...ciCard(inv), raw: inv }}
+                    selected={false}
+                    onSelect={openInvoice}
+                  />
+                ))}
               </div>
             ) : (
               <div className="ci-table-wrap lb-scroll-x">

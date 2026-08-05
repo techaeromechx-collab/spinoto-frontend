@@ -337,5 +337,27 @@
         .anl-funnel-track { flex: 1; height: 12px; background: var(--bg-soft); border-radius: 999px; overflow: hidden; }
         .anl-funnel-fill { height: 100%; border-radius: 999px; transition: width 0.6s ease; }
         .anl-funnel-count { font-size: 13px; font-weight: 800; width: 50px; text-align: right; flex-shrink: 0; }
+
         .anl-funnel-drop { font-size: 11px; color: var(--text-muted); width: 36px; text-align: right; flex-shrink: 0; font-weight: 600; }
+
+        /* ── Hub name → that hub's customer invoices ──────────────────────── */
+        .rp-hub-link {
+          display: inline-flex; align-items: center; gap: 3px;
+          color: var(--primary);
+          /* inherit, not `none`: the row applies line-through and 0.4 opacity
+             when the hub is excluded from the totals, and the link has to dim
+             and strike through with it rather than staying bright on a struck
+             out row. `none` here would opt the link out of that. */
+          text-decoration: inherit;
+        }
+        .rp-hub-link:hover { text-decoration: underline; }
+        /* The arrow appears on hover only — one on every row permanently is six
+           pieces of chrome all saying the same thing. */
+        .rp-hub-link-arrow {
+          opacity: 0; transform: translateX(-2px);
+          transition: opacity .12s, transform .12s;
+        }
+        .rp-hub-link:hover .rp-hub-link-arrow,
+        .rp-hub-link:focus-visible .rp-hub-link-arrow { opacity: .7; transform: translateX(0); }
+        .rp-hub-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 3px; }
       

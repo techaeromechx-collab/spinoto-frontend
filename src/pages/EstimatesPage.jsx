@@ -5,6 +5,10 @@ import { api } from '../api/client.js';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import InvoiceDateDialog from '../components/InvoiceDateDialog.jsx';
 import PaginationBar from '../components/PaginationBar.jsx';
+import SplitPane, { RecordCard } from '../components/SplitPane.jsx';
+import DetailSkeleton from '../components/DetailSkeleton.jsx';
+import { useMediaQuery, MOBILE_LIST_QUERY } from '../hooks/useMediaQuery.js';
+import { useDetailRail } from '../hooks/useDetailRail.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
@@ -2394,6 +2398,35 @@ function fmtEstDate(d) {
 // response that predates migration 101.
 const estDate = (e) => e?.estimate_date || e?.created_at;
 
+/**
+ * One estimate, as the shared RecordCard wants it.
+ *
+ * Module level and used twice — by the split-pane rail and by the LIST view
+ * below 760px — so the two cannot describe the same estimate differently.
+ * Declared after fmtEstDate/estDate because it calls them.
+ */
+function estCard(est) {
+  const meta = STATUS_META[est.status] || { color: 'var(--text-muted)', label: est.status || '—' };
+  return {
+    id: est.id,
+    code: `EST-${String(est.id).padStart(6, '0')}`,
+    date: fmtEstDate(estDate(est)),
+    name: est.is_b2b ? (est.b2b_company_name || est.customer_name) : est.customer_name,
+    sub: [est.vehicle_number, [est.make_name, est.model_name].filter(Boolean).join(' ')]
+           .filter(Boolean).join(' • '),
+    status: meta.label,
+    statusColor: meta.color,
+    badges: est.is_b2b ? [{ label: 'B2B', title: 'B2B estimate' }] : [],
+    // An estimate is a quote, not a receivable — there is no paid figure, so
+    // the second slot carries the line count rather than an invented money
+    // column.
+    figures: [
+      { label: 'Value', value: fmt(parseFloat(est.grand_total ?? 0)) },
+      { label: 'Items', value: String(est.item_count ?? 0) },
+    ],
+  };
+}
+
 function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = false, onLoaded }) {
   const rawNavigate = useNavigate();
   // Hub Portal renders this drawer as a plain tab with no nested routing, and
@@ -2548,12 +2581,12 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   }
 
   if (loading) {
+    // A skeleton, not a centred spinner: a spinner collapses the pane to
+    // nothing and then drops the real content in at a different height, so the
+    // whole page jumps when it arrives.
     return (
       <div className="card est-detail-view">
-        <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
-          <Clock size={28} style={{ opacity: 0.3, marginBottom: 10 }} />
-          <p style={{ margin: 0 }}>Loading estimate…</p>
-        </div>
+        <DetailSkeleton rows={4} />
       </div>
     );
   }
@@ -2808,6 +2841,19 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 </>
               )}
             </div>
+
+            {/* Close. The page-header bar that held the back button is gone,
+                and below 1100px the rail is hidden too — this is the only
+                in-page way back at that size. Last in the row, past the
+                actions, so it is not hit while reaching for them. */}
+            <button
+              className="btn btn-ghost est-detail-close"
+              onClick={onClose}
+              title="Close and return to the list"
+              aria-label="Close estimate"
+            >
+              <X size={16} />
+            </button>
           </div>
         </div>
 
@@ -3464,6 +3510,11 @@ export default function EstimatesPage() {
   const [vehicleTypeFilter, setVehicleTypeFilter] = react.useState(ls.vehicleTypeFilter ?? '');
   const [hubFilter, setHubFilter] = react.useState(() => ls.hubFilter ?? (user?.hub_id ? [String(user.hub_id)] : []));
 
+  // Below this width the table stops being readable and the list switches to
+  // cards. Not CSS-only: rendering both and hiding one puts every row in the
+  // DOM twice, on the device least able to afford it.
+  const isNarrow = useMediaQuery(MOBILE_LIST_QUERY);
+
   // Persist whenever any of these change
   react.useEffect(() => {
     writeListState('sp_estimates_list_v1', { searchInput, page, pageSize, statusFilter, vehicleTypeFilter, hubFilter });
@@ -3595,6 +3646,23 @@ export default function EstimatesPage() {
 
   react.useEffect(() => { fetchEstimates(); }, [fetchEstimates]);
 
+  // Filters for the split-pane rail, built from the SAME values the table uses
+  // so the two can never disagree about what is being listed.
+  const buildRailQuery = react.useCallback(() => {
+    const q = new URLSearchParams();
+    if (search) q.set('search', search);
+    if (statusFilter) q.set('status', statusFilter);
+    if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
+    if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
+    return q;
+  }, [search, statusFilter, hubFilter, vehicleTypeFilter]);
+
+  const rail = useDetailRail({
+    endpoint: '/api/estimates',
+    selectedId,
+    buildQuery: buildRailQuery,
+  });
+
   function onCreated(item) {
     setShowCreate(false);
     showToast('Estimate created.');
@@ -3619,36 +3687,15 @@ export default function EstimatesPage() {
   return (
     /* lb-page cancels the app wrapper's padding and max-width so the table runs
        edge to edge. The detail view deliberately does not get it. */
-    <div className={selectedId ? 'estimates-page' : 'estimates-page lb-page'}>
-      {/* ── Header ──
-          The list view has no title: the top bar's breadcrumb already reads
-          "Home › Estimates", and repeating it underneath was the same words
-          twice. The whole block is skipped rather than left empty, so the
-          toolbar rises to fill the gap.
+    /* lb-page on both views: the detail is one half of a split pane now and
+       wants the full width — the rail is what it sits against.
 
-          The DETAIL view keeps its header — there the back button and
-          "Estimate Detail" are the only thing telling you which view you are
-          looking at. */}
-      {selectedId && (
-        <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              className="btn btn-ghost"
-              onClick={() => { handleCloseDetail(); fetchEstimates(); }}
-              style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
-            >
-              <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} />
-              All Estimates
-            </button>
-            <div style={{ width: 1, height: 24, background: 'var(--border)' }} />
-            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10, fontSize: 18 }}>
-              <FileText size={20} style={{ color: 'var(--primary)' }} />
-              Estimate Detail
-            </h2>
-          </div>
-        </div>
-      )}
-
+       No detail header bar. The back button and "Estimate Detail" lived here;
+       the breadcrumb already names the screen and links back, and the bar cost
+       the split pane a row of height above every estimate. The detail's own
+       header carries a close button, which is the way out below 1100px where
+       the rail is hidden. */
+    <div className="estimates-page lb-page">
       {showCreateAppt && (
         <CreateAppointmentModal
           hubs={hubs}
@@ -3665,15 +3712,28 @@ export default function EstimatesPage() {
       )}
 
       {selectedId ? (
-        /* ── Full-page Detail View ── */
-        <DetailDrawer
-          estimateId={selectedId}
-          onClose={handleCloseDetail}
-          onUpdated={handleDrawerUpdated}
-          showToast={showToast}
-          isHubUser={isHubUser}
-          onLoaded={handleEstimateLoaded}
-        />
+        <SplitPane
+          rail={rail}
+          selectedId={selectedId}
+          onSelect={est => openEstimate(est)}
+          noun="estimate"
+          /* The rail's search box drives the PAGE's search state, not its own —
+             two independent searches would disagree the moment you closed the
+             detail and the table showed a different set. */
+          search={searchInput}
+          onSearch={onSearchChange}
+          searchHint={tooShort ? `${minChars}+ characters` : ''}
+          mapCard={estCard}
+        >
+          <DetailDrawer
+            estimateId={selectedId}
+            onClose={handleCloseDetail}
+            onUpdated={handleDrawerUpdated}
+            showToast={showToast}
+            isHubUser={isHubUser}
+            onLoaded={handleEstimateLoaded}
+          />
+        </SplitPane>
       ) : (
         <>
           {/* ── Filters ── */}
@@ -3858,6 +3918,22 @@ export default function EstimatesPage() {
                 <p style={{ margin: 0 }}>
                   {search || statusFilter || hubFilter ? 'No estimates match your filters.' : 'No estimates yet. Create your first one above.'}
                 </p>
+              </div>
+            ) : isNarrow ? (
+              /* ── Card list ──
+                  Below 760px the table is behind a min-width wide enough that a
+                  phone shows two of its columns. These are the same cards the
+                  split-pane rail uses — one component, so the two views cannot
+                  drift apart. */
+              <div className="sp-cardlist">
+                {estimates.map(row => (
+                  <RecordCard
+                    key={row.id}
+                    card={{ ...estCard(row), raw: row }}
+                    selected={false}
+                    onSelect={openEstimate}
+                  />
+                ))}
               </div>
             ) : (
               <div className="est-table-wrap lb-scroll-x">

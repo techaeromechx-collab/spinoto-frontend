@@ -854,7 +854,6 @@ export default function DashboardPage() {
                       work too, but a sticky row inside a short scroll box
                       tends to overlap the first row mid-scroll. */}
                   <div className="db-hub-hd">
-                    <span className="db-hub-hd-spacer" />
                     <span className="db-hub-hd-name">Hub</span>
                     <span className="db-hub-hd-num">Invoices</span>
                     <span className="db-hub-hd-num db-hub-hd-val">Value</span>
@@ -870,7 +869,6 @@ export default function DashboardPage() {
                       initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.05 }}
                     >
-                      <div className="db-hub-avatar">{r.hub_name.charAt(0)}</div>
                       <div className="db-hub-name">{r.hub_name}</div>
                       <div className="db-hub-num">{r.count}</div>
                       <div className="db-hub-num db-hub-num--val">

@@ -773,3 +773,32 @@
     padding: 0 !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Mobile — Customer Invoices specifics
+   The card list, toolbar, detail header and totals rules are shared by all
+   three record pages and live in splitPane.css.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 760px) {
+  /* Line items and payments keep their min-widths and scroll INSIDE their
+     wrapper. Dropping the min-width instead would crush eight columns into
+     360px and wrap every cell to three lines — a contained sideways scroll is
+     the honest answer for a table that genuinely has that many columns. */
+  .ci-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    /* Hints there is more to the right without needing a visible scrollbar. */
+    background:
+      linear-gradient(to right, var(--panel) 30%, rgba(255,255,255,0)) left / 28px 100% no-repeat,
+      linear-gradient(to left,  var(--panel) 30%, rgba(255,255,255,0)) right / 28px 100% no-repeat;
+    background-attachment: local, local;
+  }
+
+  /* The notes box and the summary column sit side by side with a
+     `minWidth: 250` on the summary. On a 360px phone that leaves the notes box
+     80px wide, so the row stacks. Targeting .ci-totals-row's children because
+     both halves are inline-styled and have no classes of their own. */
+  .ci-totals-row { gap: 14px !important; }
+  .ci-totals-row > div { min-width: 0 !important; flex: 1 1 100% !important; }
+}
