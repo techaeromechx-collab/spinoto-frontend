@@ -957,7 +957,7 @@
 .leads-page {
   display: flex;
   flex-direction: column;
-  padding: 20px 24px 0;
+  padding: 10px 0px 0;
   box-sizing: border-box;
 }
 
@@ -1013,12 +1013,7 @@
   color: var(--primary);
 }
 
-.leads-page.lb-page {
-  /* Bottom padding survives: without it the last row sits flush against the
-     bottom of the window with nothing under it. The side padding is what has
-     to go for full bleed, not the vertical. */
-  padding: 0 0 40px;
-}
+
 
 /* .lp-filters used to sit inside a padded card and supply 14px/16px around all
    three of its children (toolbar, advanced panel, active tags). The toolbar now
@@ -1031,7 +1026,8 @@
 }
 
 .leads-page.lb-page .lb-toolbar {
-  padding-bottom: 0;   /* .lp-filters' 10px gap spaces the rows instead */
+  padding-bottom: 0;
+  /* .lp-filters' 10px gap spaces the rows instead */
 }
 
 .leads-page.lb-page .lp-adv-panel,
@@ -1702,6 +1698,15 @@
   color: #fff;
 }
 
+/* Called with 'warning' since bulk assign was written, but never defined — so
+   "3 converted leads skipped" arrived on a transparent box with no background
+   behind the white text. Amber: the action DID happen, it just did less than
+   was asked, which is neither of the two above. */
+.lp-toast--warning {
+  background: #d97706;
+  color: #fff;
+}
+
 @keyframes lp-fadein {
   from {
     opacity: 0;
@@ -2303,6 +2308,50 @@
   font-weight: 700;
 }
 
+/* ── The status list in the selection bar ──────────────────────────────────
+   Taller than the assignee list can ever be: a workshop has five or six people
+   but twenty-odd statuses, so this one scrolls. `overflow: hidden` on the
+   parent would clip the scroll rather than allow it, hence auto here. */
+.lp-bulk-dropdown--status {
+  min-width: 232px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+/* Which leads this is about, said inside the menu.
+   The count is on the bar to the left, but the bar is where you started —
+   by the time the menu is open and you are reading status names, "10 leads"
+   is the fact you need in front of you, not four inches away. Sticky so it
+   stays true while the list scrolls under it. */
+.lp-bulk-dd-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 13px 7px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The same dot the status column and the filter dropdown use, at the same
+   size — so a status is recognised by colour here before the name is read. */
+.lp-bulk-dd-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.lp-bulk-dd-empty {
+  padding: 12px 13px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .lp-date-cell {
   display: flex;
   flex-direction: column;
@@ -2779,19 +2828,23 @@
     border-radius: 10px;
     flex-wrap: nowrap;
   }
+
   .lp-fu-bar::-webkit-scrollbar {
     display: none;
   }
+
   .lp-fu-tab-item {
     padding: 9px 12px;
     font-size: 12px;
     flex-shrink: 0;
   }
+
   .lp-fu-viewall {
     padding: 9px 12px;
     font-size: 12px;
     flex-shrink: 0;
   }
+
   .lp-fu-sep {
     margin: 6px 0;
   }
@@ -3086,7 +3139,7 @@
 }
 
 .lp-modal-body {
-  padding: 20px 24px;
+  padding: 12px;
   overflow-y: auto;
   flex: 1;
   display: flex;
@@ -3339,7 +3392,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px 16px;
+  padding: 8px 24px 8px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   gap: 12px;
@@ -3388,7 +3441,7 @@
 
 /* Body */
 .lp-vm-body {
-  padding: 20px 24px;
+  /* padding: 20px 24px; */
   overflow-y: auto;
   flex: 1;
 }
@@ -3597,25 +3650,34 @@
   position: relative;
   margin-top: 8px;
 }
+
 .lp-fu-detail-wrap::after {
   content: '';
   position: absolute;
-  bottom: 0; left: 0; right: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 56px;
   background: linear-gradient(to bottom, transparent, var(--bg) 90%);
   pointer-events: none;
   border-radius: 0 0 10px 10px;
 }
+
 .lp-fu-detail-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 148px;   /* ~1 full card + half of next */
+  max-height: 148px;
+  /* ~1 full card + half of next */
   overflow-y: auto;
   scrollbar-width: none;
   padding-bottom: 4px;
 }
-.lp-fu-detail-list::-webkit-scrollbar { display: none; }
+
+.lp-fu-detail-list::-webkit-scrollbar {
+  display: none;
+}
+
 .lp-fu-detail-row {
   display: flex;
   align-items: flex-start;
@@ -3625,27 +3687,77 @@
   background: var(--bg-soft);
   border: 1px solid var(--border);
 }
-.lp-fu-detail-row--done    { opacity: 0.5; }
-.lp-fu-detail-row--overdue { background: #fef2f2; border-color: #fca5a5; }
+
+.lp-fu-detail-row--done {
+  opacity: 0.5;
+}
+
+.lp-fu-detail-row--overdue {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
 .lp-fu-detail-dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  flex-shrink: 0; margin-top: 3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 3px;
 }
-.lp-fu-detail-body  { flex: 1; min-width: 0; }
-.lp-fu-detail-date  { font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.lp-fu-detail-note  { font-size: 12px; color: var(--text-muted); margin-top: 3px; font-style: italic; }
-.lp-fu-detail-meta  { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+.lp-fu-detail-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.lp-fu-detail-date {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.lp-fu-detail-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  font-style: italic;
+}
+
+.lp-fu-detail-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
 .lp-fu-detail-done-tag {
-  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
-  background: #dcfce7; color: #16a34a;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #16a34a;
 }
+
 .lp-fu-detail-overdue-tag {
-  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
-  background: #fee2e2; color: #dc2626;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #dc2626;
 }
+
 .lp-fu-detail-today-tag {
-  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
-  background: #fef3c7; color: #d97706;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #d97706;
 }
 
 .lp-vm-master-warn {
@@ -3847,7 +3959,7 @@
   color: var(--border);
 }
 
-.lp-sh-time {}
+
 
 .lp-sh-duration {
   color: var(--primary);
@@ -5154,10 +5266,11 @@
     padding: 14px 16px;
   }
 
+  /* 
   .lp-modal-body {
     padding: 14px 16px;
     gap: 12px;
-  }
+  } */
 
   .lp-modal-footer {
     padding: 12px 16px;
@@ -5244,9 +5357,10 @@
     padding: 12px 14px;
   }
 
+  /* 
   .lp-modal-body {
     padding: 12px 14px;
-  }
+  } */
 
   .lp-modal-footer {
     padding: 10px 14px;
@@ -5320,3 +5434,536 @@
     max-width: 100% !important;
   }
 }
+
+/* ── Source chips ─────────────────────────────────────────────────────────────
+   Above the toolbar, not inside it: this is a segmented view of the whole list
+   ("which of these are ours?"), not another field to fill in, and putting it in
+   the row of dropdowns would make it read as one more optional filter. */
+.lp-src-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  /* Wrapping is normal at six chips plus three, and a wrapped row with only the
+     column gap between lines reads as one clump. */
+  row-gap: 8px;
+  padding: 0 0 10px;
+}
+
+.lp-src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg, #fff);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lp-src-chip:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.lp-src-chip--on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+/* The count is the reason the chip is worth clicking. Kept legible on both
+   states rather than inheriting a colour that vanishes on the active one. */
+.lp-src-chip-n {
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+
+.lp-src-chip--on .lp-src-chip-n {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+/* Divides the two axes in one strip.
+   4px of margin made it a mark sitting almost against "Other" rather than a
+   break between two groups — at a glance the strip read as nine chips, one of
+   which had a smudge beside it. 12px each side, on top of the 6px column gap,
+   puts 18px of air either way: unmistakably a boundary, still one strip.
+
+   A fixed height centred on the row, not align-self: stretch. Stretch made it
+   22px against 26px chips and sat it 2px high, so it floated. */
+.lp-src-sep {
+  width: 1px;
+  height: 18px;
+  align-self: center;
+  margin: 0 12px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+/* Owner chips are the same control, so they take the same active colour.
+   They had their own darker green, which meant two chips lit at once in two
+   different greens — and the eye reads that as two STATES, not two groups. The
+   divider is what says these are separate axes; colour saying it a second time
+   only made the strip look unfinished. */
+
+@media screen and (max-width: 560px) {
+  .lp-src-chips {
+    gap: 5px;
+  }
+
+  .lp-src-chip {
+    padding: 5px 9px;
+    font-size: 11.5px;
+  }
+
+  .lp-src-sep {
+    margin: 0 8px;
+  }
+}
+
+/* ══ Lead detail as a PAGE ═══════════════════════════════════════════════════
+   Was a modal (.lp-modal-backdrop / .lp-view-modal). Those rules are left
+   alone — the Edit dialog and every other modal on this screen still use them,
+   and this one only stopped being one of them. */
+
+/* ── It covers the LIST, not the application ────────────────────────────────
+   This was position:fixed inset:0 — the whole viewport, which meant the
+   sidebar and the topbar disappeared the moment a lead was opened. You could
+   not see where you were or navigate anywhere without closing it first.
+
+   Absolute inside .content instead. It still has to be a layer rather than
+   normal flow: the list stays mounted underneath (LeadsPage renders the detail
+   AFTER the list, not instead of it), so in-flow it would stack below the list
+   rather than over it.
+
+   .content needs three things for that to work — position, so this has
+   something to be absolute against; height, so inset:0 has a height to resolve
+   against; and no max-width, so the detail reaches the edges. */
+.content:has(.lp-vp) {
+  position: relative;
+  max-width: 100%;
+  padding: 0;
+  height: 100%;
+}
+
+/* And the scroller above it must not scroll while the detail is open.
+   .content is the containing block, so if .page-scroll scrolls, .content moves
+   up and takes this absolutely positioned layer with it — the detail would
+   slide off the top of the screen when you spun the wheel over the list behind
+   it. Measured: the list is taller than the viewport, so this was not
+   theoretical. */
+.page-scroll:has(.lp-vp),
+.content:has(.lp-vp) {
+  overflow: hidden;
+}
+
+.lp-vp {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  /* over the list and its sticky header, far UNDER the
+                            modals (1000+) so Edit still opens on top of it */
+  background: var(--bg-soft, #f7f8fa);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lp-vp-inner {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, #fff);
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+.lp-vp-header {
+  flex-shrink: 0;
+}
+
+.lp-vp-back {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg, #fff);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.lp-vp-back:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.lp-vp-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.lp-vp-crumb button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.lp-vp-crumb button:hover {
+  color: var(--primary);
+}
+
+.lp-vp-sep {
+  color: var(--border);
+}
+
+/* The customer's name, where the duplicated breadcrumb used to be. It is what
+   the topbar's own trail cannot show — that says "Home › Leads › XcAuG8y…",
+   which identifies the record but not the person. */
+.lp-vp-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+/* Monospace: it is a token, and a token in a proportional font is a token
+   people misread when they paste it into a support message.
+   .lp-vp-crumb / .lp-vp-sep / .lp-vp-cur are no longer rendered — kept because
+   the Edit dialog and the phone layout below still reference the sizing, and a
+   dead rule costs nothing next to a broken one. */
+.lp-vp-cur {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+/* ── The split ────────────────────────────────────────────────────────────── */
+.lp-vp-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+/* min-width:0 or a long unbroken value in a card pushes the whole column wider
+   and the rail off the screen. */
+.lp-vp-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  /* Reaching the end of this pane must not start scrolling anything behind it. */
+  overscroll-behavior: contain;
+  /* background: var(--bg-soft, #f7f8fa); */
+}
+
+/* Its own scroll container, so reading the conversation does not move the
+   detail and vice versa. */
+.lp-vp-rail {
+  flex: 0 0 400px;
+  width: 400px;
+  min-height: 0;
+  display: flex;
+  border-left: 1px solid var(--border);
+  background: var(--bg, #fff);
+  /* padding: 12px; */
+}
+
+.lp-vp-rail .wat {
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* The rail owns the height here, so the component's own cap has to go or the
+   chat stops halfway down a tall screen. */
+.lp-vp-rail .wat-scroll {
+  max-height: none;
+  overscroll-behavior: contain;
+}
+
+.lp-vp-tabs {
+  display: none;
+}
+
+/* ── Narrower desktops ────────────────────────────────────────────────────── */
+@media screen and (max-width: 1200px) {
+  .lp-vp-rail {
+    flex-basis: 340px;
+    width: 340px;
+  }
+}
+
+/* ── Phone / small tablet ─────────────────────────────────────────────────────
+   Two columns cannot stack: the chat would sit below Notes and never be seen.
+   One pane at a time, chosen by the tab bar. */
+@media screen and (max-width: 900px) {
+  .lp-vp-tabs {
+    display: flex;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg, #fff);
+  }
+
+  .lp-vp-tabs button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 11px 8px;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .lp-vp-tabs button.on {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+
+  .lp-vp-split--details .lp-vp-rail {
+    display: none;
+  }
+
+  .lp-vp-split--chat .lp-vp-main {
+    display: none;
+  }
+
+  .lp-vp-rail {
+    flex: 1 1 auto;
+    width: auto;
+    border-left: 0;
+    padding: 10px;
+  }
+
+  .lp-vp-cur {
+    max-width: 110px;
+  }
+}
+
+/* ── Room for the mobile bottom nav ──────────────────────────────────────────
+   AppShell reserves it with `.content { padding-bottom: 74px !important }`.
+   That does nothing for an absolutely positioned child, which is laid out
+   against the padding box and would sit right under the nav — putting the
+   WhatsApp composer, the one control at the very bottom, behind it.
+
+   So the reservation moves onto this layer. The two values and the two
+   breakpoints are AppShell's own; if they change there, they change here. */
+@media screen and (max-width: 768px) {
+  .content:has(.lp-vp) {
+    padding-bottom: 0 !important;
+  }
+
+  .lp-vp {
+    bottom: 74px;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .lp-vp {
+    bottom: 68px;
+  }
+}
+
+/* ══ Leads table — column widths and sideways scroll ═════════════════════════
+
+   The table was being squeezed into the window, so every column wrapped
+   downward instead: "25 May 11:53 am" became three lines, "Two-Wheeler / 2W
+   Full Service" four, "Maruti Suzuki Fronx" three. Rows grew to 90px and you
+   could see six leads at a time.
+
+   The fix is a minimum width per column and a table wide enough to hold them.
+   Where that extra width SCROLLS is the subject of the block after this one. */
+
+.lp-table {
+  /* Wide enough for the eleven content columns at their minimums. Below this
+     the browser scrolls rather than wrapping. */
+  min-width: 1250px;
+}
+
+/* No blanket `white-space: nowrap` on every cell.
+   That was the first attempt and it was wrong: a cell whose text no longer
+   wraps simply OVERFLOWS its box and paints outside it, and with a sticky
+   group beside it the tail of "Service Package" showed up as a floating "ge"
+   in the gap between columns. The min-widths below are what stop the wrapping
+   — by giving each column room, rather than by forbidding the browser to use
+   the room it has. Only genuinely single-line values are pinned, further down. */
+
+/* Widths that stop each column collapsing into its own narrowest word. */
+.lp-table th:nth-child(2),  .lp-table td:nth-child(2)  { min-width: 92px; }   /* Date */
+.lp-table th:nth-child(3),  .lp-table td:nth-child(3)  { min-width: 190px; }  /* Customer */
+.lp-table th:nth-child(4),  .lp-table td:nth-child(4)  { min-width: 130px; }  /* Location */
+.lp-table th:nth-child(5),  .lp-table td:nth-child(5)  { min-width: 180px; }  /* Vehicle */
+.lp-table th:nth-child(6),  .lp-table td:nth-child(6)  { min-width: 160px; }  /* Service */
+.lp-table th:nth-child(7),  .lp-table td:nth-child(7)  { min-width: 190px; }  /* Status */
+.lp-table th:nth-child(8),  .lp-table td:nth-child(8)  { min-width: 120px; }  /* Assign To */
+.lp-table th:nth-child(9),  .lp-table td:nth-child(9)  { min-width: 120px; }  /* Follow-up */
+.lp-table th:nth-child(10), .lp-table td:nth-child(10) { min-width: 210px; }  /* Recent Activity */
+.lp-table th:nth-child(11), .lp-table td:nth-child(11) { min-width: 120px; }  /* Created By */
+
+/* ── The date, on exactly two lines ────────────────────────────────────────
+   It was three: "11:53 am" split at the space. Two lines is what was wanted —
+   the day, then the time — so each line is told not to break. */
+.lp-date-day,
+.lp-date-time { white-space: nowrap; }
+
+/* ── No pinned columns ─────────────────────────────────────────────────────
+   There WAS a sticky left group here — checkbox, Date and Customer, held
+   against the left edge while the rest of the table scrolled under them. It is
+   gone by request, and this note is what stops it being reintroduced by
+   accident.
+
+   Three things went with it and must go together if it ever comes back: the
+   sticky offsets, the opaque backgrounds on those cells (without them the rows
+   sliding underneath show straight through), and the explicit z-index on the
+   header cells so the header still covers the pinned body cells where the two
+   sticky axes meet. A pinned column is never one declaration. */
+
+/* ══ Where the sideways scroll happens ═══════════════════════════════════════
+
+   ── The problem ────────────────────────────────────────────────────────────
+
+   `.page-scroll` was the horizontal scroller. It is the app's vertical scroller
+   too, and its `overflow-x` is unset — which beside `overflow-y: auto` computes
+   to `auto`, so a table wider than the window made the WHOLE PAGE slide. Drag
+   right and the follow-ups bar, the source chips, the filter row and the
+   selection bar all travelled left with it, leaving a band of empty grey where
+   they used to be. Only the table needed to move.
+
+   ── Why the obvious fix does not work ──────────────────────────────────────
+
+   `.lp-table-wrap { overflow-x: auto }` on its own is not enough, and the
+   reason is the trap listLayout.css already documents: `overflow-x: auto` with
+   `overflow-y: visible` is COERCED — visible beside auto computes to auto — so
+   the wrapper becomes a scroll container on both axes. A sticky `<th>` binds to
+   its nearest scrolling ancestor, so the header would then bind to a box that
+   is exactly as tall as its contents and therefore never scrolls vertically.
+   The header would scroll off the top with the rows, silently, as if
+   `position: sticky` had never been written.
+
+   That is why `.lb-list .lb-scroll-x { overflow: visible }` exists and why it
+   must not simply be overridden.
+
+   ── What this does instead ─────────────────────────────────────────────────
+
+   Two declarations, and a cost that was chosen rather than overlooked.
+
+     1. `.page-scroll` is told `overflow-x: hidden`. That single line is what
+        stops the bars sliding: the page cannot scroll sideways at all any
+        more, whatever ends up being wider than it.
+
+     2. `.lp-table-wrap` gets its `overflow-x: auto` back. The table is now the
+        only thing that moves.
+
+   The page keeps scrolling vertically exactly as it always did — the pagination
+   bar sits under the last row, and nothing is clipped or pinned against the
+   bottom of the window.
+
+   ── The cost: no sticky column header on this screen ───────────────────────
+
+   Because of the coercion described above, the wrapper is a scroll container on
+   both axes, and its height is whatever the table's is — so it never scrolls
+   vertically and there is nothing for `position: sticky; top: 0` to stick to.
+   The header row scrolls away with the rows.
+
+   That is the trade, and it is not fixable in isolation: a sticky header
+   requires the table to sit in a box that scrolls VERTICALLY, while
+   confining the sideways scroll requires that box to be the one that scrolls
+   HORIZONTALLY. One box cannot be both a viewport-height frame and a
+   content-height block. An earlier revision took the other side of this — a
+   fixed frame with the pagination pinned to the bottom of the window — and the
+   pinned bar covering the last row was the worse of the two.
+
+   The `position: sticky` on `.lb-list table th` is left alone rather than
+   removed. It is shared with four other list screens where it works, and on
+   this one it is inert: an element sticky to a container that never scrolls
+   simply renders where it normally would. */
+@media screen and (min-width: 769px) {
+
+  /* `:not(:has(.lp-vp))` — the lead detail page renders inside .leads-page as
+     an absolute layer with its own scrolling, set up further up this file.
+     Nothing here should reach it. */
+  .page-scroll:has(.leads-page):not(:has(.lp-vp)) {
+    /* Explicit rather than left to the coercion rule. `overflow-x` was unset
+       here, and unset beside `overflow-y: auto` computes to `auto` — which is
+       precisely how the whole page came to scroll sideways in the first place.
+       Naming it is what guarantees it cannot come back. */
+    overflow-x: hidden;
+  }
+
+  /* (0,3,0) — above `.lb-list .lb-scroll-x { overflow: visible }` at (0,2,0),
+     so this wins wherever the two stylesheets land in the bundle. The class is
+     named in the selector rather than left to the element alone precisely to
+     make that margin explicit.
+
+     `overflow-x` alone, not `overflow`. Writing `overflow: auto` would be the
+     same computed result but would say the vertical scrolling was wanted; it
+     is not, it is a side effect of the coercion, and the wrapper's height is
+     left as the table's so that axis never actually engages. */
+  .leads-page:not(:has(.lp-vp)) .lp-table-wrap.lb-scroll-x {
+    overflow-x: auto;
+  }
+}
+
+/* ── Recent Activity ───────────────────────────────────────────────────────
+   What happened, then when and who. The first line is the only thing in the
+   table allowed to be clipped rather than wrapped: a note can be any length,
+   and one long note must not set the height of every row on the screen. */
+.lp-act-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 240px;
+}
+.lp-act-what {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lp-act-when {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.lp-act-who { font-weight: 600; }

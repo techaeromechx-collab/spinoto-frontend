@@ -213,6 +213,16 @@ button.lb-control.lb-primary:hover { filter: brightness(1.08); }
   gap: 4px;
 }
 
+/* Position only — the panel keeps its own padding and sizing. Distinct from
+   --left above, which also turns the surface into a scrolling checklist for
+   the hub picker and would squash the filter panel.
+   Applied by hooks/useFlipPopup.js when the default right-anchoring would put
+   the panel outside .content, where .main's overflow:hidden clips it away. */
+.lb-pop--flip {
+  right: auto;
+  left: 0;
+}
+
 .lb-pop-label {
   font-size: 11px;
   font-weight: 700;
@@ -288,6 +298,22 @@ button.lb-control.lb-primary:hover { filter: brightness(1.08); }
    Higher specificity than the pages' own `.ci-table-wrap` / `.est-table-wrap`
    etc., which still declare `overflow-x: auto`. A plain `.lb-scroll-x` would
    tie with those on specificity and lose on import order. */
+
+/* ── The base rule, for every use OUTSIDE a list page ──────────────────────
+   The override below is what the class was written for, and for a long time it
+   was the ONLY rule carrying this name — so anywhere the wrapper was used away
+   from a `.lb-list` (the customer profile's Payments tab is the one that bit),
+   the class matched nothing, no ancestor scrolled horizontally, and a wide
+   table was simply cut off at the container edge with no way to reach the rest.
+
+   Declared FIRST and with lower specificity on purpose: `.lb-list .lb-scroll-x`
+   below still wins inside a list page, so sticky headers keep binding to
+   `.page-scroll` exactly as before. Removing that override silently breaks
+   every sticky table header in the app — it matters far more than this rule. */
+.lb-scroll-x {
+  overflow-x: auto;
+}
+
 .lb-list .lb-scroll-x {
   overflow: visible;
 }
@@ -380,4 +406,35 @@ button.lb-control.lb-primary:hover { filter: brightness(1.08); }
   text-align: center;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
+}
+
+/* ── View toggle (List | Calendar) ────────────────────────────────────────── */
+.lb-viewtoggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+
+.lb-viewbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.lb-viewbtn + .lb-viewbtn { border-left: 1px solid var(--border); }
+.lb-viewbtn:hover { color: var(--text); }
+.lb-viewbtn--on {
+  background: var(--primary);
+  color: #fff;
 }

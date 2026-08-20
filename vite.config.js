@@ -140,5 +140,17 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+
+    // ── Tauri ────────────────────────────────────────────────
+    // `tauri dev` compiles Rust into src-tauri/target/, which churns through
+    // thousands of files and grows to several GB. Vite's watcher would follow
+    // all of it and the dev server would spend its time reacting to cargo
+    // instead of to your edits.
+    //
+    // No effect on the web build or on a plain `npm run dev` — the directory
+    // simply is not there to ignore.
+    watch: {
+      ignored: ['**/src-tauri/**'],
+    },
   },
 });

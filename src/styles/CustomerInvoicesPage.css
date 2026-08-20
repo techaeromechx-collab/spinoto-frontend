@@ -181,17 +181,712 @@
   border-radius: 12px 12px 0 0;
 }
 
-/* ── Screen: colored table header for line items ── */
+/* ── The payment split button ────────────────────────────────────────────────
+   Record Payment with a caret welded to its right edge, opening the two online
+   actions. The header used to carry all three side by side, plus Print and
+   Download — five buttons, and a second row on any narrow window.
+
+   The two halves are separate <button>s, not one button with a menu, because
+   the primary half has to stay a single click. Recording cash is the common
+   act; charging a card is the rarer and more consequential one, and the caret
+   is what keeps them one deliberate step apart. */
+.ci-paysplit {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The shared header sizing that used to be an inline style on each of the
+   three buttons. Same 13px text and 6px gap, now in one place.
+
+   Every rule below is written as `.ci-paysplit .x`, not `.x`, ON PURPOSE. A
+   bare `.ci-paysplit-caret { padding }` is one class and loses to this rule's
+   two, so the caret would silently keep the wide padding — the descendant
+   selector is what makes these overrides actually apply. */
+.ci-paysplit .btn {
+  font-size: 13px;
+  gap: 6px;
+}
+
+.ci-paysplit .ci-paysplit-main {
+  /* Tighter on the seam side: the caret supplies the visual end of the pair. */
+  padding: 6px 12px 6px 14px;
+  border-radius: 10px 0 0 10px;
+}
+
+/* A hub login, or a staff user with neither online permission, gets no caret —
+   so the primary half has to look like an ordinary button again rather than a
+   shape with one corner cut off waiting for something that never renders. */
+.ci-paysplit .ci-paysplit-main.ci-paysplit-solo {
+  padding: 6px 14px;
+  border-radius: 10px;
+}
+
+.ci-paysplit .ci-paysplit-caret {
+  padding: 6px 9px;
+  border-radius: 0 10px 10px 0;
+  /* Drawn ON the primary colour, so a translucent white reads as a seam at any
+     brightness — a solid hex would have to be re-picked if --primary changes. */
+  border-left: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.ci-paysplit-chev { transition: transform 0.16s ease; }
+.ci-paysplit-chev--on { transform: rotate(180deg); }
+
+/* Full-screen, under the menu and over everything else: it catches the click
+   that dismisses the menu so that click cannot also press what is beneath it. */
+.ci-paymenu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+/* Right-anchored to the caret, same as .lb-pop. --flip is applied by
+   hooks/useFlipPopup.js when that would put the panel outside .content, where
+   .main's overflow:hidden clips it away with nothing to scroll to. */
+.ci-paymenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1000;
+  min-width: 212px;
+  padding: 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  text-align: left;
+  cursor: default;
+}
+
+.ci-paymenu--flip {
+  right: auto;
+  left: 0;
+}
+
+.ci-paymenu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ci-paymenu-item:hover:not(:disabled) { background: var(--bg-soft); }
+.ci-paymenu-item:disabled { opacity: 0.6; cursor: default; }
+.ci-paymenu-item > svg { flex: 0 0 auto; color: var(--text-muted); }
+
+/* The line that stops "money already received" and "charge them now" reading
+   as two spellings of the same action once they are in one list. */
+.ci-paymenu-sub {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* ── Line items header ──
+   Solid brand green with white text. This is the one band on the page that says
+   whose invoice it is, so it carries the primary colour at full strength.
+
+   The redesign took the rest of the green OUT — it was on the header, the grand
+   total, the Paid pill, Balance Due and two large pill buttons, and a colour on
+   six things stops meaning anything. Now it is the header, the Paid pill and the
+   Grand Total. The header brands the document; the other two carry the message.
+
+   var(--primary) rather than a literal #16b994, so re-theming the app moves this
+   band with it instead of leaving one hardcoded green stripe behind. The print
+   block below repeats it as a literal, because print needs the exact ink.
+
+   !important because the base .ci-table th rule also sets background. */
 .ci-items-table thead th {
-  background: #16b994 !important;
+  background: var(--primary) !important;
   color: #fff !important;
   border-bottom: none !important;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
 }
 
 /* ── Screen: payments table header — subtle ── */
 .ci-payments-table thead th {
   background: var(--bg-soft);
   color: var(--text-muted);
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE INVOICE DOCUMENT — header band, summary, footer
+   ══════════════════════════════════════════════════════════════════════════
+   These replace the inline style={{…}} blocks the detail view was built from.
+   Fifty-four of them against twenty-one classes meant the type scale, the
+   greys and the spacing were re-declared per element and drifted per element —
+   which is most of why the screen read as a template rather than a document.
+
+   The colour rule this whole section serves: GREEN APPEARS TWICE. The Paid
+   pill, and the Grand Total. Nothing else. */
+
+/* ── The three-column header band ──
+   Bill To · Vehicle & Invoice · Summary.
+
+   The summary used to live BELOW the line items, so on an invoice longer than
+   three lines you scrolled past the work to find what was owed — the thing the
+   invoice was opened for. It only fits up here because the rows carry an icon
+   instead of an 84px label column. */
+.ci-doc-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.05fr;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ci-doc-col { padding: 14px 16px; min-width: 0; }
+.ci-doc-col + .ci-doc-col { border-left: 1px solid var(--border); }
+
+.ci-doc-cap {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 9px;
+}
+
+.ci-doc-rows { display: flex; flex-direction: column; gap: 2px; }
+
+/* ── An icon-labelled row ──
+   The label text is present in the DOM and hidden visually, NOT removed. Three
+   things need it: the screen reader (an icon is not a label), the print
+   stylesheet (paper has no hover), and find-in-page. Hiding it with
+   `display: none` would defeat all three — hence the clip pattern. */
+.ci-doc-il {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12.5px;
+  min-width: 0;
+}
+.ci-doc-il > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #94a3b8;
+}
+.ci-doc-il-lbl {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.ci-doc-il-v {
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+}
+/* An address is the one value that must be allowed to break mid-token — a long
+   complex name with no spaces would otherwise widen the whole column. */
+.ci-doc-il--wrap .ci-doc-il-v {
+  color: var(--text-muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.ci-doc-mono {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* ── Summary column ── */
+.ci-doc-col--sum { background: var(--bg); }
+.ci-doc-sum { font-size: 12px; }
+
+.ci-doc-sumrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2.5px 0;
+}
+.ci-doc-sumrow > span { color: var(--text-muted); white-space: nowrap; }
+.ci-doc-sumrow > b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ci-doc-sumrow--disc > span,
+.ci-doc-sumrow--disc > b { color: #b45309; font-weight: 700; }
+
+.ci-doc-taxpair { padding: 1px 0; }
+.ci-doc-taxrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 1px 0;
+}
+.ci-doc-taxrow > span:last-child { font-variant-numeric: tabular-nums; }
+
+.ci-doc-sumrule { height: 1px; background: var(--border); margin: 7px 0; }
+
+/* Green, once. */
+.ci-doc-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0 3px;
+}
+.ci-doc-total > span { font-size: 12px; font-weight: 800; color: #0f9d76; white-space: nowrap; }
+.ci-doc-total > b {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f9d76;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Balance due is NOT green when it is zero and NOT red when it is not.
+   It is the ordinary ink weight either way, and turns red only when something
+   is actually outstanding — a settled invoice does not need a colour to say so,
+   the Paid pill above already did. */
+.ci-doc-due > b { color: var(--text); font-weight: 700; }
+.ci-doc-due--open > b { color: #dc2626; }
+
+/* ── Per-line rate, shown only on a mixed-slab invoice ──
+   When every line shares a rate it lives in the column header instead. */
+.ci-doc-rate {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* ── Amount in words ──
+   Was a card with a 3px green stripe down its side, which is a lot of
+   decoration for one sentence, and a third use of a colour that should mean
+   one thing. */
+.ci-doc-words-block { display: flex; flex-direction: column; gap: 12px; }
+
+/* The sentence and Add note on ONE line, not stacked. align-items: center, so a
+   30px button sits on the mid-line of a two-line sentence rather than at its
+   top — flex-start put the button level with the 9.5px caption and made the
+   pair look accidental. */
+.ci-doc-words-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.ci-doc-words { font-size: 12px; color: var(--text-muted); min-width: 0; }
+/* 2px, not the 9px the column captions use. Up there the caption heads a list
+   and needs air; here it heads a single sentence, and 9px read as a gap that
+   had lost its contents. */
+.ci-doc-words .ci-doc-cap { margin-bottom: 2px; }
+.ci-doc-words em {
+  display: block;
+  color: var(--text);
+  font-weight: 600;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* Dashed, quiet, and SMALL — it is an invitation, not an action anybody came
+   here to take. It was a 130px dashed box on its own line under the sentence. */
+.ci-doc-addnote {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 11px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: none;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ci-doc-addnote:hover { border-color: var(--text-muted); color: var(--text); }
+
+/* ══ PANELS — Warranty & Guarantee, Payments, Payment links ═══════════════════
+   Each was a bare <h4> above a differently-shaped block: a bordered table on
+   one side, an unbordered sentence and a full-page empty state on the other.
+   Two headings floating over two unrelated shapes is why this half of the
+   screen did not read as part of the same document.
+
+   A panel is: 1px border, 9px radius, a grey header strip carrying the same
+   9.5px caption the document header uses, and content flush to the border. */
+/* One per row, full width, stacked.
+   Side by side, each panel had roughly 400px of the ~830px the detail gets
+   inside the split pane. That is enough for three warranty columns only if the
+   service names wrap to three lines, and it squeezed the payments table's five
+   columns — date, method, reference, amount, action — into the same 400px, so
+   Reference was permanently a dash with nowhere to put a voucher number.
+
+   Full width, both tables get their columns at readable widths and the two
+   sections stop competing for the same horizontal space. It costs vertical
+   scroll, which this page has plenty of. */
+.ci-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* No flex basis on either child now — in a column flex container a basis would
+   set HEIGHT, not width, and 340px of forced height is an empty box under a
+   one-row table. They stretch to full width by default (align-items: stretch).
+   min-width: 0 stays, so a long service name or a URL cannot push a panel wider
+   than the pane. */
+.ci-panel--wg,
+.ci-panel-stack { min-width: 0; }
+.ci-panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ci-panel {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.ci-panel-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+/* The caption's own 9px bottom margin would push the header strip off-centre. */
+.ci-panel-h .ci-doc-cap { margin-bottom: 0; }
+.ci-panel-count {
+  display: inline-block;
+  min-width: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+}
+
+.ci-panel-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Inside a panel the table has no border of its own — the panel is the border.
+   Header cells go white rather than grey, because the header STRIP above them
+   is already the grey band and two greys in a row lose the strip. */
+.ci-panel-table { min-width: 0; }
+.ci-panel-table th {
+  background: var(--bg) !important;
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 7px 10px;
+}
+.ci-panel-table td {
+  padding: 9px 10px;
+  font-size: 12px;
+  vertical-align: top;
+}
+.ci-panel-table tbody tr:last-child td { border-bottom: 0; }
+.ci-panel-strong { font-weight: 600; color: var(--text); }
+
+/* Coverage mark. Green for warranty, indigo for guarantee — the two colours the
+   emoji versions were carrying, now on text rather than on a glyph. */
+.ci-panel-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 11.5px;
+  color: #166534;
+}
+.ci-panel-tag--g { color: #3730a3; }
+
+.ci-panel-empty {
+  padding: 14px 11px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* The credit callout, inside the panel and flush to it — it was a floating
+   amber card with its own radius sitting above an unrelated heading. */
+.ci-panel-alert {
+  padding: 11px;
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+}
+.ci-panel-alert-t { font-size: 13px; font-weight: 700; color: #92400e; }
+.ci-panel-alert-s { font-size: 12px; color: #a16207; margin-top: 3px; line-height: 1.55; }
+
+.ci-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 11px;
+  border-top: 1px solid var(--border);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.ci-panel-foot-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Was a full-brightness blue pill in a row of its own below the table. In the
+   footer it is the same weight as the sentence beside it. */
+.ci-claimchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ci-claimchip:hover { border-color: var(--text-muted); }
+.ci-claimchip em { font-weight: 500; font-style: normal; color: var(--text-muted); }
+
+/* PaymentLinksPanel's compact empty state. It lives here, not in
+   PaymentsPage.css, because compact is only ever true when that panel is
+   embedded on THIS page — the Links tab keeps the full .pay-empty block. */
+.pay-links-none {
+  padding: 14px 11px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── WhatsApp send dialog ─────────────────────────────────────────────────── */
+.ci-wa-to {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-soft);
+}
+.ci-wa-to strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.ci-wa-torow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* The Change link keeps the reflink colour but drops to the label size — it is
+   an escape hatch beside the number, not a second action competing with Send. */
+.ci-wa-torow .ci-doc-reflink { display: inline-flex; align-items: center; gap: 4px; }
+.ci-wa-num {
+  margin-top: 3px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+/* Amber, not red: overriding the number is a legitimate act, not an error.
+   Red here would train people to click through it. */
+.ci-wa-warn {
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #92400e;
+}
+
+/* ── Icon-only header actions ──
+   Print, Download and WhatsApp carry no label. Their icons are unambiguous, the
+   title attribute holds the words, and aria-label keeps them named for a screen
+   reader — a button whose whole content is an <svg> is otherwise announced as
+   "button" and nothing else.
+
+   Square, so the row reads as a set of equal controls rather than three
+   different-width pills. .btn's own padding is overridden by specificity here,
+   not !important. */
+.btn.ci-hdr-icon {
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  gap: 0;
+}
+
+/* The values in the order the approved template will consume them. A table
+   rather than a sentence, because the point is that position 3 is checkable. */
+.ci-wa-vars {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.ci-wa-var {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 7px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ci-wa-var:last-child { border-bottom: 0; }
+.ci-wa-var > span { color: var(--text-muted); text-transform: capitalize; white-space: nowrap; }
+/* overflow-wrap, because invoice_link is a URL with no spaces and would
+   otherwise push the dialog wider than the viewport on a phone. */
+.ci-wa-var > b { font-weight: 600; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+
+.ci-wa-note { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+.ci-wa-bad {
+  padding: 10px 12px;
+  border: 1px solid #fca5a5;
+  border-radius: 9px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ── Audit footer ──
+   Replaces two large pill buttons that were the loudest controls on a page whose
+   job is to show an invoice. Navigation belongs here; actions belong in the
+   header. */
+.ci-doc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* min-width:0 so a long "Created by … · Last updated …" line wraps inside the
+   flex row instead of pushing the reference links off the right edge. */
+.ci-doc-foot-who { min-width: 0; line-height: 1.5; }
+.ci-doc-foot-links { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.ci-doc-reflink {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f9d76;
+  cursor: pointer;
+}
+.ci-doc-reflink:hover { text-decoration: underline; }
+
+/* ══ RESPONSIVE ══════════════════════════════════════════════════════════════
+   The detail is not a full page. It sits in the split pane's
+   `320px minmax(0, 1fr)` beside the record list, with the app nav left of that
+   — so on a 1440px laptop it has roughly 830px, and every breakpoint below is
+   about the PANE's width, not the window's. */
+
+/* Two columns, summary spanning. Below ~1080px of pane the third column would
+   squeeze the summary under ~250px, which breaks "Subtotal (ex-GST)" onto two
+   lines and lets the tallest column set the height of the whole band. */
+@media screen and (max-width: 1180px) {
+  .ci-doc-meta { grid-template-columns: 1fr 1fr; }
+  .ci-doc-col--sum {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  /* Spanning full width, the summary lays out as a row of figures rather than a
+     tall list — the four numbers a person opens an invoice for, side by side. */
+  .ci-doc-col--sum .ci-doc-sum {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0 16px;
+    align-items: start;
+  }
+  .ci-doc-col--sum .ci-doc-sumrule { display: none; }
+  .ci-doc-col--sum .ci-doc-sumrow,
+  .ci-doc-col--sum .ci-doc-total { flex-direction: column; align-items: flex-start; gap: 1px; }
+  .ci-doc-col--sum .ci-doc-taxpair { grid-column: 1 / -1; display: flex; gap: 16px; }
+}
+
+/* One column. A phone, or the pane on a small laptop with the list open. */
+@media screen and (max-width: 760px) {
+  .ci-doc-meta { grid-template-columns: 1fr; }
+  .ci-doc-col + .ci-doc-col { border-left: 0; border-top: 1px solid var(--border); }
+  .ci-doc-col--sum .ci-doc-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
+  /* align-items MUST be restated. The base rule is `center`, which is correct
+     for a horizontal row and centres the Add note button in the middle of the
+     screen the moment the direction flips to column. */
+  .ci-doc-words-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .ci-doc-foot { flex-direction: column; align-items: flex-start; gap: 6px; }
+}
+
+/* ── The line items table on a phone ──
+   Nine columns cannot fit 360px and must not be hidden — a tax invoice with
+   columns missing is not the document. So the table scrolls sideways INSIDE its
+   own border, and says so.
+
+   The wrapper already carries overflow-x: auto. What this adds is a minimum
+   width, so the browser stops crushing the columns into unreadable slivers
+   before it decides to scroll, and a visible hint that there is more to the
+   right — a scrollbar alone is invisible on a touch device until you touch it. */
+@media screen and (max-width: 700px) {
+  .ci-items-table { min-width: 620px; }
+  .ci-items-table th,
+  .ci-items-table td { padding: 8px 7px; font-size: 11.5px; }
+  .ci-items-table th { font-size: 9px; }
+}
+
+/* The 860px "panels stack" breakpoint is gone — .ci-panels is a column at every
+   screen width now, so there is nothing left for it to change. Deleted rather
+   than left in place: a media query that does nothing is one somebody has to
+   read and rule out the next time this section misbehaves. */
+
+/* ── Print ──
+   Paper has no hover, so the visually-hidden labels come back. Without this the
+   printed invoice reads "▢ Raj Whatstapp / ▢ 9712301573" — icons do not print
+   as meaning. */
+@media print {
+  .ci-doc-il-lbl {
+    position: static;
+    width: 90px;
+    height: auto;
+    margin: 0;
+    clip: auto;
+    clip-path: none;
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: 500;
+    color: #9ca3af;
+  }
+  .ci-doc-il > svg { display: none; }
+  .ci-doc-meta { grid-template-columns: 1fr 1fr 1fr; break-inside: avoid; }
+  .ci-doc-col--sum { grid-column: auto; border-top: 0; }
+  .ci-doc-foot { display: none; }
 }
 
 @media print {
@@ -280,7 +975,12 @@
     border-bottom: none !important;
   }
 
-  /* Line items header — colored */
+  /* Line items header — coloured.
+     Follows the screen: solid brand green, white text. A literal #16b994 and
+     not var(--primary), because print-colour-adjust has to resolve to a known
+     ink and a themed override would silently print as whatever the variable
+     happens to be that day. print-color-adjust: exact is what stops the browser
+     dropping the fill to save toner and leaving white text on white paper. */
   .ci-items-table th {
     font-size: 8px !important;
     padding: 6px 5px !important;
@@ -290,50 +990,25 @@
     print-color-adjust: exact;
   }
 
-  /* Line items column widths — Sr, Item, HSN, Qty, Rate, [Discount], Taxable, CGST%, SGST%, TaxAmt, Total */
-  .ci-items-table th:nth-child(1) {
-    width: 4% !important;
-  }
+  /* Line items column widths.
+     Ten columns became nine: CGST %, SGST % and Tax Amount were three columns
+     carrying two facts, and are now CGST (₹) and SGST (₹) with the rate in the
+     header. These percentages had to move with them — leaving eleven entries
+     against nine columns silently mis-sizes every one of them.
 
-  .ci-items-table th:nth-child(2) {
-    width: 20% !important;
-  }
-
-  .ci-items-table th:nth-child(3) {
-    width: 9% !important;
-  }
-
-  .ci-items-table th:nth-child(4) {
-    width: 5% !important;
-  }
-
-  .ci-items-table th:nth-child(5) {
-    width: 9% !important;
-  }
-
-  .ci-items-table th:nth-child(6) {
-    width: 9% !important;
-  }
-
-  .ci-items-table th:nth-child(7) {
-    width: 8% !important;
-  }
-
-  .ci-items-table th:nth-child(8) {
-    width: 8% !important;
-  }
-
-  .ci-items-table th:nth-child(9) {
-    width: 8% !important;
-  }
-
-  .ci-items-table th:nth-child(10) {
-    width: 10% !important;
-  }
-
-  .ci-items-table th:nth-child(11) {
-    width: 10% !important;
-  }
+     Order: Sr, Item, HSN, Qty, Rate, [Discount], Taxable, CGST, SGST, Total.
+     The bracketed one only renders when the invoice carries a discount, which
+     is why the last three are written to work either way. */
+  .ci-items-table th:nth-child(1) { width: 4% !important; }
+  .ci-items-table th:nth-child(2) { width: 24% !important; }
+  .ci-items-table th:nth-child(3) { width: 10% !important; }
+  .ci-items-table th:nth-child(4) { width: 5% !important; }
+  .ci-items-table th:nth-child(5) { width: 11% !important; }
+  .ci-items-table th:nth-child(6) { width: 11% !important; }
+  .ci-items-table th:nth-child(7) { width: 11% !important; }
+  .ci-items-table th:nth-child(8) { width: 11% !important; }
+  .ci-items-table th:nth-child(9) { width: 13% !important; }
+  .ci-items-table th:nth-child(10) { width: 11% !important; }
 
   /* Payments header — plain */
   .ci-payments-table th {
@@ -425,30 +1100,16 @@
     font-size: 8px !important;
   }
 
-  /* Footer — flows naturally after Payments (its actual position in
-     the markup) instead of being pinned to the bottom of every page.
-     It used to be `position: fixed`, which meant Chrome repeated it on
-     every printed page at a fixed spot — so on a 2-page invoice it
-     rendered at the bottom of page 1 too, overlapping/appearing before
-     content (tax breakdown, Grand Total, Payments) that had overflowed
-     onto page 2. Letting it sit in normal flow means it only ever
-     appears once, right after Payments, on whichever page that lands on. */
-  .ci-invoice-footer {
-    margin-top: 10px !important;
-    padding: 8px 10mm 6px !important;
-    border-top: 1px solid #e5e7eb !important;
-    background: #fff !important;
-    text-align: center !important;
-    font-size: 9px !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
+  /* The invoice footer ("Thank you for your business", the
+     computer-generated line, phone/email) is no longer rendered on screen, so
+     its print rules have gone with it. The PDF and the printed copy are built
+     server-side from backend/src/utils/documentConfig.js and carry their own.
 
-  .ci-invoice-footer * {
-    font-size: 9px !important;
-  }
+     Keeping the lesson, because it cost a bug once and Estimates still has it:
+     the rule here was `position: fixed`, which made Chrome repeat the footer at
+     the same spot on EVERY printed page — so on a two-page invoice it drew at
+     the bottom of page 1, over content (tax breakdown, Grand Total, Payments)
+     that had overflowed onto page 2. Normal flow is what fixed it. */
 
   @page {
     size: A4 portrait;
@@ -485,14 +1146,20 @@
 .ci-coverage-table td {
   word-break: break-word;
 }
-.ci-wg-pay-row .ci-payments-table {
+.ci-panels .ci-payments-table {
   min-width: 0 !important;
   width: 100%;
 }
 
 @media print {
-  .ci-wg-pay-row {
+  /* Paper keeps them SIDE BY SIDE even though the screen now stacks them.
+     Screen space is a scroll and paper is a page: stacked, coverage and
+     payments push the invoice onto a second sheet for two short tables. The
+     column widths that are cramped at 400px on screen are fine in print, where
+     the type is 8px and the customer is reading, not editing. */
+  .ci-panels {
     display: flex !important;
+    flex-direction: row !important;
     flex-wrap: nowrap !important;
     gap: 16px !important;
     /* Never cut this section across pages — if it doesn't fit, the whole
@@ -500,16 +1167,15 @@
     break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
-  .ci-wg-pay-row > div {
+  .ci-panels > * {
+    /* Restore the widths the screen rule dropped. Without a basis these would
+       content-size and a two-row payments table would take the page. */
+    flex: 1 1 0 !important;
     min-width: 0 !important;
     overflow: hidden !important;
   }
   .ci-coverage-table tr,
-  .ci-wg-pay-row .ci-payments-table tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  .ci-invoice-footer {
+  .ci-panels .ci-payments-table tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }

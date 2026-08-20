@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api, getToken } from '../api/client.js';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
@@ -341,6 +342,10 @@ function HubModal({ hub, onClose, onSaved }) {
     rm_user_id:        hub?.rm_user_id       || '',
     is_active:         hub?.is_active        ?? false,
     notes:             hub?.notes            || '',
+    // Fills the Workshop Location line in the appointment WhatsApp message. A
+    // hub without one has that message skipped rather than sent with a blank
+    // line after "📍 Workshop Location:".
+    map_url:           hub?.map_url          || '',
     open_time:         toTimeInput(hub?.open_time)  || '',
     close_time:        toTimeInput(hub?.close_time) || '',
     working_days:      hub?.working_days     || '',
@@ -536,6 +541,10 @@ function HubModal({ hub, onClose, onSaved }) {
         rm_user_id:        Number(form.rm_user_id),
         is_active:         form.is_active,
         notes:             form.notes.trim() || null,
+        // `|| null`, not the raw string: the backend UPDATE uses
+        // COALESCE($n, map_url), and an empty string would survive that and
+        // wipe a stored link rather than leaving it alone.
+        map_url:           form.map_url.trim() || null,
         open_time:         form.open_time   || null,
         close_time:        form.close_time  || null,
         working_days:      form.working_days || null,
@@ -711,6 +720,13 @@ function HubModal({ hub, onClose, onSaved }) {
               </select>
             </Field>
           </div>
+
+          <Field label="Google Maps link">
+            <input className="hb-input" value={form.map_url}
+              onChange={e => set('map_url', e.target.value)}
+              maxLength={500}
+              placeholder="https://maps.app.goo.gl/…" />
+          </Field>
 
           <Field label="Notes">
             <textarea className="hb-input hb-textarea" value={form.notes}
@@ -1072,6 +1088,10 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
   const [loginSaving, setLoginSaving]       = useState(false);
   const [loginMsg, setLoginMsg]             = useState('');
   const [loginErr, setLoginErr]             = useState('');
+  // Password reset, kept separate from the create form: it is a different
+  // action on an existing login, not a re-run of creation.
+  const [showPwForm, setShowPwForm]         = useState(false);
+  const [newPw, setNewPw]                   = useState('');
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -1096,6 +1116,23 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
       setLoginForm({ name: '', email: '', password: '' });
     } catch (err) {
       setLoginErr(err.message || 'Failed to create login');
+    } finally {
+      setLoginSaving(false);
+    }
+  }
+
+  async function handleResetPassword(e) {
+    e.preventDefault();
+    setLoginErr(''); setLoginMsg('');
+    if (newPw.length < 6) { setLoginErr('Password must be at least 6 characters'); return; }
+    setLoginSaving(true);
+    try {
+      const r = await api(`/api/hubs/${hub.id}/login`, { method: 'PATCH', body: { password: newPw } });
+      setLoginMsg(r.message || 'Password reset');
+      setShowPwForm(false);
+      setNewPw('');
+    } catch (err) {
+      setLoginErr(err.message || 'Failed to reset password');
     } finally {
       setLoginSaving(false);
     }
@@ -1304,6 +1341,24 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
                 {hub.payout_terms && (
                   <div className="hbv-field"><span className="hbv-lbl">Payout Terms</span><span className="hbv-val">{PAYOUT_TERMS_OPTS.find(o => o.value === hub.payout_terms)?.label || hub.payout_terms}{hub.payout_terms === 'custom' && hub.payout_cycle_days ? ` (${hub.payout_cycle_days} days)` : ''}</span></div>
                 )}
+                {/* Whether this account can actually be paid automatically.
+                    Shown beside the details rather than only on the Payouts
+                    page, because editing any of the three fields above
+                    un-registers it — a database trigger does that, so it happens
+                    whichever screen the edit came from — and the person doing
+                    the editing is the one who needs to know. */}
+                <div className="hbv-field">
+                  <span className="hbv-lbl">Bank Payouts</span>
+                  <span className="hbv-val">
+                    {hub.payout_status === 'verified'
+                      ? 'Registered — this hub can be paid by bank transfer'
+                      : hub.payout_status === 'failed'
+                        ? 'The provider rejected this account — check the details and register again'
+                        : hub.payout_status === 'pending'
+                          ? 'Registration in progress'
+                          : 'Not registered — register it on the Payouts page to pay by bank transfer'}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -1393,6 +1448,19 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
             </div>
           )}
 
+          {/* Rendered as a link rather than raw text: the value is only useful
+              if it opens, and a broken one is far easier to spot by clicking it
+              than by reading a URL. */}
+          {hub.map_url && (
+            <div className="hbv-section">
+              <div className="hbv-section-title">Location</div>
+              <a href={hub.map_url} target="_blank" rel="noreferrer"
+                 style={{ fontSize: 13, color: '#0f766e', wordBreak: 'break-all' }}>
+                {hub.map_url}
+              </a>
+            </div>
+          )}
+
           {hub.notes && (
             <div className="hbv-section">
               <div className="hbv-section-title">Notes</div>
@@ -1420,13 +1488,49 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
                   <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
                     Created {fmtDate(hubLogin.created_at)} · {hubLogin.is_active ? 'Active' : 'Disabled'}
                   </div>
-                  <button
-                    onClick={handleDeleteLogin}
-                    disabled={loginSaving}
-                    style={{ marginTop: 10, fontSize: 12, color: '#ef4444', background: 'none', border: '1px solid #fca5a5', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 500 }}
-                  >
-                    {loginSaving ? 'Removing…' : 'Remove Login'}
-                  </button>
+                  {/* Reset, not delete-and-recreate. Deleting drops this
+                      user's permission rows too, and retyping the email wrong
+                      locks the hub out with no sign that anything went wrong. */}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => { setShowPwForm(v => !v); setLoginErr(''); setLoginMsg(''); }}
+                      disabled={loginSaving}
+                      style={{ fontSize: 12, color: '#047857', background: 'none', border: '1px solid #86efac', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 500 }}
+                    >
+                      {showPwForm ? 'Cancel' : 'Reset Password'}
+                    </button>
+                    <button
+                      onClick={handleDeleteLogin}
+                      disabled={loginSaving}
+                      style={{ fontSize: 12, color: '#ef4444', background: 'none', border: '1px solid #fca5a5', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 500 }}
+                    >
+                      {loginSaving ? 'Working…' : 'Remove Login'}
+                    </button>
+                  </div>
+
+                  {showPwForm && (
+                    <form onSubmit={handleResetPassword} style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                      <div style={{ flex: '1 1 180px' }}>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#065f46', display: 'block', marginBottom: 3 }}>New password</label>
+                        <input
+                          type="text"
+                          value={newPw}
+                          onChange={e => setNewPw(e.target.value)}
+                          placeholder="Min. 6 characters"
+                          autoComplete="off"
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }}
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={loginSaving || newPw.length < 6}
+                        className="btn btn-primary"
+                        style={{ fontSize: 12, padding: '7px 14px' }}
+                      >
+                        {loginSaving ? 'Saving…' : 'Set Password'}
+                      </button>
+                    </form>
+                  )}
                 </div>
               ) : showLoginForm ? (
                 /* Create form */
@@ -1801,6 +1905,55 @@ export default function HubsPage() {
   const [allStates, setAllStates] = useState([]);
   const [modal, setModal]         = useState(null);
   const [toast, setToast]         = useState(null);
+
+  /**
+   * Open a hub's view straight from a URL: /hubs?hub_id=42
+   *
+   * The Workshops page links here for a converted workshop. Before this the
+   * parameter was simply ignored — you landed on the list and had to find the
+   * hub yourself.
+   *
+   * Fetched by id rather than searched for in `hubs`: the target is very often
+   * not on the page currently loaded, and filtering the list to find it would
+   * throw away whatever filters are already set.
+   *
+   * The param is cleared once consumed, with replace:true — otherwise Back
+   * returns to the same URL and the modal springs open again, and a refresh
+   * reopens something you closed on purpose.
+   */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openedParamRef = useRef(null);
+
+  useEffect(() => {
+    const wanted = searchParams.get('hub_id');
+    if (!wanted || openedParamRef.current === wanted) return;
+    openedParamRef.current = wanted;
+
+    let cancelled = false;
+    api(`/api/hubs/${wanted}`)
+      .then(res => {
+        // GET /api/hubs/:id answers { item }. Written exactly rather than with
+        // a chain of fallbacks — a fallback that silently accepts the wrong
+        // shape hides the day the endpoint changes.
+        if (!cancelled && res?.item?.id) setModal({ mode: 'view', hub: res.item });
+      })
+      .catch(() => {
+        if (!cancelled) showToast('That hub could not be opened', 'error');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        const next = new URLSearchParams(searchParams);
+        next.delete('hub_id');
+        setSearchParams(next, { replace: true });
+      });
+
+    return () => { cancelled = true; };
+    // showToast is deliberately out of the deps: it is a plain function
+    // declaration in this component, so it gets a new identity every render and
+    // including it would re-run this effect on every render. The ref guard
+    // makes that harmless, but "harmless churn" is still churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, setSearchParams]);
 
   // Claim the top bar's search box, same as the other seven list pages.
   usePageSearch({

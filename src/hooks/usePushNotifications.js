@@ -13,6 +13,7 @@
 
 import { useEffect } from 'react';
 import { api } from '../api/client.js';
+import { isDesktop } from '../utils/isDesktop.js';
 
 // Convert VAPID base64 public key to Uint8Array (required by pushManager)
 function urlBase64ToUint8Array(base64String) {
@@ -26,6 +27,17 @@ export function usePushNotifications(user) {
   useEffect(() => {
     // Only run when user is logged in and browser supports push
     if (!user?.id) return;
+
+    // The check below is NOT enough on desktop. Tauri's webview is Chromium, so
+    // both `serviceWorker` and `PushManager` exist and the guard passes — but no
+    // service worker is ever registered under the Tauri protocol, so
+    // `navigator.serviceWorker.ready` on line 45 never resolves. Nothing
+    // crashes and nothing logs; it just leaves a pending promise on every login.
+    //
+    // Native Windows notifications are a separate job (tauri-plugin-notification),
+    // deliberately not part of this shell.
+    if (isDesktop()) return;
+
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
     // Don't re-subscribe if already done for this user on this device

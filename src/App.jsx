@@ -1,8 +1,11 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { useAuth, useCan } from './auth/AuthContext.jsx';
 import PWAInstallBanner from './components/PWAInstallBanner.jsx';
 import LoginPage from './auth/LoginPage.jsx';
 import LandingPage from './pages/LandingPage.jsx';
+import PublicInvoicePage from './pages/PublicInvoicePage.jsx';
+import PublicPayPage from './pages/PublicPayPage.jsx';
+import PublicEstimatePage from './pages/PublicEstimatePage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import LocationsPage from './pages/LocationsPage.jsx';
 import VehiclesPage from './pages/VehiclesPage.jsx';
@@ -11,6 +14,7 @@ import LeadsPage from './pages/LeadsPage.jsx';
 import LeadStatusesPage from './pages/LeadStatusesPage.jsx';
 import DepartmentsPage  from './pages/DepartmentsPage.jsx';
 import HubsPage              from './pages/HubsPage.jsx';
+import WorkshopsPage         from './pages/WorkshopsPage.jsx';
 import AppointmentsPage      from './pages/AppointmentsPage.jsx';
 import CustomersPage         from './pages/CustomersPage.jsx';
 import PartsPage from './pages/PartsPage.jsx';
@@ -21,6 +25,7 @@ import EstimatesPage from './pages/EstimatesPage.jsx';
 import PurchaseInvoicesPage from './pages/PurchaseInvoicesPage.jsx';
 import CustomerInvoicesPage from './pages/CustomerInvoicesPage.jsx';
 import PayoutsPage from './pages/PayoutsPage.jsx';
+import PaymentsPage from './pages/PaymentsPage.jsx';
 import BulkUploadPage from './pages/BulkUploadPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
 // UsersPage/SuperAdminsPage are no longer routed to directly — they're
@@ -62,6 +67,26 @@ function RequireSuperAdmin({ children }) {
   return children;
 }
 
+/**
+ * Redirects an older document address onto its stable public one.
+ *
+ *   /customer-invoices/<token>  →  /invoice/<token>
+ *   /estimates/<token>          →  /estimate/<token>
+ *
+ * Both old paths are printed on paper QR codes and sitting in customers'
+ * WhatsApp history, so they can never simply be removed. Redirecting — rather
+ * than mounting the public pages at two addresses — keeps one implementation of
+ * each page and one place to change if either ever gains a step.
+ *
+ * `replace`, not push: the customer arrived from a WhatsApp message, and Back
+ * should return them to the chat rather than to this redirect, which would
+ * immediately fire again and trap them.
+ */
+function LegacyDocRedirect({ to }) {
+  const { token } = useParams();
+  return <Navigate to={`/${to}/${encodeURIComponent(token || '')}`} replace />;
+}
+
 /** Blocks hub-linked users from admin routes — sends them to /hub */
 function RequireAdmin({ children }) {
   const { user, loading } = useAuth();
@@ -72,7 +97,12 @@ function RequireAdmin({ children }) {
 }
 
 export default function App() {
-  const { user } = useAuth();
+  // `loading` matters here, not just `user`. During the initial token check
+  // `user` is null, so a `{!user && …}` route is mounted for that first tick —
+  // harmless for the landing page below, but the public invoice route performs
+  // a location.replace(), which would hijack a logged-in staff member's
+  // /customer-invoices/:token deep link on every page refresh.
+  const { user, loading } = useAuth();
 
   return (
     <>
@@ -81,9 +111,14 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
 
-      {/* Hub portal — standalone, no AppShell */}
+      {/* Hub portal — standalone, no AppShell.
+          A splat, not a bare '/hub': HubDashboardPage mounts its own nested
+          <Routes> for the tabs, exactly as AppShell does for the admin branch
+          below. That is what gives each tab a real URL, so a refresh, the Back
+          button and a bookmark all land where the hub user actually was
+          instead of resetting to the dashboard. */}
       <Route
-        path="/hub"
+        path="/hub/*"
         element={
           <RequireAuth>
             <HubDashboardPage />
@@ -93,6 +128,66 @@ export default function App() {
 
       {/* Show Landing Page at root only if NOT authenticated */}
       {!user && <Route path="/" element={<LandingPage />} />}
+
+      {/* ── The customer-facing document pages ────────────────────────────────
+
+          /invoice/:token and /estimate/:token are UNCONDITIONALLY public. No
+          `!user` gate, because nothing else lives at those paths — so they
+          behave identically for a customer, a staff member checking a link they
+          just sent, and a hub user.
+
+          That is the whole point of these two routes existing. The older
+          addresses below share a path with a staff deep link, which means their
+          meaning depends on who is looking: signed out you get the public page,
+          signed in you fall through to the CRM — and a hub session is bounced
+          to /hub, landing on a dashboard instead of the document it asked for.
+
+          One address, one meaning. */}
+      <Route path="/invoice/:token"  element={<PublicInvoicePage />} />
+      <Route path="/estimate/:token" element={<PublicEstimatePage />} />
+
+      {/* The advance receipt voucher — and the refund voucher; the token says
+          which. Public on the same terms and for the same reason: it is a
+          numbered tax document the customer is entitled to hold, and it reaches
+          them by WhatsApp link and by the QR printed on the voucher itself.
+
+          Same component as the invoice, differing only in which endpoint it
+          opens and the word shown while it loads. */}
+      <Route path="/advance/:token"
+             element={<PublicInvoicePage endpoint="advance" noun="receipt" />} />
+
+      {/* ── The older addresses, kept as aliases ──────────────────────────────
+
+          QR codes carrying /customer-invoices/<token> and /estimates/<token>
+          are already printed on paper in customers' hands, and links already
+          sent over WhatsApp are already in people's chat history. Those URLs
+          have to keep resolving, forever.
+
+          They redirect rather than mounting the public pages a second time, so
+          there is exactly one implementation of each.
+
+          The `!user` gate STAYS on these two. Removing it would hijack the
+          staff deep link into the CRM — signed-in staff opening
+          /customer-invoices/<token> must still land on CustomerInvoicesPage.
+
+          `!loading` is load-bearing — see the note on useAuth() above. While the
+          session is still being checked this route stays unmounted, `/*` matches
+          instead and RequireAdmin shows its spinner; once the check settles the
+          right one of the two takes over. */}
+      {!loading && !user && (
+        <Route path="/customer-invoices/:token" element={<LegacyDocRedirect to="invoice" />} />
+      )}
+
+      {/* The customer's pay-by-link page. Unconditionally public, unlike the
+          invoice route above: that one is mounted only for anonymous visitors
+          because it SHARES its path with a staff deep link, and there is no
+          staff screen at /pay. A logged-in staff member following a link they
+          just sent should see exactly what the customer sees. */}
+      <Route path="/pay/:token" element={<PublicPayPage />} />
+
+      {!loading && !user && (
+        <Route path="/estimates/:token" element={<LegacyDocRedirect to="estimate" />} />
+      )}
 
       <Route
         path="/*"
@@ -123,6 +218,7 @@ export default function App() {
 
                 {/* HUBs (Aggregators) */}
                 <Route path="/hubs" element={<RequirePermission codes={['VIEW_HUB','MANAGE_HUBS','CREATE_HUB','EDIT_HUB']}><HubsPage /></RequirePermission>} />
+                <Route path="/workshops" element={<RequirePermission codes={['VIEW_WORKSHOP','CREATE_WORKSHOP','EDIT_WORKSHOP','MANAGE_HUBS']}><WorkshopsPage /></RequirePermission>} />
 
                 {/*
                   Shareable detail URLs (":token" routes below) — shared convention:
@@ -180,6 +276,11 @@ export default function App() {
                     shareable-urls audit: every Payouts link targets Purchase
                     Invoices or Customer Invoices), so no :token route here. */}
                 <Route path="/payouts" element={<RequirePermission codes={['VIEW_HUB','MANAGE_HUBS','VIEW_INVOICE']}><PayoutsPage /></RequirePermission>} />
+                {/* Payments. The optional :ref opens the detail drawer, so a
+                    payment is linkable, survives a refresh and works with the
+                    Back button — the same pattern the other detail views use,
+                    with our own txn_ref as the key rather than a database id. */}
+                <Route path="/payments/:ref?" element={<RequirePermission codes={['VIEW_PAYMENTS']}><PaymentsPage /></RequirePermission>} />
                 <Route path="/warranty-claims" element={<RequirePermission codes={['VIEW_CLAIM','CREATE_CLAIM','APPROVE_CLAIM','RESOLVE_CLAIM','MANAGE_CLAIMS']}><ClaimsPage /></RequirePermission>} />
 
                 {/* Legacy invoices page — redirect to customer invoices */}

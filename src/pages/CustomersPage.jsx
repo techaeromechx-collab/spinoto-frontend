@@ -2,14 +2,18 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
+import { useCan } from '../auth/AuthContext.jsx';
 import {
   Users, Search, X, ChevronLeft, ChevronRight, ChevronDown,
   Phone, Calendar, Eye, Pencil, Mail, StickyNote, Check,
   Car, Network, MessageCircle, Plus, Trash2, FileText, Building2,
-  IndianRupee, BarChart3, Wallet, AlertCircle,
+  IndianRupee, BarChart3, Wallet, AlertCircle, RefreshCw, CheckCircle2,
   ArrowDown,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
+import CustomerPaymentsTab from '../components/CustomerPaymentsTab.jsx';
+import CustomerOverviewTab from '../components/CustomerOverviewTab.jsx';
+import WhatsAppThread from '../components/WhatsAppThread.jsx';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch } from '../hooks/useDebouncedSearch.js';
@@ -580,7 +584,9 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
   const [data,        setData]       = useState(null);
   const [loading,     setLoading]    = useState(true);
   const [err,         setErr]        = useState('');
-  const [tab,         setTab]        = useState('appointments');
+  // Opens on the digest, not on fourteen rows of appointment history. See
+  // CustomerOverviewTab for why that was the wrong first screen.
+  const [tab,         setTab]        = useState('overview');
   const [timeline,    setTimeline]   = useState([]);
   const [tlLoading,   setTlLoading]  = useState(false);
   const [addVehOpen,  setAddVehOpen] = useState(false);
@@ -596,6 +602,76 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
   const [editSaving,  setEditSaving] = useState(false);
   const [editErr,     setEditErr]    = useState('');
   const [showB2bConfirm, setShowB2bConfirm] = useState(false);
+
+  // ── Money, lifted out of the Payments tab ─────────────────────────────────
+  //
+  // Credit and the two ways of taking money used to live inside the tab, which
+  // meant the one figure a person opens this profile to find — what the
+  // workshop is holding that belongs to no invoice — was three clicks away and
+  // invisible from every other tab.
+  //
+  // The PARENT owns the number now and hands it down, rather than both keeping
+  // a copy. Two independent fetches of the same figure is how a screen ends up
+  // showing a credit chip that disagrees with the card above it.
+  const canRecordPay = useCan('ADD_INVOICE_PAYMENT');
+  const canAllocate  = useCan('ALLOCATE_PAYMENT');
+  const canCollect   = useCan('COLLECT_PAYMENT');
+  const [credit, setCredit] = useState(0);
+  // Whether money can be taken with no job at all — off until the GST rate for
+  // it has been set. null while unknown, so the button never flickers in.
+  const [acct, setAcct] = useState(null);
+  // Set by the header buttons and consumed by the tab, which owns the dialogs.
+  const [payAction, setPayAction] = useState(null);   // 'record' | 'take' | null
+  const [moreOpen, setMoreOpen] = useState(false);
+
+
+  // Success confirmations. The tab's three dialogs have always called
+  // showToast, and this page has never passed one — every "Payment recorded"
+  // went to an optional-chained no-op. With the buttons up here in the header
+  // that silence is worse: you press Record Payment, it works, and nothing on
+  // screen says so.
+  const [toast, setToast] = useState('');
+  const showToast = useCallback((msg) => {
+    if (!msg) return;
+    setToast(String(msg));
+    setTimeout(() => setToast(t => (t === String(msg) ? '' : t)), 4000);
+  }, []);
+
+  // The payment rows as well as the credit figure. The Overview card and the
+  // tab count both read from this one fetch rather than each asking again — two
+  // requests for the same list is two answers that can differ by a payment
+  // taken between them.
+  const [payments, setPayments] = useState([]);
+  const loadCredit = useCallback(async () => {
+    if (!mobile) return;
+    try {
+      const [c, list] = await Promise.all([
+        api(`/api/payments/credit/${encodeURIComponent(mobile)}`),
+        api(`/api/payments/for-customer/${encodeURIComponent(mobile)}`),
+      ]);
+      setCredit(Number(c.credit || 0));
+      setPayments(list.items || []);
+    } catch { /* a profile that cannot reach the payments endpoints still loads */ }
+  }, [mobile]);
+
+  useEffect(() => { loadCredit(); }, [loadCredit]);
+
+  useEffect(() => {
+    let alive = true;
+    api('/api/payments/account-credit/rate')
+      .then(r => { if (alive) setAcct(r); })
+      .catch(() => { if (alive) setAcct({ enabled: false }); });
+    return () => { alive = false; };
+  }, []);
+
+  // Both buttons switch to the Payments tab first. The dialogs live in that
+  // component, so pressing Record Payment from the Appointments tab would
+  // otherwise set a flag nothing is mounted to read — and seeing the payment
+  // land in the list is what you want next anyway.
+  const startPayAction = useCallback((what) => {
+    setTab('payments');
+    setPayAction(what);
+  }, []);
 
   // Scoped B2B-only edit — opens a small modal instead of the full profile
   // edit form. Still writes through the same editForm/handleEditSave/
@@ -653,7 +729,10 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
   }
 
   useEffect(() => {
-    if (tab === 'timeline') loadTimeline();
+    // Overview shows the newest five of the same feed, so it needs the data
+    // the Timeline tab loads. Guarded inside loadTimeline against a second
+    // request while one is in flight.
+    if (tab === 'timeline' || tab === 'overview') loadTimeline();
   }, [tab, mobile]);
 
   // Validates, then — only if B2B details actually changed vs what's
@@ -776,123 +855,36 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
     return `${Math.floor(days / 365)}y ago`;
   }
 
-  return (
-    /* lb-page cancels the app wrapper's padding and max-width so the profile
-       runs edge to edge, matching the list you arrived from. The cards INSIDE
-       keep their frames — they are bounded objects (contact details, a vehicle,
-       a GST record) and a full-bleed card is not a card. */
-    <div className="cust-detail-page lb-page">
+  // Derived AFTER the state they read, not beside the other consts at the top.
+  // paidTotal reads `payments`, which is declared further down with the credit
+  // fetch — placed above it, this whole block threw "Cannot access 'payments'
+  // before initialization" and the profile rendered as a white screen.
+  // Read off what the page already has rather than asking the server for a
+  // second opinion. paidTotal is the payments ledger, NOT invoiced-minus-due —
+  // those differ by exactly the credit sitting unapplied, and the difference is
+  // the point of the card next to it.
+  const estimatesTotal = (data?.estimates || []).reduce((t, e) => t + Number(e.grand_total || 0), 0);
+  const paidTotal      = payments.reduce((t, p) => t + Number(p.amount || 0), 0);
+  const dueCount       = (data?.invoices || []).filter(i => Number(i.outstanding || 0) > 0.01).length;
+  const upcomingCount  = (() => {
+    const f = new Date(); f.setHours(0, 0, 0, 0);
+    return (data?.appointments || []).filter(a => {
+      const d = a.scheduled_date ? new Date(String(a.scheduled_date).slice(0, 10) + 'T00:00:00') : null;
+      return d && !Number.isNaN(d.getTime()) && d >= f;
+    }).length;
+  })();
 
-      {/* ── Top header bar ── */}
-      <div className="cust-detail-hdr">
-        <button className="cust-back-btn" onClick={onBack}>
-          <ChevronLeft size={15}/> All Customers
-        </button>
-
-        <span className="cust-detail-title">Customer Profile</span>
-
-        {data && (
-          <div className="cust-hdr-actions">
-            <a href={`https://wa.me/91${(data.whatsapp || data.mobile).replace(/\D/g,'')}`}
-              target="_blank" rel="noreferrer" className="cust-hdr-btn cust-hdr-btn--wa" title="Open WhatsApp">
-              <MessageCircle size={13}/>
-              <span>WhatsApp</span>
-            </a>
-            {!delConfirm ? (
-              <button className="cust-hdr-btn cust-hdr-btn--del" title="Delete customer"
-                onClick={() => setDelConfirm(true)}>
-                <Trash2 size={13}/>
-              </button>
-            ) : (
-              <div className="cust-del-confirm">
-                <span>Remove customer?</span>
-                <button className="cust-del-yes" onClick={handleDelete} disabled={delBusy}>
-                  {delBusy ? '…' : 'Delete'}
-                </button>
-                <button className="cust-del-no" onClick={() => setDelConfirm(false)}>Cancel</button>
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
-
-      {loading ? (
-        <div className="cust-detail-loading">Loading…</div>
-      ) : err ? (
-        <div className="cust-detail-err">{err}</div>
-      ) : (
-        <div className="cust-detail-body">
-
-          {/* ── Identity banner ── */}
-          <div className="cdh-card">
-              <div className="cdh-identity">
-                <div className="cust-avatar cust-avatar--lg" style={{ background: avStyle.bg, color: avStyle.color }}>
-                  {initial}
-                </div>
-                <div className="cust-profile-info">
-                  <div className="cdh-name-row">
-                    <span className="cust-profile-name">{data.customer_name || 'Unknown'}</span>
-                    <span className="cdh-badge">Active</span>
-                  </div>
-                  <div className="cust-profile-contact">
-                    <span><Phone size={11}/> {data.mobile}</span>
-                    {data.whatsapp && data.whatsapp !== data.mobile && (
-                      <span><MessageCircle size={11}/> {data.whatsapp}</span>
-                    )}
-                    {data.email && (
-                      <span><Mail size={11}/> {data.email}</span>
-                    )}
-                  </div>
-                  {data.profile_notes && (
-                    <div className="cust-profile-note">{data.profile_notes}</div>
-                  )}
-                  {data.last_visit && (
-                    <div className="cust-last-visit">
-                      Last visit: <strong>{daysSince(data.last_visit)}</strong> · {fmtDate(data.last_visit)}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ── Stats ── */}
-              <div className="cdh-stats">
-                <div className="cdh-stat">
-                  <div className="cdh-stat-icon" style={{ background: '#e0f2fe', color: '#0369a1' }}><Users size={15}/></div>
-                  <div>
-                    <div className="cdh-stat-val">{data.total_appointments}</div>
-                    <div className="cdh-stat-lbl">Total Visits</div>
-                  </div>
-                </div>
-                <div className="cdh-stat">
-                  <div className="cdh-stat-icon" style={{ background: '#dcfce7', color: '#166534' }}><IndianRupee size={15}/></div>
-                  <div>
-                    <div className="cdh-stat-val">{fmtINR(data.total_spend)}</div>
-                    <div className="cdh-stat-lbl">Total Spend</div>
-                  </div>
-                </div>
-                <div className="cdh-stat">
-                  <div className="cdh-stat-icon" style={{ background: '#ede9fe', color: '#6d28d9' }}><BarChart3 size={15}/></div>
-                  <div>
-                    <div className="cdh-stat-val">{fmtINR(data.avg_spend)}</div>
-                    <div className="cdh-stat-lbl">Avg/Visit</div>
-                  </div>
-                </div>
-                <div className="cdh-stat">
-                  <div className="cdh-stat-icon" style={{ background: '#fef3c7', color: '#92400e' }}><Wallet size={15}/></div>
-                  <div>
-                    <div className="cdh-stat-val" style={{ color: Number(data.total_outstanding) > 0 ? '#dc2626' : undefined }}>
-                      {Number(data.total_outstanding) > 0 ? fmtINR(data.total_outstanding) : 'Nil'}
-                    </div>
-                    <div className="cdh-stat-lbl">Due Amount</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-          {/* ── Two-column layout ── */}
-          <div className="cust-detail-grid">
-          <div className="cdg-left">
+  // The two cards that used to be the left rail. Built here rather than inside
+  // CustomerOverviewTab because they close over this component's edit state —
+  // and because the modals they open stay mounted at page level, so Edit still
+  // works from whichever tab you are on.
+  // `data &&`, not just the JSX. These cards read data.mobile, data.email and
+  // the B2B fields directly. They used to sit INSIDE the loading/error/loaded
+  // branch below, where data is guaranteed; built up here they render on the
+  // very first pass, while data is still null — which threw "Cannot read
+  // properties of null" and took the whole profile down with it.
+  const detailsCards = data && (
+    <>
 
           {/* ── Customer Information ── */}
           <div className="cust-section cds-card">
@@ -972,6 +964,179 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
               </div>
             )}
           </div>
+    </>
+  );
+
+  return (
+    /* lb-page cancels the app wrapper's padding and max-width so the profile
+       runs edge to edge, matching the list you arrived from. The cards INSIDE
+       keep their frames — they are bounded objects (contact details, a vehicle,
+       a GST record) and a full-bleed card is not a card. */
+    <div className="cust-detail-page lb-page">
+
+      {/* ── Top header bar ── */}
+      <div className="cust-detail-hdr">
+        <button className="cust-back-btn" onClick={onBack}>
+          <ChevronLeft size={15}/> All Customers
+        </button>
+
+        <span className="cust-detail-title">Customer Profile</span>
+
+        {data && (
+          <div className="cust-hdr-actions">
+            <button className="cust-hdr-btn cust-hdr-btn--edit" onClick={() => { setTab('overview'); setEditing(true); }}>
+              <Pencil size={13}/> <span>Edit Customer</span>
+            </button>
+
+            {/* Everything that is not Edit lives behind one control. WhatsApp,
+                taking money and deleting a customer are three very different
+                acts that were sharing a row with the primary one — and Take
+                Payment beside Delete is a row where a wrong click is dear. */}
+            <div className="cust-more">
+              <button className="cust-hdr-btn" onClick={() => setMoreOpen(o => !o)}
+                      aria-haspopup="menu" aria-expanded={moreOpen}>
+                More Actions <ChevronDown size={13}/>
+              </button>
+              {moreOpen && (<>
+                <div className="cust-more-back" onClick={() => setMoreOpen(false)} />
+                <div className="cust-more-pop" role="menu">
+                  <a href={`https://wa.me/91${(data.whatsapp || data.mobile).replace(/\D/g,'')}`}
+                     target="_blank" rel="noreferrer" className="cust-more-item"
+                     onClick={() => setMoreOpen(false)}>
+                    <MessageCircle size={14}/> Open WhatsApp
+                  </a>
+                  {/* ── One Payment button ──────────────────────────────
+                      Take Payment and Record Payment were two buttons for one
+                      act, and choosing between them meant knowing whether the
+                      money was for an invoice before you had seen the invoices.
+                      The dialog asks for the amount and works that out. See
+                      PaymentModal in CustomerPaymentsTab.
+
+                      Shown to anyone who can do ANY of the three things it
+                      offers. The dialog then disables the branches they cannot
+                      use, with the reason — rather than this button quietly
+                      meaning something different per person. */}
+                  {(canCollect || canRecordPay || canAllocate) && (
+                    <button type="button" className="cust-more-item"
+                            onClick={() => { setMoreOpen(false); startPayAction('take'); }}>
+                      <Wallet size={14}/> Payment
+                    </button>
+                  )}
+                  <div className="cust-more-sep" />
+                  <button type="button" className="cust-more-item cust-more-item--del"
+                          onClick={() => { setMoreOpen(false); setDelConfirm(true); }}>
+                    <Trash2 size={14}/> Delete customer
+                  </button>
+                </div>
+              </>)}
+            </div>
+
+            {delConfirm && (
+              <div className="cust-del-confirm">
+                <span>Remove customer?</span>
+                <button className="cust-del-yes" onClick={handleDelete} disabled={delBusy}>
+                  {delBusy ? '…' : 'Delete'}
+                </button>
+                <button className="cust-del-no" onClick={() => setDelConfirm(false)}>Cancel</button>
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+
+      {loading ? (
+        <div className="cust-detail-loading">Loading…</div>
+      ) : err ? (
+        <div className="cust-detail-err">{err}</div>
+      ) : (
+        <div className="cust-detail-body">
+
+          {/* ── Identity banner ── */}
+          <div className="cdh-card">
+              <div className="cdh-identity">
+                <div className="cust-avatar cust-avatar--lg" style={{ background: avStyle.bg, color: avStyle.color }}>
+                  {initial}
+                </div>
+                <div className="cust-profile-info">
+                  <div className="cdh-name-row">
+                    <span className="cust-profile-name">{data.customer_name || 'Unknown'}</span>
+                    <span className="cdh-badge">Active</span>
+                  </div>
+                  <div className="cust-profile-contact">
+                    <span><Phone size={11}/> {data.mobile}</span>
+                    {data.whatsapp && data.whatsapp !== data.mobile && (
+                      <span><MessageCircle size={11}/> {data.whatsapp}</span>
+                    )}
+                    {data.email && (
+                      <span><Mail size={11}/> {data.email}</span>
+                    )}
+                  </div>
+                  {data.profile_notes && (
+                    <div className="cust-profile-note">{data.profile_notes}</div>
+                  )}
+                  {data.last_visit && (
+                    <div className="cust-last-visit">
+                      Last visit: <strong>{daysSince(data.last_visit)}</strong> · {fmtDate(data.last_visit)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Stats ── */}
+              <div className="cdh-stats">
+                {/* Six figures, each pairing a total with the count behind it —
+                    a rupee figure with no count is a number you cannot check.
+                    Credit is one of them now rather than a bar of its own: it
+                    belongs beside the other money, and the two buttons that act
+                    on it moved into More Actions. */}
+                <div className="cdh-stat">
+                  <div><div className="cdh-stat-val">{fmtINR(estimatesTotal)}</div>
+                    <div className="cdh-stat-lbl">Estimates</div>
+                    <div className="cdh-stat-sub">{(data.estimates||[]).length} raised</div></div>
+                  <div className="cdh-stat-icon" style={{ background: '#ede9fe', color: '#6d28d9' }}><FileText size={15}/></div>
+                </div>
+                <div className="cdh-stat">
+                  <div><div className="cdh-stat-val">{data.total_appointments}</div>
+                    <div className="cdh-stat-lbl">Appointments</div>
+                    <div className="cdh-stat-sub">{upcomingCount > 0 ? `Upcoming: ${upcomingCount}` : 'None upcoming'}</div></div>
+                  <div className="cdh-stat-icon" style={{ background: '#e0f2fe', color: '#0369a1' }}><Users size={15}/></div>
+                </div>
+                <div className="cdh-stat">
+                  <div><div className="cdh-stat-val">{fmtINR(data.total_invoiced)}</div>
+                    <div className="cdh-stat-lbl">Invoiced</div>
+                    <div className="cdh-stat-sub">{(data.invoices||[]).length} invoices</div></div>
+                  <div className="cdh-stat-icon" style={{ background: '#dcfce7', color: '#166534' }}><IndianRupee size={15}/></div>
+                </div>
+                <div className="cdh-stat">
+                  <div><div className="cdh-stat-val">{fmtINR(paidTotal)}</div>
+                    <div className="cdh-stat-lbl">Paid</div>
+                    <div className="cdh-stat-sub">{payments.length} payment{payments.length === 1 ? '' : 's'}</div></div>
+                  <div className="cdh-stat-icon" style={{ background: '#d1fae5', color: '#047857' }}><BarChart3 size={15}/></div>
+                </div>
+                <div className="cdh-stat">
+                  <div><div className="cdh-stat-val" style={{ color: Number(data.total_outstanding) > 0 ? '#dc2626' : undefined }}>
+                      {Number(data.total_outstanding) > 0 ? fmtINR(data.total_outstanding) : 'Nil'}</div>
+                    <div className="cdh-stat-lbl">Due</div>
+                    <div className="cdh-stat-sub">{dueCount > 0 ? `${dueCount} invoice${dueCount === 1 ? '' : 's'}` : 'Nothing owed'}</div></div>
+                  <div className="cdh-stat-icon" style={{ background: '#fee2e2', color: '#b91c1c' }}><AlertCircle size={15}/></div>
+                </div>
+                {/* Only when there is any. A permanent "Credit ₹0" card spends a
+                    sixth of the row saying nothing. */}
+                {credit > 0.01 && (
+                  <div className="cdh-stat cdh-stat--credit">
+                    <div><div className="cdh-stat-val" style={{ color: '#92400e' }}>{fmtINR(credit)}</div>
+                      <div className="cdh-stat-lbl">Credit held</div>
+                      <div className="cdh-stat-sub">Not on any invoice</div></div>
+                    <div className="cdh-stat-icon" style={{ background: '#fef3c7', color: '#92400e' }}><Wallet size={15}/></div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          {/* ── Two-column layout ── */}
+          <div className="cust-detail-grid">
+          <div className="cdg-left">
 
           {editing && !showB2bConfirm && (
             <div className="aveh-backdrop" onClick={() => { setEditing(false); setEditErr(''); }}>
@@ -1255,6 +1420,17 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
           {/* ── Tabs ── */}
           <div className="cust-section cds-card" style={{ padding: 0 }}>
           <div className="cust-tabs">
+            <button className={`cust-tab${tab === 'overview' ? ' cust-tab--on' : ''}`} onClick={() => setTab('overview')}>
+              <Users size={11}/> Overview
+            </button>
+            {/* The same thread the Lead page shows, keyed by the same number.
+                It has to be HERE and not only there: a message from someone who
+                is already a customer is stored against their number, and until
+                this tab existed there was no screen in the CRM that displayed
+                it. It was received, and it was invisible. */}
+            <button className={`cust-tab${tab === 'whatsapp' ? ' cust-tab--on' : ''}`} onClick={() => setTab('whatsapp')}>
+              <MessageCircle size={11}/> WhatsApp
+            </button>
             <button className={`cust-tab${tab === 'appointments' ? ' cust-tab--on' : ''}`} onClick={() => setTab('appointments')}>
               <Calendar size={11}/> Appointments <span className="cust-tab-count">{data.appointments.length}</span>
             </button>
@@ -1264,13 +1440,61 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
             <button className={`cust-tab${tab === 'estimates' ? ' cust-tab--on' : ''}`} onClick={() => setTab('estimates')}>
               📋 Estimates <span className="cust-tab-count">{data.estimates?.length || 0}</span>
             </button>
+            <button className={`cust-tab${tab === 'payments' ? ' cust-tab--on' : ''}`} onClick={() => setTab('payments')}>
+              <Wallet size={11}/> Payments {payments.length > 0 && <span className="cust-tab-count">{payments.length}</span>}
+            </button>
             <button className={`cust-tab${tab === 'timeline' ? ' cust-tab--on' : ''}`} onClick={() => setTab('timeline')}>
-              🕐 Timeline
+              🕐 Activity Log {timeline.length > 0 && <span className="cust-tab-count">{timeline.length}</span>}
             </button>
           </div>
 
           {/* ── Tab content ── */}
           <div className="cust-tab-content">
+
+            {tab === 'overview' && (
+              <CustomerOverviewTab
+                data={data}
+                detailsSlot={detailsCards}
+                payments={payments}
+                timeline={timeline}
+                tlConfigs={TL_CONFIGS}
+                onTab={setTab}
+                onAddVehicle={() => setAddVehOpen(true)}
+                onNewAppointment={() => navigate('/appointments', { state: { prefillCustomer: {
+                  mobile: data.mobile, customer_name: data.customer_name, whatsapp: data.whatsapp,
+                } } })}
+                onOpenInvoice={i => navigate(i.public_token ? `/customer-invoices/${i.public_token}` : '/customer-invoices')}
+                onOpenEstimate={e => navigate(e.public_token ? `/estimates/${e.public_token}` : '/estimates')}
+              />
+            )}
+
+            {/* Keyed by NUMBER, exactly like the Lead page — one continuous
+                exchange with a person, not a per-record inbox. whatsapp first,
+                mobile as the fallback, the same precedence resolveTarget uses.
+
+                Mounted only while the tab is open. The component polls, and a
+                thread quietly refreshing behind the Invoices tab is requests
+                nobody asked for. */}
+            {tab === 'whatsapp' && (
+              <div className="cust-wa-pane">
+                <WhatsAppThread mobile={data.whatsapp || data.mobile} />
+              </div>
+            )}
+
+            {/* Payments — everything this customer has paid, including
+                advances that have no invoice behind them yet. */}
+            {tab === 'payments' && (
+              <CustomerPaymentsTab
+                mobile={mobile}
+                invoices={data.invoices || []}
+                estimates={data.estimates || []}
+                credit={credit}
+                showToast={showToast}
+                action={payAction}
+                onActionDone={() => setPayAction(null)}
+                onChanged={() => { loadData(); loadCredit(); }}
+              />
+            )}
 
             {/* Appointments — searchable/filterable/paginated table */}
             {tab === 'appointments' && (
@@ -1441,7 +1665,7 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                  included in this response) ── */}
             {tab === 'estimates' && (
               !data.estimates?.length
-                ? <div className="cust-empty">No standalone estimates yet.</div>
+                ? <div className="cust-empty">No estimates yet.</div>
                 : data.estimates.map(e => (
                     <div
                       key={e.id}
@@ -1455,6 +1679,27 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                         {e.status && (
                           <span className="cust-hc-badge" style={{ background: '#f3f4f6', color: '#6b7280' }}>
                             {e.status.charAt(0).toUpperCase() + e.status.slice(1)}
+                          </span>
+                        )}
+                        {/* What this estimate turned into. The tab used to show
+                            only estimates with no appointment behind them, so
+                            there was nothing to say; now that every estimate is
+                            listed, a row without this reads as unbilled work
+                            when it may have been invoiced weeks ago.
+
+                            Billed beats quoted-from: an invoice number is the
+                            thing anyone actually looks up. */}
+                        {e.customer_invoice_id ? (
+                          <span className="cust-hc-badge cust-hc-id--inv">
+                            Billed · CI-{String(e.customer_invoice_id).padStart(6, '0')}
+                          </span>
+                        ) : e.appointment_id ? (
+                          <span className="cust-hc-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+                            From a visit
+                          </span>
+                        ) : (
+                          <span className="cust-hc-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>
+                            Walk-in quote
                           </span>
                         )}
                         <span className="cust-hc-price">{fmtINR(e.grand_total)}</span>
@@ -1531,6 +1776,14 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
 
           </div>{/* /cdg-right */}
           </div>{/* /cust-detail-grid */}
+        </div>
+      )}
+
+      {/* Outside the loading branch, so a confirmation cannot be unmounted by
+          the reload it just triggered. */}
+      {toast && (
+        <div className="cust-toast" role="status" aria-live="polite">
+          <CheckCircle2 size={15} /> <span>{toast}</span>
         </div>
       )}
     </div>

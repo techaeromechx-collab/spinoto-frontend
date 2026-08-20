@@ -133,6 +133,9 @@ function LeadStatusModal({ item, maxOrder, onClose, onSaved }) {
     is_pipeline: item?.is_pipeline ?? true,
     logs_call:   item?.logs_call   ?? false,
     is_locked:   item?.is_locked   ?? false,
+    is_closed:   item?.is_closed   ?? false,
+    is_reenquiry:       item?.is_reenquiry       ?? false,
+    is_repeat_customer: item?.is_repeat_customer ?? false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -213,6 +216,55 @@ function LeadStatusModal({ item, maxOrder, onClose, onSaved }) {
                 <span className="ls-behaviour-hint">
                   Leads with this status will be included in the Pipeline Value on the dashboard.
                   Turn OFF for closed statuses like Lost or Cancelled.
+                </span>
+              </div>
+            </label>
+
+            {/* Deliberately NOT the same checkbox as "Count in Pipeline Value"
+                above. That one is about money on the dashboard; this one is
+                about where a customer's next message lands. They agree today
+                and will not always, and one box controlling both would change
+                WhatsApp routing the day someone adjusted a report. */}
+            <label className="ls-behaviour-row">
+              <input type="checkbox" checked={form.is_closed}
+                onChange={e => setForm(f => ({ ...f, is_closed: e.target.checked }))} />
+              <div>
+                <span className="ls-behaviour-label">Treat this status as closed</span>
+                <span className="ls-behaviour-hint">
+                  A new WhatsApp message from this customer will create a FRESH lead instead of
+                  landing on this one. Turn ON for finished statuses like Lost, Junk or Not Interested —
+                  otherwise a new enquiry gets filed on a dead lead where nobody will see it.
+                </span>
+              </div>
+            </label>
+
+            {/* ── Where a RETURNING customer lands (migration 161) ──────────
+                Two boxes, not one, because they are two different people: one
+                said no and changed their mind, the other has already paid you.
+                Each can only be ticked on one status — ticking it here clears
+                it wherever it was, the same way "Default status" behaves. */}
+            <label className="ls-behaviour-row">
+              <input type="checkbox" checked={form.is_reenquiry}
+                onChange={e => setForm(f => ({ ...f, is_reenquiry: e.target.checked }))} />
+              <div>
+                <span className="ls-behaviour-label">Start re-enquiries on this status</span>
+                <span className="ls-behaviour-hint">
+                  When someone whose old lead was closed — Lost, Junk, Not Interested — messages
+                  again, their new lead starts here instead of blank “New Lead”. Only one status
+                  can hold this.
+                </span>
+              </div>
+            </label>
+
+            <label className="ls-behaviour-row">
+              <input type="checkbox" checked={form.is_repeat_customer}
+                onChange={e => setForm(f => ({ ...f, is_repeat_customer: e.target.checked }))} />
+              <div>
+                <span className="ls-behaviour-label">Start repeat customers on this status</span>
+                <span className="ls-behaviour-hint">
+                  For somebody who has already had a job done — a past appointment, or an existing
+                  customer record — coming back for the next one. Takes priority over re-enquiry
+                  when both would apply. Only one status can hold this.
                 </span>
               </div>
             </label>
@@ -375,6 +427,8 @@ function LeadStatusPanel({ canManage }) {
               <th>Pipeline</th>
               <th>Logs Call</th>
               <th>Locked</th>
+              <th>Closed</th>
+              <th>Returning</th>
               <th>Active</th>
               {canManage && <th />}
             </tr>
@@ -449,6 +503,22 @@ function LeadStatusPanel({ canManage }) {
                     : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                 </td>
                 <td>
+                  {s.is_closed
+                    ? <span className="ls-flag-badge ls-flag-badge--slate">Closed</span>
+                    : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                </td>
+                {/* Both flags share one column: at most one status holds
+                    each, so this cell is empty on almost every row and two
+                    columns of dashes would be two columns of nothing. */}
+                <td>
+                  {s.is_repeat_customer || s.is_reenquiry
+                    ? <>
+                        {s.is_repeat_customer && <span className="ls-flag-badge ls-flag-badge--amber">Repeat</span>}
+                        {s.is_reenquiry && <span className="ls-flag-badge ls-flag-badge--purple">Re-Enquiry</span>}
+                      </>
+                    : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                </td>
+                <td>
                   <span style={{
                     fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20,
                     background: s.is_active ? '#dcfce7' : '#f3f4f6',
@@ -496,6 +566,9 @@ function LeadStatusPanel({ canManage }) {
                   {s.is_pipeline && <span className="ls-flag-badge ls-flag-badge--amber">Pipeline</span>}
                   {s.logs_call && <span className="ls-flag-badge ls-flag-badge--purple">Call Log</span>}
                   {s.is_locked && <span className="ls-flag-badge ls-flag-badge--red">🔒 Locked</span>}
+                  {s.is_closed && <span className="ls-flag-badge ls-flag-badge--slate">Closed</span>}
+                  {s.is_repeat_customer && <span className="ls-flag-badge ls-flag-badge--amber">Repeat</span>}
+                  {s.is_reenquiry && <span className="ls-flag-badge ls-flag-badge--purple">Re-Enquiry</span>}
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: s.is_active ? '#dcfce7' : '#f3f4f6', color: s.is_active ? '#16a34a' : '#6b7280' }}>
                     {s.is_active ? 'Active' : 'Inactive'}
                   </span>

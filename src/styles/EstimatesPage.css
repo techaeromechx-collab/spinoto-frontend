@@ -215,6 +215,256 @@
   border-radius: 12px 12px 0 0;
 }
 
+
+/* ══ DOCUMENT HEADER BAND ════════════════════════════════════════════════════
+   Bill To · Vehicle & Estimate · Summary, in one bordered band.
+
+   Replaces .est-info-grid, a two-column grid whose every row spent 100px on a
+   text label. Those labels are icons now, and the width that frees is exactly
+   what lets Summary sit HERE instead of below the line items — where it was one
+   more block between the items and the buttons that act on them.
+
+   minmax(0, 1fr) and not 1fr: a bare 1fr floors at min-content, so one long
+   company name or a wrapped address widens its column and pushes the rupee
+   figures out of the pane instead of wrapping. */
+.est-doc-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.85fr);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.est-doc-col { padding: 13px 15px; min-width: 0; }
+.est-doc-col + .est-doc-col { border-left: 1px solid var(--border); }
+
+.est-doc-cap {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 9px;
+}
+
+.est-doc-rows { display: flex; flex-direction: column; gap: 7px; }
+
+/* One labelled row. align-items: flex-start so the icon sits with the FIRST
+   line of a value that wraps, not floating in the middle of three lines. */
+.est-doc-il {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  min-width: 0;
+}
+.est-doc-il > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #94a3b8;
+}
+/* Visually hidden, NOT display:none — the label has to stay in the accessibility
+   tree and has to be there for the print block below to reveal. */
+.est-doc-il-lbl {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.est-doc-il-v {
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* An address is the one value that must break mid-token — a long unspaced
+   name would otherwise widen the whole column. */
+.est-doc-il--wrap .est-doc-il-v {
+  color: var(--text-muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  display: block;
+}
+.est-doc-mono {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+/* The Change link beside the date. */
+.est-doc-inline-act {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+}
+.est-doc-inline-act:hover { text-decoration: underline; }
+
+/* ── Summary column ── */
+.est-doc-col--sum { background: var(--bg-soft); }
+.est-doc-sum { font-size: 12px; }
+
+.est-doc-sumrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2.5px 0;
+}
+.est-doc-sumrow > span { color: var(--text-muted); white-space: nowrap; }
+.est-doc-sumrow > b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.est-doc-sumrow--disc > span,
+.est-doc-sumrow--disc > b { color: #b45309; font-weight: 700; }
+
+.est-doc-taxpair { padding: 1px 0; }
+.est-doc-taxrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 1px 0;
+}
+.est-doc-taxrow > span:last-child { font-variant-numeric: tabular-nums; }
+
+.est-doc-sumrule { height: 1px; background: var(--border); margin: 7px 0; }
+
+.est-doc-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0 3px;
+}
+.est-doc-total > span { font-size: 12px; font-weight: 800; color: #0f9d76; white-space: nowrap; }
+.est-doc-total > b {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f9d76;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Per-line rate, shown only on a mixed-slab estimate ──
+   When every line shares a rate it lives in the column header instead. */
+.est-doc-rate {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* ── Amount in words ──
+   Was a card with a 3px green stripe down its side — a lot of decoration for
+   one sentence, and a third use of a colour that should mean one thing. */
+.est-doc-words-block { display: flex; flex-direction: column; gap: 12px; }
+.est-doc-words-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.est-doc-words { font-size: 12px; color: var(--text-muted); min-width: 0; }
+/* 2px, not the 9px the column captions use: up there the caption heads a list
+   and needs air, here it heads a single sentence. */
+.est-doc-words .est-doc-cap { margin-bottom: 2px; }
+.est-doc-words em {
+  display: block;
+  color: var(--text);
+  font-weight: 600;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* ── Icon-only header actions ──
+   Print, Download and the kebab carry no label. Their icons are unambiguous,
+   title holds the words, and aria-label keeps them named for a screen reader —
+   a button whose whole content is an <svg> is otherwise announced as "button"
+   and nothing else.
+
+   Square, so the row reads as a set of equal controls rather than pills of
+   three different widths. */
+.btn.est-hdr-icon {
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  gap: 0;
+}
+
+/* The .est-wa-* block that stood here is gone. The send dialog moved into
+   <WhatsAppSendMenu>, which carries its own wa-* stylesheet — one copy for the
+   four pages that mount it, rather than a fourth prefix duplicating the same
+   rules. Deleted rather than left behind: a dead rule for a class no component
+   renders is one somebody has to read and rule out later. */
+
+/* ── Print toggles inside the kebab ──
+   A <label>, so the whole row toggles the box. The menu deliberately does not
+   close on click: both toggles are usually set together before printing once. */
+.est-kebab-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 14px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.est-kebab-toggle:hover { background: var(--bg-soft); }
+.est-kebab-toggle > input { width: 13px; height: 13px; cursor: pointer; }
+
+/* ══ RESPONSIVE ══════════════════════════════════════════════════════════════
+   The detail sits in the split pane beside the record list, so these are about
+   the PANE's width, not the window's — roughly 830px on a 1440px laptop. */
+
+/* Two columns, summary spanning. Below ~1080px the third column squeezes the
+   summary under 250px, which breaks "Subtotal (ex-GST)" onto two lines. */
+@media screen and (max-width: 1180px) {
+  .est-doc-meta { grid-template-columns: 1fr 1fr; }
+  .est-doc-col--sum {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+  /* Full width, the summary lays out as a row of figures rather than a tall
+     list — the numbers somebody opens an estimate for, side by side. */
+  .est-doc-col--sum .est-doc-sum {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0 16px;
+    align-items: start;
+  }
+  .est-doc-col--sum .est-doc-sumrule { display: none; }
+  .est-doc-col--sum .est-doc-sumrow,
+  .est-doc-col--sum .est-doc-total { flex-direction: column; align-items: flex-start; gap: 1px; }
+  .est-doc-col--sum .est-doc-taxpair { grid-column: 1 / -1; display: flex; gap: 16px; }
+}
+
+/* One column. A phone, or the pane on a small laptop with the list open. */
+@media screen and (max-width: 760px) {
+  .est-doc-meta { grid-template-columns: 1fr; }
+  .est-doc-col + .est-doc-col { border-left: 0; border-top: 1px solid var(--border); }
+  .est-doc-col--sum .est-doc-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
+  /* align-items MUST be restated — the base rule is `center`, which centres a
+     wrapped child in the middle of the screen once direction flips to column. */
+  .est-doc-words-row { flex-direction: column; align-items: flex-start; gap: 10px; }
+}
+
 /* ── Print styles ────────────────────────────────────────────────────────── */
 @media print {
   body * { visibility: hidden; }
@@ -247,18 +497,24 @@
     border-collapse: collapse !important;
   }
 
-  /* Column widths for print */
-  .est-items-table th:nth-child(1)  { width: 22px !important; }   /* Sr.       */
-  .est-items-table th:nth-child(2)  { width: 22% !important; }    /* Item      */
-  .est-items-table th:nth-child(3)  { width: 52px !important; }   /* HSN/SAC   */
-  .est-items-table th:nth-child(4)  { width: 24px !important; }   /* Qty       */
-  .est-items-table th:nth-child(5)  { width: 46px !important; }   /* Rate      */
-  .est-items-table th:nth-child(6)  { width: 54px !important; }   /* Discount / Taxable */
-  .est-items-table th:nth-child(7)  { width: 46px !important; }   /* Taxable / CGST%   */
-  .est-items-table th:nth-child(8)  { width: 30px !important; }   /* CGST% / SGST%     */
-  .est-items-table th:nth-child(9)  { width: 30px !important; }   /* SGST% / Tax Amt   */
-  .est-items-table th:nth-child(10) { width: 44px !important; }   /* Tax Amt / Total   */
-  .est-items-table th:nth-child(11) { width: 44px !important; }   /* Total             */
+  /* Column widths for print.
+     Rewritten for TEN entries, not eleven — CGST % / SGST % / Tax Amount became
+     CGST / SGST, so every child after Taxable shifted left by one. Left as it
+     was, child 10 would have sized Total and child 11 nothing at all, and the
+     amount column would have collapsed to whatever was left over.
+
+     The second label in each comment is the position when the Discount column
+     is present, which shifts everything from child 6 rightward. */
+  .est-items-table th:nth-child(1)  { width: 22px !important; }   /* Sr.                */
+  .est-items-table th:nth-child(2)  { width: 24% !important; }    /* Item               */
+  .est-items-table th:nth-child(3)  { width: 52px !important; }   /* HSN/SAC            */
+  .est-items-table th:nth-child(4)  { width: 24px !important; }   /* Qty                */
+  .est-items-table th:nth-child(5)  { width: 48px !important; }   /* Rate               */
+  .est-items-table th:nth-child(6)  { width: 56px !important; }   /* Taxable  / Discount */
+  .est-items-table th:nth-child(7)  { width: 48px !important; }   /* CGST     / Taxable  */
+  .est-items-table th:nth-child(8)  { width: 48px !important; }   /* SGST     / CGST     */
+  .est-items-table th:nth-child(9)  { width: 50px !important; }   /* Total    / SGST     */
+  .est-items-table th:nth-child(10) { width: 50px !important; }   /*          / Total    */
 
   .est-items-table th {
     font-size: 7.5px !important;
@@ -314,103 +570,91 @@
   .est-detail-view div[style*="overflow"] { overflow: visible !important; }
 
   /* Info grid — side by side, no box styling */
-  .est-info-grid,
-  .est-detail-view .est-info-grid {
+  /* The band prints as three plain columns — no border, no fill, no radius.
+     Chrome on the page is chrome; the paper wants the content only. */
+  .est-doc-meta,
+  .est-detail-view .est-doc-meta {
     display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
+    grid-template-columns: 1fr 1fr 1fr !important;
     background: none !important;
     border-radius: 0 !important;
     border: none !important;
     overflow: visible !important;
     gap: 0 16px !important;
     margin-bottom: 10px !important;
+    break-inside: avoid;
   }
-  .est-info-grid > div,
-  .est-detail-view .est-info-grid > div {
+  .est-doc-col,
+  .est-detail-view .est-doc-col {
     padding: 0 !important;
     border: none !important;
-    border-right: none !important;
-    border-bottom: none !important;
+    border-left: none !important;
+    border-top: none !important;
     background: none !important;
   }
-  .est-info-grid > div > div:first-child {
+  .est-doc-col--sum { grid-column: auto !important; }
+  .est-doc-cap {
     font-size: 8px !important;
     font-weight: 700 !important;
     margin-bottom: 5px !important;
-    text-transform: uppercase !important;
     letter-spacing: 0.05em !important;
     color: #6b7280 !important;
   }
-  .est-info-grid > div > div[style*="display: flex"] { align-items: flex-start !important; }
-  .est-info-label {
-    font-size: 9px !important;
+  .est-doc-rows { gap: 3px !important; }
+
+  /* The labels come BACK as text, and the icons go. Without this the printed
+     estimate reads "▢ Raj Patel / ▢ 9712301573" — an icon does not print as
+     meaning, and this is the customer's copy. */
+  .est-doc-il { align-items: flex-start !important; gap: 0 !important; font-size: 9px !important; }
+  .est-doc-il > svg { display: none !important; }
+  .est-doc-il-lbl {
+    position: static !important;
     width: 92px !important;
     min-width: 92px !important;
+    height: auto !important;
+    margin: 0 !important;
+    clip: auto !important;
+    clip-path: none !important;
     flex-shrink: 0 !important;
-    color: #6b7280 !important;
+    overflow: visible !important;
+    font-size: 9px !important;
     font-weight: 500 !important;
+    color: #6b7280 !important;
     padding-right: 6px !important;
   }
-  .est-info-value { font-size: 9px !important; font-weight: 600 !important; flex: 1 !important; }
+  .est-doc-il-v { font-size: 9px !important; font-weight: 600 !important; flex: 1 !important; }
+  .est-doc-mono { font-family: inherit !important; }
+
+  /* Summary, printed. Same figures, ink-weight rather than screen-weight. */
+  .est-doc-sum { font-size: 9px !important; }
+  .est-doc-sumrow > span,
+  .est-doc-taxrow { font-size: 8.5px !important; }
+  .est-doc-total > span { font-size: 9px !important; }
+  .est-doc-total > b { font-size: 11px !important; }
 
   /* Item name font size in table */
   .est-items-table td:nth-child(2) div:first-child { font-size: 8px !important; font-weight: 700 !important; }
   .est-items-table td:nth-child(2) span { font-size: 7px !important; padding: 1px 4px !important; }
 
-  /* Amount in words */
-  .est-amount-words { font-size: 10px !important; padding: 8px 10px !important; }
-  .est-amount-words * { font-size: 10px !important; }
+  /* Amount in words — a caption and a sentence, no card. */
+  .est-doc-words-block { gap: 8px !important; }
+  .est-doc-words { font-size: 10px !important; }
+  .est-doc-words .est-doc-cap { font-size: 8px !important; margin-bottom: 2px !important; }
+  .est-doc-words em { font-size: 10px !important; }
 
-  /* Totals row */
-  .est-totals-row { gap: 12px !important; padding-top: 10px !important; }
-
-  /* Footer — fixed at bottom of every printed page */
-  .est-invoice-footer {
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    margin: 0 !important;
-    padding: 8px 10mm 6px !important;
-    border-top: 1px solid #e5e7eb !important;
-    background: #fff !important;
-    text-align: center !important;
-    font-size: 9px !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .est-invoice-footer * { font-size: 9px !important; }
+  /* No footer rules: the on-screen footer was removed and the printed copy is
+     rendered server-side. Worth recording why these are not simply moved —
+     they said `position: fixed`, which made Chrome repeat the footer at the
+     same spot on EVERY page, so a two-page estimate drew it over the totals
+     that had flowed onto page 2. */
 
   @page { size: A4 portrait; margin: 0; }
 }
 
-/* ── Info grid ────────────────────────────────────────────────────────────── */
-.est-info-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0;
-  background: var(--bg-soft);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.est-info-cell {
-  display: flex;
-  gap: 0;
-  align-items: baseline;
-  padding: 0;
-}
-.est-info-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: #9ca3af;
-  width: 100px;
-  flex-shrink: 0;
-}
-.est-info-value {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-}
+/* The .est-info-grid / .est-info-label / .est-info-value / .est-info-cell block
+   that stood here is gone — .est-doc-meta above replaced the markup it styled.
+   Deleted rather than left behind: a dead rule for a class no page renders is
+   one somebody has to read and rule out the next time this band misbehaves. */
 
 /* ── Icon action button ──────────────────────────────────────────────────── */
 .icon-action {
@@ -498,7 +742,7 @@
 .est-modal-table { min-width: 480px; }
 
 /* ── Mobile: 768px ────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
+@media screen and (max-width: 768px) {
   /* Filter bar: let items wrap and fill width */
   .estimates-page .card[style] select,
   .estimates-page .card[style] input { flex: 1 1 140px !important; min-width: 0 !important; }
@@ -507,9 +751,8 @@
   .est-detail-header { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
   .est-detail-header > div { flex-wrap: wrap; }
 
-  /* Info grid: single column on mobile */
-  .est-info-grid { grid-template-columns: 1fr !important; }
-  .est-info-grid > div:first-child { border-right: none !important; border-bottom: 1px solid var(--border); }
+  /* The document band handles its own stacking at 1180px and 760px — see the
+     est-doc-meta breakpoints above. Nothing to do here. */
 
   /* Modal: bottom-sheet on mobile */
   .modal-backdrop { align-items: flex-end !important; padding: 0 !important; }
@@ -533,7 +776,7 @@
   .est-items-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
 
-@media (max-width: 480px) {
+@media screen and (max-width: 480px) {
   .est-detail-header { padding: 12px 14px !important; }
   .btn { padding: 9px 14px; font-size: 13px; }
   .btn-sm-amber, .btn-sm-primary, .btn-sm-outline { padding: 6px 10px; font-size: 12px; }
@@ -585,7 +828,7 @@
   .pgbar-ellipsis { padding: 0 4px; color: var(--text-muted); font-size: 13px; line-height: 32px; }
 
   /* Mobile responsive */
-  @media (max-width: 640px) {
+  @media screen and (max-width: 640px) {
     .pgbar { flex-direction: column; align-items: flex-start; gap: 8px; }
     .pgbar-controls { width: 100%; justify-content: center; }
     .pgbar-btn { min-width: 36px; height: 36px; font-size: 14px; }
@@ -626,7 +869,7 @@
    record pages and live in splitPane.css.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 760px) {
+@media screen and (max-width: 760px) {
   /* The detail's own tables keep their min-widths and scroll INSIDE their
      wrapper. Dropping the min-width would crush their columns into 360px and
      wrap every cell to three lines — a contained sideways scroll is the honest

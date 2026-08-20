@@ -176,3 +176,13 @@
           .ls-mobile-card { padding: 10px 14px; }
           .ls-flag-badge { font-size: 10px; padding: 1px 6px; }
         }
+
+/* "Closed" — a status that ends the lead, so a new WhatsApp message from that
+   customer starts a fresh one (migration 156).
+
+   Slate, not red. Red already means Locked on this screen, and closed is not a
+   warning — Lost and Junk are legitimate outcomes, not mistakes. */
+.ls-flag-badge--slate {
+  background: #e2e8f0;
+  color: #475569;
+}

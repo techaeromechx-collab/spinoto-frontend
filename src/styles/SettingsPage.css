@@ -685,3 +685,104 @@
      in InvoiceThemeSettings, which handles narrow screens properly. */
   .its-store { overflow: visible; }
 }
+
+/* ═══ Payments settings — the advance receipt GST rate ═══
+   A single self-contained card, prefixed `set-` so it can be reused by any
+   future settings panel that wants the same shape without inheriting the
+   Invoice tab's split-pane rules above. */
+
+.set-card {
+  max-width: 620px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  padding: 18px 20px 20px;
+}
+
+.set-card-hd { margin-bottom: 6px; }
+.set-card-t {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.set-card-t svg { color: var(--text-muted); }
+
+.set-card-lede {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* The current state, said before anything is editable. "Not set" is the state
+   people arrive here confused by, so it is stated rather than implied by an
+   empty input. */
+.set-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 13px;
+  border-radius: 9px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.set-state--on  { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+/* Amber, not red: switched off is a legitimate configuration, not a fault. */
+.set-state--off { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+
+.set-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.set-alert--bad { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+.set-alert--ok  { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+
+.set-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.set-suffix { font-size: 13px; font-weight: 700; color: var(--text-muted); margin-left: -2px; }
+
+.set-card-note {
+  margin: 12px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* ── The off switch ──
+   Separated by a rule and set apart from the save action, because it does
+   something categorically different: it disables a money feature across every
+   customer profile in the application. */
+.set-danger { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.set-danger-btn { color: #b91c1c; }
+.set-danger-btn:hover { background: #fef2f2; }
+
+.set-confirm {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  font-size: 12.5px;
+  color: #991b1b;
+}
+.set-confirm .set-card-note { color: #b91c1c; }
+.set-confirm-acts { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+
+.set-btn--danger {
+  background: #dc2626;
+  border: 1px solid #dc2626;
+  color: #fff;
+}
+.set-btn--danger:hover:not(:disabled) { background: #b91c1c; }

@@ -1,0 +1,490 @@
+/* ══ WhatsAppThread ══════════════════════════════════════════════════════════
+   Its own stylesheet, imported by the component, for the same reason
+   WhatsAppSendMenu.css has one: this mounts inside Leads and Customers, whose
+   stylesheets already define overlapping lp- and cust- names. Every class here
+   is wat-, and nothing in this file styles an element the component does not
+   render.
+
+   No asterisk-slash inside these comments. Written as "lp-*<slash>cust-*" it
+   closed the comment three lines early, the parser ate the prose that followed
+   AND the .wat rule with it, and the panel lost display:flex / overflow:hidden
+   — so the message list grew to its full height instead of scrolling, pushing
+   the composer off the bottom of the screen. Every other rule in the file still
+   applied, which is why it looked like a layout bug rather than a dead rule.
+
+   The palette is WhatsApp's, deliberately. An advisor reading this panel is
+   translating between it and the app on their own phone all day; a bespoke
+   colour scheme would make them do that translation twice. */
+
+.wat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg, #fff);
+  overflow: hidden;
+}
+
+.wat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg, #fff);
+  flex-shrink: 0;
+}
+.wat-head-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+/* WhatsApp's green, on the mark only. The panel keeps the app's palette
+   everywhere else — a green header bar would make the CRM look like it had been
+   replaced by WhatsApp rather than connected to it. */
+.wat-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #25d366;
+  color: #fff;
+}
+
+.wat-head-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.wat-head-id strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The number under the name. font-variant-numeric so the digits line up rather
+   than wobbling, which is what makes a long number hard to read back. */
+.wat-head-id em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wat-head-right { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* Who owns this conversation. Grey by default — it is information about a
+   colleague, not a warning — and green when it is you, so "am I meant to answer
+   this?" is settled before reading the name. */
+.wat-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wat-owner--me { background: #dcfce7; color: #166534; }
+
+/* Whether a typed reply is even possible. Stated up front rather than
+   discovered by typing one and being refused. */
+.wat-win {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.wat-win--open { color: #166534; background: #dcfce7; }
+.wat-win--shut { color: #92400e; background: #fef3c7; }
+
+.wat-icon {
+  display: inline-grid; place-items: center;
+  width: 26px; height: 26px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg, #fff); color: var(--text-muted);
+  cursor: pointer; padding: 0;
+}
+.wat-icon:hover { background: var(--bg-soft); color: var(--text); }
+.wat-icon:disabled { opacity: .6; cursor: default; }
+
+/* WhatsApp's wallpaper. min-height:0 is what lets this flex child actually
+   scroll instead of growing the panel — without it the composer is pushed off
+   the bottom of the rail. */
+.wat-scroll {
+  flex: 1 1 auto;
+  min-height: 140px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: #ece5dd;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Day separator — the centred pill WhatsApp puts between days.
+
+   It earns its place here more than in a normal chat: the closed-lead rule
+   (migration 156) means one thread routinely spans months, so the March →
+   August gap has to be SEEN rather than worked out from timestamps.
+
+   sticky so the date stays visible while you scroll through a long day. */
+.wat-daysep {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 2px;
+  pointer-events: none;
+}
+.wat-daysep > span {
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #ffffffcc;
+  backdrop-filter: blur(2px);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .1);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: #54656f;
+  white-space: nowrap;
+}
+
+.wat-row { display: flex; }
+.wat-row--in  { justify-content: flex-start; }
+.wat-row--out { justify-content: flex-end; }
+
+.wat-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 78%;
+  min-width: 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .12);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #111b21;
+}
+/* Outgoing is WhatsApp's green. Incoming stays white, so "who said this" is
+   answerable at a glance without reading a label. */
+.wat-row--out .wat-bubble { background: #d9fdd3; }
+
+/* Except the workflow, which is outgoing but not OURS. Muted rather than green,
+   with a left rule, so the eye separates "the bot asked this" from "a colleague
+   said this" before reading either — the whole point being that the answers
+   underneath mean different things depending on which it was. */
+.wat-row--out .wat-bubble--bot {
+  background: #f1f5f9;
+  border-left: 3px solid #94a3b8;
+  color: #334155;
+}
+.wat-tpl--bot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #64748b;
+}
+
+.wat-tpl {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #667781;
+}
+
+/* pre-wrap, because a form-fill message is a dozen labelled lines and
+   collapsing them into a paragraph makes it unreadable. overflow-wrap, because
+   a pasted link has no spaces and would otherwise push the rail wider than the
+   screen. */
+.wat-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.wat-nobody { color: #667781; }
+
+.wat-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: 10px;
+  color: #667781;
+}
+.wat-tick { color: #667781; }
+.wat-tick--read { color: #53bdeb; }   /* WhatsApp's blue ticks */
+.wat-tick--bad  { color: #b91c1c; }
+
+.wat-err {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #b91c1c;
+  overflow-wrap: anywhere;
+}
+
+.wat-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  padding: 18px 12px;
+  font-size: 12px;
+  color: #667781;
+  margin: auto;
+}
+
+/* A number that exists but cannot be messaged. Amber rather than red: a typo in
+   a phone field is a data problem to fix, not a fault in the app, and red here
+   would read as "something broke". */
+.wat-empty--bad {
+  flex-direction: column;
+  gap: 3px;
+  text-align: center;
+  line-height: 1.5;
+  color: #92400e;
+}
+.wat-empty--bad strong { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+.wat-alert {
+  padding: 7px 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #991b1b;
+  background: #fef2f2;
+  border-top: 1px solid #fca5a5;
+  flex-shrink: 0;
+}
+
+/* ── The 24-hour countdown ───────────────────────────────────────────────────
+   On the wallpaper, not in the white panel below it: this is a fact about the
+   conversation, not a control. Centred, the way WhatsApp centres its own
+   system notices. */
+.wat-status {
+  display: flex;
+  justify-content: center;
+  padding: 2px 12px 10px;
+  background: #ece5dd;
+  flex-shrink: 0;
+}
+.wat-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: #ffffffdd;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .1);
+  font-size: 11px;
+  font-weight: 600;
+  color: #166534;
+  white-space: nowrap;
+}
+/* Under an hour. Not red — nothing is broken, it is just about to matter. */
+.wat-status-pill--soon { color: #92400e; background: #fef3c7ee; }
+.wat-status-pill--shut { color: #92400e; background: #fef3c7ee; }
+
+/* ── Composer panel ─────────────────────────────────────────────────────── */
+.wat-panel {
+  border-top: 1px solid var(--border);
+  background: var(--bg, #fff);
+  flex-shrink: 0;
+}
+
+.wat-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.wat-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  /* -1px so the active underline sits ON the tab strip's border rather than
+     above it, which reads as two lines of different weights. */
+  margin-bottom: -1px;
+}
+.wat-tabs button:hover { color: var(--text); }
+.wat-tabs button.on { color: #0f9d76; border-bottom-color: #0f9d76; }
+
+/* ── Reply tab ──────────────────────────────────────────────────────────── */
+.wat-reply { padding: 8px 10px 6px; }
+
+/* position: relative so the emoji popover has something to anchor to. Without
+   it the popover would anchor to whatever ancestor happens to be positioned
+   and appear somewhere else entirely. */
+.wat-inputwrap {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg, #fff);
+  padding: 6px 8px 6px;
+}
+.wat-inputwrap:focus-within { border-color: var(--primary); }
+
+.wat-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  padding: 2px 2px 4px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+  background: transparent;
+}
+.wat-input:focus { outline: none; }
+
+.wat-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* Pushes the send button to the far edge and leaves the tool icons at the
+   left, so the destructive-ish action is never next to the cursor by accident. */
+.wat-tools .wat-send { margin-left: auto; }
+
+.wat-tool {
+  display: inline-grid; place-items: center;
+  width: 28px; height: 28px;
+  border: 0; border-radius: 7px;
+  background: transparent; color: var(--text-muted);
+  cursor: pointer; padding: 0;
+}
+.wat-tool:hover { background: var(--bg-soft); color: var(--text); }
+.wat-tool--on { background: var(--bg-soft); color: #0f9d76; }
+
+.wat-send {
+  display: inline-grid; place-items: center;
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  border: 0; border-radius: 10px;
+  background: var(--primary); color: #fff;
+  cursor: pointer;
+}
+.wat-send:disabled { opacity: .45; cursor: not-allowed; }
+
+.wat-hint {
+  padding: 5px 4px 2px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+/* ── Emoji ──────────────────────────────────────────────────────────────── */
+.wat-emoji-backdrop { position: fixed; inset: 0; z-index: 40; }
+/* Opens UPWARD for the same reason the template menu does: this sits at the
+   bottom of a panel with overflow:hidden, and downward would be clipped away. */
+.wat-emoji {
+  position: absolute;
+  z-index: 41;
+  bottom: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg, #fff);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .14);
+}
+.wat-emoji button {
+  width: 28px; height: 28px;
+  border: 0; border-radius: 6px;
+  background: transparent;
+  font-size: 16px; line-height: 1;
+  cursor: pointer;
+}
+.wat-emoji button:hover { background: var(--bg-soft); }
+
+/* ── Reply tab, window shut ─────────────────────────────────────────────── */
+.wat-closed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #92400e;
+}
+.wat-closed-txt { margin: 0; }
+.wat-golink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #92400e;
+  cursor: pointer;
+}
+.wat-golink:hover { background: #fef3c7; }
+
+/* ── Templates tab ──────────────────────────────────────────────────────── */
+/* Capped and scrollable: the list grows every time a template is enabled in
+   Settings, and an uncapped list would push the panel taller than the rail. */
+.wat-tplpane {
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 6px;
+}
+.wat-tplpane-empty {
+  padding: 14px 12px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.wat-waiting {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #7c6f2a;
+}
+
+@media screen and (max-width: 560px) {
+  .wat-bubble { max-width: 88%; }
+  .wat-scroll { max-height: 320px; }
+}

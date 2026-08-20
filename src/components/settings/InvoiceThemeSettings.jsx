@@ -63,6 +63,9 @@ const THEME_FLAGS = [
   { key: 'show_status',           label: 'Show document status' },
   // Only meaningful where there's a customer ledger to total up.
   { key: 'show_party_balance',    label: "Show party's total outstanding", docs: ['customer_invoice'] },
+  // Only a customer invoice can consume an advance — an estimate precedes it
+  // and a purchase invoice pays the hub.
+  { key: 'show_advance_line',     label: 'Show advance applied as its own line', docs: ['customer_invoice'] },
   { key: 'price_history',         label: "Show customer's previous prices",  docs: ['estimate', 'customer_invoice'] },
   { key: 'show_warranty',         label: 'Show warranty & guarantee table',   docs: ['estimate', 'customer_invoice'] },
 ];

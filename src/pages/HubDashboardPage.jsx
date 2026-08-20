@@ -1,6 +1,11 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useAppPaths } from '../lib/appPaths.js';
+import { istToday } from '../lib/istDate.js';
+import AppointmentSchedule from '../components/AppointmentSchedule.jsx';
+import { useTopbarSearch, clearPageSearch } from '../lib/pageSearchStore.js';
 import { api } from '../api/client.js';
 import { usePushNotifications } from '../hooks/usePushNotifications.js';
 import { NOTIF_POLL_MS } from '../config/polling.js';
@@ -10,7 +15,7 @@ import {
   Loader2, IndianRupee, TrendingUp,
   PanelLeftClose, PanelLeftOpen,
   Wrench, Layers, Search, ChevronDown, ChevronUp, Tag,
-  Bell, CheckCheck, Percent, Database,
+  Bell, CheckCheck, Percent, Database, X, Settings, Eye, EyeOff,
 } from 'lucide-react';
 import AppointmentsPage     from './AppointmentsPage.jsx';
 import EstimatesPage        from './EstimatesPage.jsx';
@@ -63,70 +68,71 @@ function KpiCard({ icon: Icon, label, value, accent, sub, onClick }) {
   const clickable = typeof onClick === 'function';
   return (
     <div
-      className="card"
+      className={`card hubdash-kpi${clickable ? ' hubdash-kpi--link' : ''}`}
       onClick={onClick}
-      style={{
-        display: 'flex', alignItems: 'flex-start', gap: 16, padding: '20px 24px',
-        cursor: clickable ? 'pointer' : 'default',
-        transition: 'box-shadow 0.15s, transform 0.15s, border-color 0.15s',
-        borderBottom: clickable ? `3px solid ${accent}` : undefined,
-      }}
-      onMouseEnter={e => { if (clickable) { e.currentTarget.style.boxShadow = '0 4px 18px rgba(0,0,0,0.10)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}}
-      onMouseLeave={e => { if (clickable) { e.currentTarget.style.boxShadow = ''; e.currentTarget.style.transform = ''; }}}
+      style={{ borderBottom: clickable ? `3px solid ${accent}` : undefined }}
     >
-      <div style={{
-        width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-        background: accent + '18', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
+      <div className="hubdash-kpi-icon" style={{ background: accent + '18' }}>
         <Icon size={20} style={{ color: accent }} />
       </div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text)', lineHeight: 1 }}>{value}</div>
-        {sub && <div style={{ fontSize: 12, color: accent, marginTop: 4, fontWeight: 500 }}>{sub}</div>}
+      <div className="hubdash-kpi-body">
+        <div className="hubdash-kpi-label">{label}</div>
+        {/* title= so a value too long for the card is still readable on hover
+            rather than silently ellipsized away. */}
+        <div className="hubdash-kpi-value" title={String(value)}>{value}</div>
+        {sub && <div className="hubdash-kpi-sub" style={{ color: accent }}>{sub}</div>}
       </div>
-      {clickable && (
-        <div style={{ fontSize: 11, color: accent, fontWeight: 600, alignSelf: 'center', opacity: 0.7, flexShrink: 0 }}>
-          View →
-        </div>
-      )}
+      {clickable && <span className="hubdash-kpi-go" style={{ color: accent }}>View →</span>}
     </div>
   );
 }
 
 // ─── Tab: Dashboard ──────────────────────────────────────────────────────────
 
-function DashboardTab({ hubId, onNavigate }) {
+function DashboardTab({ hubId }) {
+  const P = useAppPaths();
+  const navigate = useNavigate();
   const [stats, setStats]     = useState(null);
   const [loading, setLoading] = useState(true);
+  const [addressMissing, setAddressMissing] = useState(false);
 
   useEffect(() => {
+    let dead = false;
     (async () => {
       setLoading(true);
       try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = istToday();
         const [apptRes, estRes, piRes] = await Promise.all([
           api(`/api/appointments?hub_id=${hubId}&limit=200`),
           api(`/api/estimates?hub_id=${hubId}&limit=200`),
           api(`/api/purchase-invoices?hub_id=${hubId}&limit=200`),
         ]);
+        // Separate and failure-tolerant: a missing address is a nudge, not a
+        // reason for the whole dashboard to show an error.
+        api(`/api/hubs/${hubId}`)
+          .then(r => { if (!dead) setAddressMissing(!r.item?.address_line1); })
+          .catch(() => {});
         const appts = apptRes.items || [];
         const ests  = estRes.items  || [];
         const pis   = piRes.items   || [];
 
+        if (dead) return;
         setStats({
           todayAppts:     appts.filter(a => a.scheduled_date?.slice(0, 10) === today).length,
-          totalAppts:     appts.length,
+          // The server's own count, not the length of one 200-row page — the
+          // page length silently stops rising at 200 and reads as a plateau.
+          totalAppts:     apptRes.total ?? appts.length,
           pendingEsts:    ests.filter(e => e.status === 'pending_company_review').length,
           approvedEsts:   ests.filter(e => e.status === 'fully_approved' || e.status === 'partially_approved').length,
-          totalEsts:      ests.length,
+          totalEsts:      estRes.total ?? ests.length,
           outstanding:    pis.filter(p => p.payment_status !== 'paid').reduce((s, p) => s + Number(p.grand_total || 0), 0),
           totalReceived:  pis.filter(p => p.payment_status === 'paid').reduce((s, p) => s + Number(p.amount_paid || 0), 0),
           pendingPIs:     pis.filter(p => p.payment_status === 'pending').length,
         });
-      } catch { setStats(null); }
-      finally  { setLoading(false); }
+      } catch { if (!dead) setStats(null); }
+      finally  { if (!dead) setLoading(false); }
     })();
+    return () => { dead = true; };
   }, [hubId]);
 
   if (loading) return (
@@ -144,14 +150,39 @@ function DashboardTab({ hubId, onNavigate }) {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 8 }}>
-        <KpiCard icon={Calendar}    label="Today's Appointments" value={stats?.todayAppts ?? 0}              accent="var(--primary)"  onClick={() => onNavigate('appointments')} />
-        <KpiCard icon={Calendar}    label="Total Appointments"   value={stats?.totalAppts ?? 0}              accent="#6366f1"          onClick={() => onNavigate('appointments')} />
-        <KpiCard icon={FileText}    label="Pending Estimates"    value={stats?.pendingEsts ?? 0}             accent="#f59e0b" sub="Awaiting company review" onClick={() => onNavigate('estimates')} />
-        <KpiCard icon={FileText}    label="Approved Estimates"   value={stats?.approvedEsts ?? 0}            accent="var(--ok)"        onClick={() => onNavigate('estimates')} />
-        <KpiCard icon={IndianRupee} label="Outstanding Payments" value={fmtINR(stats?.outstanding)}         accent="var(--danger)" sub={`${stats?.pendingPIs ?? 0} invoices pending`} onClick={() => onNavigate('sell-invoices')} />
-        <KpiCard icon={TrendingUp}  label="Total Received"       value={fmtINR(stats?.totalReceived)}       accent="var(--ok)"        onClick={() => onNavigate('sell-invoices')} />
+      {/* Without this the profile screen exists and nobody visits it, and the
+          address stays blank on every invoice. Shown on the one page a hub
+          opens every day, and it disappears the moment it is dealt with. */}
+      {addressMissing && (
+        <button
+          type="button"
+          className="card"
+          onClick={() => navigate(P.profile)}
+          style={{
+            display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
+            padding: '13px 18px', marginBottom: 16, fontFamily: 'inherit',
+            borderLeft: '3px solid #f59e0b', background: '#fffbeb',
+          }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#92400e' }}>
+            Your Sales Invoices are missing a supplier address
+          </span>
+          <span style={{ display: 'block', fontSize: 12.5, color: '#92400e', marginTop: 3 }}>
+            A GST tax invoice must carry your address. Add it in Profile &amp; Settings →
+          </span>
+        </button>
+      )}
+
+      <div className="hubdash-kpis">
+        <KpiCard icon={Calendar}    label="Today's Appointments" value={stats?.todayAppts ?? 0}      accent="var(--primary)" onClick={() => navigate(P.appointments)} />
+        <KpiCard icon={Calendar}    label="Total Appointments"   value={stats?.totalAppts ?? 0}      accent="#6366f1"        onClick={() => navigate(P.appointments)} />
+        <KpiCard icon={FileText}    label="Pending Estimates"    value={stats?.pendingEsts ?? 0}     accent="#f59e0b" sub="Awaiting company review" onClick={() => navigate(P.estimates)} />
+        <KpiCard icon={FileText}    label="Approved Estimates"   value={stats?.approvedEsts ?? 0}    accent="var(--ok)"      onClick={() => navigate(P.estimates)} />
+        <KpiCard icon={IndianRupee} label="Outstanding Payments" value={fmtINR(stats?.outstanding)}  accent="var(--danger)" sub={`${stats?.pendingPIs ?? 0} invoices pending`} onClick={() => navigate(P.salesInvoices)} />
+        <KpiCard icon={TrendingUp}  label="Total Received"       value={fmtINR(stats?.totalReceived)} accent="var(--ok)"     onClick={() => navigate(P.salesInvoices)} />
       </div>
+
+      <AppointmentSchedule />
     </div>
   );
 }
@@ -453,22 +484,358 @@ function ServicesTab({ hubId }) {
   );
 }
 
+// ─── Tab: Profile & Settings ─────────────────────────────────────────────────
+
+function Row({ label, children, hint }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <label style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)' }}>{label}</label>
+      {children}
+      {hint && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{hint}</span>}
+    </div>
+  );
+}
+
+const inputCss = {
+  width: '100%', boxSizing: 'border-box',
+  padding: '9px 11px', borderRadius: 8,
+  border: '1px solid var(--border)', background: 'var(--panel)',
+  color: 'var(--text)', fontSize: 13, fontFamily: 'inherit',
+};
+
+// A password field with a reveal toggle. Typing a password you cannot see, on a
+// phone, in a workshop, is where mistyped-twice comes from — and "confirm does
+// not match" gives no clue which of the two was wrong.
+//
+// Each field owns its own `show`, so revealing the new password does not also
+// expose the current one over someone's shoulder.
+function PasswordInput({ value, onChange, autoComplete }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        // paddingRight clears the button — without it the text runs underneath.
+        style={{ ...inputCss, paddingRight: 40 }}
+        type={show ? 'text' : 'password'}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={onChange}
+      />
+      <button
+        // type="button" — inside a <form>, the default is submit, so this would
+        // otherwise try to change the password every time someone peeked.
+        type="button"
+        onClick={() => setShow(v => !v)}
+        title={show ? 'Hide password' : 'Show password'}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        // tabIndex -1 keeps Tab going straight from field to field; the toggle
+        // is a mouse/touch affordance, not a step in the form.
+        tabIndex={-1}
+        style={{
+          position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 30, height: 30, padding: 0, borderRadius: 6,
+          border: 'none', background: 'transparent', cursor: 'pointer',
+          color: 'var(--text-muted)',
+        }}
+      >
+        {show ? <EyeOff size={15} /> : <Eye size={15} />}
+      </button>
+    </div>
+  );
+}
+
+// Shown, not hidden. These are the hub's own commercial terms and bank details;
+// hiding them would just produce the same phone call the page exists to avoid.
+// Read-only because a payout account editable from a phished login is how the
+// money leaves, and the rates are negotiated, not declared.
+function ReadOnly({ label, value }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600 }}>{value || '—'}</div>
+    </div>
+  );
+}
+
+function ProfileTab({ hubId }) {
+  const { user } = useAuth();
+  const [hub, setHub]         = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm]       = useState(null);
+  const [saving, setSaving]   = useState(false);
+  const [msg, setMsg]         = useState('');
+  const [err, setErr]         = useState('');
+
+  const [pw, setPw]           = useState({ current_password: '', new_password: '', confirm: '' });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMsg, setPwMsg]     = useState('');
+  const [pwErr, setPwErr]     = useState('');
+
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const r = await api(`/api/hubs/${hubId}`);
+        if (dead) return;
+        setHub(r.item);
+        setForm({
+          person_name:    r.item.person_name    || '',
+          contact_number: r.item.contact_number || '',
+          owner_name:     r.item.owner_name     || '',
+          owner_mobile:   r.item.owner_mobile   || '',
+          address_line1:  r.item.address_line1  || '',
+          address_line2:  r.item.address_line2  || '',
+          pincode:        r.item.pincode        || '',
+          map_url:        r.item.map_url        || '',
+        });
+      } catch (e) {
+        if (!dead) setErr(e.message || 'Could not load your workshop details.');
+      } finally {
+        if (!dead) setLoading(false);
+      }
+    })();
+    return () => { dead = true; };
+  }, [hubId]);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  async function saveDetails(e) {
+    e.preventDefault();
+    setErr(''); setMsg('');
+    if (form.pincode && !/^\d{6}$/.test(form.pincode)) { setErr('Pincode must be exactly 6 digits.'); return; }
+    if (form.contact_number && !/^\d{10}$/.test(form.contact_number)) { setErr('Contact number must be exactly 10 digits.'); return; }
+    if (form.owner_mobile && !/^\d{10}$/.test(form.owner_mobile)) { setErr('Owner mobile must be exactly 10 digits.'); return; }
+    setSaving(true);
+    try {
+      const r = await api('/api/hubs/me', { method: 'PATCH', body: form });
+      setHub(r.item);
+      setMsg('Saved. Your invoices will use this address from now on.');
+    } catch (e) {
+      setErr(e.message || 'Could not save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changePassword(e) {
+    e.preventDefault();
+    setPwErr(''); setPwMsg('');
+    if (pw.new_password.length < 6) { setPwErr('New password must be at least 6 characters.'); return; }
+    if (pw.new_password !== pw.confirm) { setPwErr('The two new passwords do not match.'); return; }
+    setPwSaving(true);
+    try {
+      await api('/api/me/password', {
+        method: 'PATCH',
+        body: { current_password: pw.current_password, new_password: pw.new_password },
+      });
+      setPw({ current_password: '', new_password: '', confirm: '' });
+      setPwMsg('Password changed.');
+    } catch (e) {
+      setPwErr(e.message || 'Could not change the password.');
+    } finally {
+      setPwSaving(false);
+    }
+  }
+
+  if (loading) return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
+      <Loader2 size={28} style={{ color: 'var(--primary)', animation: 'spin 1s linear infinite' }} />
+    </div>
+  );
+  if (!form) return <div className="card" style={{ padding: 40, textAlign: 'center', color: '#b45309' }}>{err || 'Could not load your details.'}</div>;
+
+  const noAddress = !hub?.address_line1;
+
+  return (
+    <div style={{ maxWidth: 860 }}>
+      <div className="page-header">
+        <div>
+          <h2>Profile &amp; Settings</h2>
+          <p>Your workshop details and login</p>
+        </div>
+      </div>
+
+      {/* The reason this page exists, said where they will act on it. */}
+      {noAddress && (
+        <div className="card" style={{ padding: '14px 18px', marginBottom: 16, borderLeft: '3px solid #f59e0b', background: '#fffbeb' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e' }}>Your invoices are missing a supplier address</div>
+          <div style={{ fontSize: 12.5, color: '#92400e', marginTop: 3, lineHeight: 1.5 }}>
+            A GST tax invoice has to carry the supplier&rsquo;s address — that&rsquo;s you. Until it&rsquo;s filled in below,
+            every Sales Invoice you issue prints with the address line blank.
+          </div>
+        </div>
+      )}
+
+      {/* ── Workshop details ── */}
+      <form className="card" style={{ padding: 20, marginBottom: 18 }} onSubmit={saveDetails}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 14.5, fontWeight: 700 }}>Workshop details</h3>
+        <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-muted)' }}>
+          The address here prints as the supplier block on your Sales Invoices.
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 14 }}>
+          <Row label="Address line 1">
+            <input style={inputCss} value={form.address_line1} maxLength={200}
+              onChange={e => set('address_line1', e.target.value)} placeholder="Shop / building no., street" />
+          </Row>
+          <Row label="Address line 2">
+            <input style={inputCss} value={form.address_line2} maxLength={200}
+              onChange={e => set('address_line2', e.target.value)} placeholder="Landmark, locality (optional)" />
+          </Row>
+          <Row label="Pincode">
+            <input style={inputCss} value={form.pincode} inputMode="numeric" maxLength={6}
+              onChange={e => set('pincode', e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6 digits" />
+          </Row>
+          <Row label="Point of contact">
+            <input style={inputCss} value={form.person_name} maxLength={120}
+              onChange={e => set('person_name', e.target.value)} placeholder="Who to ask for" />
+          </Row>
+          <Row label="Contact number">
+            <input style={inputCss} value={form.contact_number} inputMode="numeric" maxLength={10}
+              onChange={e => set('contact_number', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10 digits" />
+          </Row>
+          <Row label="Owner name">
+            <input style={inputCss} value={form.owner_name} maxLength={120}
+              onChange={e => set('owner_name', e.target.value)} />
+          </Row>
+          <Row label="Owner mobile">
+            <input style={inputCss} value={form.owner_mobile} inputMode="numeric" maxLength={10}
+              onChange={e => set('owner_mobile', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10 digits" />
+          </Row>
+          <Row label="Google Maps link" hint="Sent to customers with their appointment">
+            <input style={inputCss} value={form.map_url} maxLength={500}
+              onChange={e => set('map_url', e.target.value)} placeholder="https://maps.app.goo.gl/…" />
+          </Row>
+        </div>
+
+        {err && <div style={{ marginTop: 14, fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{err}</div>}
+        {msg && <div style={{ marginTop: 14, fontSize: 12.5, color: '#15803d', fontWeight: 600 }}>{msg}</div>}
+
+        <div style={{ marginTop: 18 }}>
+          <button className="btn btn-primary" type="submit" disabled={saving}>
+            {saving ? 'Saving…' : 'Save details'}
+          </button>
+        </div>
+      </form>
+
+      {/* ── Agreed terms — read only ── */}
+      <div className="card" style={{ padding: 20, marginBottom: 18 }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 14.5, fontWeight: 700 }}>Agreed terms &amp; payout account</h3>
+        <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-muted)' }}>
+          Set by Spinoto. Contact your relationship manager to change any of these.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
+          <ReadOnly label="Hub code"        value={hub?.hub_code} />
+          <ReadOnly label="Legal name"      value={hub?.company_name || hub?.hub_name} />
+          <ReadOnly label="GST registered"  value={hub?.has_gst ? 'Yes' : 'No'} />
+          <ReadOnly label="GSTIN"           value={hub?.gst_number} />
+          <ReadOnly label="Commission %"    value={hub?.commission_percent != null ? `${hub.commission_percent}%` : null} />
+          <ReadOnly label="Payout terms"    value={hub?.payout_terms} />
+          <ReadOnly label="Bank"            value={hub?.bank_name} />
+          <ReadOnly label="Account holder"  value={hub?.account_holder_name} />
+          {/* Last four only. The full number is on file with Spinoto and does
+              not need to be readable off a screen in a workshop. */}
+          <ReadOnly label="Account number"  value={hub?.bank_account_number ? `••••  ${String(hub.bank_account_number).slice(-4)}` : null} />
+          <ReadOnly label="IFSC"            value={hub?.bank_ifsc} />
+        </div>
+      </div>
+
+      {/* ── Password ── */}
+      <form className="card" style={{ padding: 20 }} onSubmit={changePassword}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 14.5, fontWeight: 700 }}>Login &amp; password</h3>
+        <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-muted)' }}>
+          Signed in as <strong style={{ color: 'var(--text)' }}>{user?.email}</strong>
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14 }}>
+          <Row label="Current password">
+            <PasswordInput autoComplete="current-password" value={pw.current_password}
+              onChange={e => setPw(p => ({ ...p, current_password: e.target.value }))} />
+          </Row>
+          <Row label="New password" hint="At least 6 characters">
+            <PasswordInput autoComplete="new-password" value={pw.new_password}
+              onChange={e => setPw(p => ({ ...p, new_password: e.target.value }))} />
+          </Row>
+          <Row label="Confirm new password">
+            <PasswordInput autoComplete="new-password" value={pw.confirm}
+              onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))} />
+          </Row>
+        </div>
+
+        {pwErr && <div style={{ marginTop: 14, fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{pwErr}</div>}
+        {pwMsg && <div style={{ marginTop: 14, fontSize: 12.5, color: '#15803d', fontWeight: 600 }}>{pwMsg}</div>}
+
+        {/* Said rather than left to be discovered: the session is a stateless
+            token, so changing the password does not sign anyone else out. */}
+        <p style={{ margin: '14px 0 0', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          Anyone already signed in on another device stays signed in until their session expires.
+          If you think someone should not have access, tell Spinoto.
+        </p>
+
+        <div style={{ marginTop: 16 }}>
+          <button className="btn btn-primary" type="submit"
+            disabled={pwSaving || !pw.current_password || !pw.new_password || !pw.confirm}>
+            {pwSaving ? 'Saving…' : 'Change password'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ─── Nav tabs config ──────────────────────────────────────────────────────────
 
+// `seg` is the URL segment under /hub. It is the source of truth for which tab
+// is active — there is no tab state any more, so a refresh reloads the tab the
+// user was on rather than resetting to the dashboard.
+// Dashboard is the index route, hence the empty segment.
 const TABS = [
-  { key: 'dashboard',         label: 'Dashboard',         Icon: LayoutDashboard },
-  { key: 'appointments',      label: 'Appointments',      Icon: Calendar        },
-  { key: 'estimates',         label: 'Estimates',         Icon: FileText        },
-  { key: 'sell-invoices',     label: 'Sell Invoices',     Icon: ReceiptText     },
-  { key: 'customer-invoices', label: 'Customer Invoices', Icon: Receipt         },
-  { key: 'services-pricing',  label: 'Services & Pricing', Icon: Wrench         },
+  { key: 'dashboard',         seg: '',                  label: 'Dashboard',          Icon: LayoutDashboard },
+  { key: 'appointments',      seg: 'appointments',      label: 'Appointments',       Icon: Calendar        },
+  { key: 'estimates',         seg: 'estimates',         label: 'Estimates',          Icon: FileText        },
+  { key: 'sell-invoices',     seg: 'sales-invoices',    label: 'Sales Invoices',     Icon: ReceiptText     },
+  { key: 'customer-invoices', seg: 'customer-invoices', label: 'Customer Invoices',  Icon: Receipt         },
+  { key: 'services-pricing',  seg: 'services',          label: 'Services & Pricing', Icon: Wrench          },
 ];
+
+// Reachable and titled, but not a sidebar item — it is opened from the hub card
+// or the sidebar footer. Listed here so tabFromPath resolves it to itself
+// instead of falling through to 'dashboard' and highlighting the wrong nav row.
+const HIDDEN_TABS = [
+  { key: 'profile', seg: 'profile', label: 'Profile & Settings' },
+];
+
+const ALL_TABS = [...TABS, ...HIDDEN_TABS];
+
+const TAB_PATH = Object.fromEntries(ALL_TABS.map(t => [t.key, t.seg ? `/hub/${t.seg}` : '/hub']));
+
+/**
+ * Which tab does this URL belong to?
+ * Reads the FIRST segment after /hub only, so a deep link that carries a
+ * record token (/hub/estimates/AbC123) still highlights Estimates.
+ */
+function tabFromPath(pathname) {
+  const seg = pathname.replace(/^\/hub\/?/, '').split('/')[0] || '';
+  return ALL_TABS.find(t => t.seg === seg)?.key || 'dashboard';
+}
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function HubDashboardPage() {
   const { user, logout } = useAuth();
-  const [tab,       setTab]       = useState('dashboard');
+  const location = useLocation();
+  const navigate = useNavigate();
+  // The list pages (Appointments, Estimates, Sales Invoices, Customer Invoices)
+  // all publish their search box through pageSearchStore and expect a shell to
+  // render it. Only AppShell did — and the hub portal deliberately renders no
+  // AppShell — so every list in here had filters and pagination but no way to
+  // search. This is the missing host, the same contract AppShell implements.
+  const pageSearch = useTopbarSearch();
+  const searchRef = useRef(null);
+  // Derived, not state. This is the whole fix: the URL owns which tab is open,
+  // so a refresh, the Back button and a pasted link all agree with each other.
+  const tab = tabFromPath(location.pathname);
+  const goTab = useCallback(key => navigate(TAB_PATH[key] || '/hub'), [navigate]);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('spinoto_sidebar_collapsed') === 'true');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('spinoto_theme') || 'light');
@@ -530,8 +897,27 @@ export default function HubDashboardPage() {
     return () => document.removeEventListener('mousedown', onOut);
   }, []);
 
-  // Notification click routes to a hub-portal tab, not a router path
-  // (this page manages its own tab state rather than react-router routes).
+  // ⌘K / Ctrl+K focuses the search; Escape clears and blurs. Same bindings as
+  // AppShell — a hub user who also has a staff login should not have to learn
+  // two sets of keys.
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        // Only swallow the browser's own ⌘K when there is something to focus.
+        if (!pageSearch.active) return;
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (e.key === 'Escape' && document.activeElement === searchRef.current) {
+        clearPageSearch();
+        searchRef.current?.blur();
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [pageSearch.active]);
+
+  // Notification click opens the tab that owns that notification type.
   function getNotifTab(n) {
     if (n.type === 'appointment_reminder') return 'appointments';
     if (n.type === 'pricing_changed' || n.type === 'reference_data_changed') return 'services-pricing';
@@ -544,7 +930,7 @@ export default function HubDashboardPage() {
       setNotifItems(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
       setNotifCount(c => Math.max(0, c - 1));
       const target = getNotifTab(n);
-      if (target) { setNotifOpen(false); setTab(target); }
+      if (target) { setNotifOpen(false); goTab(target); }
     } catch { /* silent */ }
   }
 
@@ -582,21 +968,33 @@ export default function HubDashboardPage() {
         Hub not linked. Contact admin.
       </div>
     );
-    switch (tab) {
-      case 'dashboard':         return <DashboardTab hubId={hubId} onNavigate={setTab} />;
-      case 'appointments':      return <AppointmentsPage />;
-      case 'estimates':         return <EstimatesPage />;
-      case 'sell-invoices':     return <PurchaseInvoicesPage />;
-      case 'customer-invoices': return <CustomerInvoicesPage />;
-      case 'services-pricing':  return <ServicesTab hubId={hubId} />;
-      default: return null;
-    }
+    // Nested <Routes>, relative to the /hub/* splat in App.jsx — the same shape
+    // AppShell uses for the admin branch.
+    //
+    // The ':token?' params are the point of the exercise. All four of these
+    // pages already read `useParams().token` and open that record; mounted as
+    // a bare <EstimatesPage /> in a switch there was no route to supply it, so
+    // a hub could never deep-link or refresh into a record.
+    return (
+      <Routes>
+        <Route index                          element={<DashboardTab hubId={hubId} />} />
+        <Route path="appointments/:token?"      element={<AppointmentsPage />} />
+        <Route path="estimates/:token?"         element={<EstimatesPage />} />
+        <Route path="sales-invoices/:token?"    element={<PurchaseInvoicesPage />} />
+        <Route path="customer-invoices/:token?" element={<CustomerInvoicesPage />} />
+        <Route path="services"                  element={<ServicesTab hubId={hubId} />} />
+        <Route path="profile"                   element={<ProfileTab hubId={hubId} />} />
+        {/* Unknown sub-path → the dashboard, replacing history so Back does not
+            bounce straight into the bad URL again. */}
+        <Route path="*" element={<Navigate to="/hub" replace />} />
+      </Routes>
+    );
   }
 
   return (
     <>
 
-      <div className={`shell${collapsed ? ' collapsed' : ''}`}>
+      <div className={`shell hub-shell${collapsed ? ' collapsed' : ''}`}>
 
         {/* ── Sidebar ─────────────────────────────────────────────────────── */}
         <aside className={`sidebar${mobileOpen ? ' open' : ''}`}>
@@ -614,13 +1012,20 @@ export default function HubDashboardPage() {
             </button>
           </div>
 
-          {/* Hub badge */}
+          {/* Hub badge — also the way into Profile & Settings, which is where
+              people look for their own account. */}
           {!collapsed && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '10px 12px', background: 'var(--bg-soft)',
-              border: '1px solid var(--border)', borderRadius: 10, margin: '0 4px',
-            }}>
+            <button
+              type="button"
+              onClick={() => { goTab('profile'); setMobileOpen(false); }}
+              title="Profile & Settings"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                padding: '10px 12px', background: 'var(--bg-soft)',
+                border: `1px solid ${tab === 'profile' ? 'var(--primary)' : 'var(--border)'}`,
+                borderRadius: 10, margin: '0 4px', width: 'calc(100% - 8px)',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>
               <div style={{ width: 34, height: 34, borderRadius: 8, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Building2 size={16} style={{ color: '#fff' }} />
               </div>
@@ -628,7 +1033,7 @@ export default function HubDashboardPage() {
                 <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hubName}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name}</div>
               </div>
-            </div>
+            </button>
           )}
 
           {/* Nav */}
@@ -638,7 +1043,7 @@ export default function HubDashboardPage() {
               return (
                 <button
                   key={key}
-                  onClick={() => { setTab(key); setMobileOpen(false); }}
+                  onClick={() => { goTab(key); setMobileOpen(false); }}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center',
                     gap: collapsed ? 0 : 12,
@@ -664,6 +1069,23 @@ export default function HubDashboardPage() {
 
           {/* Bottom actions */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <button
+              onClick={() => { goTab('profile'); setMobileOpen(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: collapsed ? 0 : 10,
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                padding: collapsed ? '10px 0' : '9px 12px',
+                borderRadius: 8, border: 'none', cursor: 'pointer',
+                background: tab === 'profile' ? 'var(--bg-soft)' : 'transparent',
+                color: tab === 'profile' ? 'var(--text)' : 'var(--text-muted)',
+                fontSize: 14, fontFamily: 'inherit', width: '100%',
+              }}
+              title={collapsed ? 'Profile & Settings' : undefined}
+            >
+              <Settings size={15} style={{ flexShrink: 0 }} />
+              {!collapsed && 'Profile & Settings'}
+            </button>
+
             <button
               onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
               style={{
@@ -706,7 +1128,7 @@ export default function HubDashboardPage() {
         {/* ── Main area ──────────────────────────────────────────────────── */}
         <div className="main">
           {/* Topbar */}
-          <header className="topbar">
+          <header className="topbar hub-topbar">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {/* Mobile menu toggle */}
               <button
@@ -718,11 +1140,48 @@ export default function HubDashboardPage() {
               </button>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
-                  {TABS.find(t => t.key === tab)?.label}
+                  {ALL_TABS.find(t => t.key === tab)?.label}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{hubName}</div>
               </div>
             </div>
+
+            {/* Rendered only when the open page has claimed it — the Dashboard
+                and Services tabs have their own search, so a box here would be
+                a second one that did nothing. The wrapper stays mounted either
+                way so the title and the actions keep their positions. */}
+            <div className="topbar-center">
+              {pageSearch.active && (
+                <form className="topbar-search-wrap" onSubmit={e => e.preventDefault()}>
+                  <Search size={14} className="topbar-search-icon" />
+                  <input
+                    ref={searchRef}
+                    className="topbar-search-input"
+                    placeholder={pageSearch.placeholder}
+                    value={pageSearch.value}
+                    onChange={e => pageSearch.onChange?.(e.target.value)}
+                    autoComplete="off"
+                    spellCheck="false"
+                  />
+                  {pageSearch.value && (
+                    <button
+                      type="button"
+                      className="topbar-search-clear"
+                      onClick={() => { pageSearch.onChange?.(''); searchRef.current?.focus(); }}
+                      aria-label="Clear search"
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                  {/* The hint replaces the ⌘K badge rather than sitting under
+                      it, so "2+ characters" never shifts the layout. */}
+                  {pageSearch.hint
+                    ? <span className="topbar-search-hint">{pageSearch.hint}</span>
+                    : <kbd className="topbar-search-kbd">⌘K</kbd>}
+                </form>
+              )}
+            </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               {/* ── Notification Bell ── */}
               <div className="notif-wrap" ref={notifRef}>

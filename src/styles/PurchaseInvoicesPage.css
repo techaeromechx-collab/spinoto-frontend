@@ -97,6 +97,60 @@
   border-bottom: none !important;
 }
 
+/* ── Per-line GST rate, shown only on a mixed-slab invoice ──
+   When every line shares a rate it lives in the column header instead. */
+.pi-doc-rate {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* ── Amount in words ──
+   Replaces a #f8fafc card with a 3px #16b994 stripe down its side. A caption
+   and a sentence need neither. */
+.pi-doc-words {
+  flex: 1 1 220px;
+  max-width: 380px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.pi-doc-cap {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.pi-doc-words em {
+  display: block;
+  color: var(--text);
+  font-weight: 600;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+/* ── Icon-only header actions ──
+   Print, Download and the kebab carry no label. Their icons are unambiguous,
+   title holds the words, and aria-label keeps them named for a screen reader —
+   a button whose whole content is an <svg> is otherwise announced as "button"
+   and nothing else.
+
+   Square, so the row reads as a set of equal controls. This header carries FOUR
+   of them (print, download, kebab, close), which is one more than the customer
+   invoice — equal widths are what stop that reading as clutter. */
+.btn.pi-hdr-icon {
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  gap: 0;
+}
+
 @media print {
   body * { visibility: hidden; }
   .est-detail-view, .est-detail-view * { visibility: visible; }
@@ -123,6 +177,31 @@
     white-space: normal !important;
   }
   .pi-items-table td { padding: 5px 4px !important; word-break: break-word; font-size: 8.5px !important; border-bottom: 1px solid #e5e7eb !important; }
+
+  /* Column widths for print — NEW.
+     table-layout: fixed above was already in force with no widths declared at
+     all, which makes every column exactly equal: Sr. as wide as Item. These are
+     the ten columns a staff PI prints with (Sr, Item, Qty, Cust. Rate, Take %,
+     Discount, Hub Rate, CGST, SGST, Total). A hub prints seven — the three
+     margin columns are hidden — so children 4-6 simply do not exist there and
+     the remaining rules still line up left to right. */
+  .pi-items-table th:nth-child(1)  { width: 22px !important; }
+  .pi-items-table th:nth-child(2)  { width: 24% !important; }
+  .pi-items-table th:nth-child(3)  { width: 26px !important; }
+  .pi-items-table th:nth-child(4)  { width: 52px !important; }
+  .pi-items-table th:nth-child(5)  { width: 42px !important; }
+  .pi-items-table th:nth-child(6)  { width: 48px !important; }
+  .pi-items-table th:nth-child(7)  { width: 52px !important; }
+  .pi-items-table th:nth-child(8)  { width: 48px !important; }
+  .pi-items-table th:nth-child(9)  { width: 48px !important; }
+  .pi-items-table th:nth-child(10) { width: 54px !important; }
+
+  /* The words block, printed: no card, just the two lines. */
+  .pi-doc-words { font-size: 10px !important; max-width: none !important; }
+  .pi-doc-cap   { font-size: 8px !important; }
+  .pi-doc-words em { font-size: 10px !important; }
+  /* A mixed-slab rate under the figure would collide with 8.5px cells. */
+  .pi-doc-rate { font-size: 7px !important; }
   .pi-items-table tbody tr:last-child td { border-bottom: none !important; }
   .pi-items-table tbody tr:nth-child(even) td { background: #f9fafb !important; }
   .pi-item-name { font-size: 8.5px !important; }
@@ -140,22 +219,8 @@
   /* Table container — no clipping */
   .est-detail-view div[style*="overflow"] { overflow: visible !important; }
 
-  /* Footer — fixed at bottom of every printed page */
-  .pi-invoice-footer {
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    margin: 0 !important;
-    padding: 8px 10mm 6px !important;
-    border-top: 1px solid #e5e7eb !important;
-    background: #fff !important;
-    text-align: center !important;
-    font-size: 9px !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  .pi-invoice-footer * { font-size: 9px !important; }
+  /* No footer rules: the on-screen footer was removed, and the printed copy is
+     rendered server-side from backend/src/utils/documentConfig.js. */
 
   @page { size: A4 portrait; margin: 0; }
 }
@@ -166,7 +231,7 @@
 .pi-items-table { min-width: 520px; }
 
 /* ── Mobile: 768px ────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
+@media screen and (max-width: 768px) {
   .pi-page { gap: 12px; }
 
   /* Filter bar wrapping */
@@ -187,7 +252,7 @@
   }
 }
 
-@media (max-width: 480px) {
+@media screen and (max-width: 480px) {
   .btn { padding: 9px 14px; font-size: 13px; }
   .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
   .page-header > div { width: 100%; display: flex; gap: 8px; }
@@ -229,7 +294,7 @@
   .pgbar-ellipsis { padding: 0 4px; color: var(--text-muted); font-size: 13px; line-height: 32px; }
 
   /* Mobile responsive */
-  @media (max-width: 640px) {
+  @media screen and (max-width: 640px) {
     .pgbar { flex-direction: column; align-items: flex-start; gap: 8px; }
     .pgbar-controls { width: 100%; justify-content: center; }
     .pgbar-btn { min-width: 36px; height: 36px; font-size: 14px; }
@@ -270,7 +335,7 @@
    record pages and live in splitPane.css.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 760px) {
+@media screen and (max-width: 760px) {
   /* The detail's own tables keep their min-widths and scroll INSIDE their
      wrapper. Dropping the min-width would crush their columns into 360px and
      wrap every cell to three lines — a contained sideways scroll is the honest

@@ -1,0 +1,783 @@
+/* Payments module.
+ *
+ * Sits on top of listLayout.css (.lb-page, .lb-toolbar, .lb-list, .lb-pop)
+ * rather than restating it — the toolbar, the filter popover and the horizontal
+ * scroll container behave the same here as on every other list screen, and a
+ * second implementation is how they drift.
+ */
+
+/* ── Full bleed ──────────────────────────────────────────────────────────────
+   The page root carries `.lb-page`, which drives
+   `.content:has(.lb-page) { max-width: 100%; padding: 0 }` in listLayout.css —
+   cancelling the app wrapper's 32px gutter and 1400px cap so the table runs to
+   the window edge, the way Estimates, Customer Invoices and Purchase Invoices
+   already do.
+
+   It used to carry `.lb`, which is not defined in any stylesheet in this
+   project. The comment above this block named it for months and nothing ever
+   selected it.
+
+   MOST OF THE SCREEN NEEDS NOTHING HERE. `.lb-toolbar` already pads itself 20px
+   (listLayout), `.pgbar` 16px (PaginationBar.css) and `.pay-empty` 20px. Only
+   the regions below had no inset of their own, and each is named explicitly —
+   a `> *` blanket rule would also pad the table, which is the one thing that is
+   supposed to bleed. */
+.pay-page.lb-page {
+  /* Matches .ci-page / .pi-page, so the last row is not flush against the
+     bottom of the scroll area. */
+  padding-bottom: 40px;
+}
+
+.pay-page .pay-tabs,
+.pay-page .pay-kpis,
+.pay-page .pay-tabpad,
+.pay-page .pay-panelbar {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+/* An alert a panel renders directly above its own table. Scoped through a
+   direct child so the drawer's alerts — rendered outside .pay-page entirely —
+   and Gateway's, already inside .pay-tabpad, are both left alone. */
+.pay-page>div>.pay-dalert {
+  margin-left: 20px;
+  margin-right: 20px;
+}
+
+/* The outer columns line up with the toolbar above them.
+   .pay-table sets 12px cells and listLayout sets 20px; the two tie on
+   specificity and this file is imported second, so 12px wins. Inside the old
+   32px gutter that 8px difference was invisible. At full bleed the first column
+   would start 8px to the left of the toolbar's own text, which reads as a
+   misalignment rather than as density. Only the two outer edges are touched —
+   the interior spacing is deliberate and stays. */
+.pay-page .pay-table th:first-child,
+.pay-page .pay-table td:first-child {
+  padding-left: 20px;
+}
+
+.pay-page .pay-table th:last-child,
+.pay-page .pay-table td:last-child {
+  padding-right: 20px;
+}
+
+/* Six KPI cards across a 2560px monitor is six ~410px boxes holding a 19px
+   number. The existing breakpoints only step down; this is the one that was
+   missing at the top end. */
+@media (min-width: 1800px) {
+  .pay-page .pay-kpis {
+    max-width: 1800px;
+  }
+}
+
+/* ── Settlement contents ─────────────────────────────────────────────────────
+   The Payments count opens the settlement out in place rather than navigating:
+   the question it answers ("which payments are inside this ₹9,791?") is asked
+   WHILE looking at the row above, and a screen change loses that context. */
+.pay-linkbtn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pay-linkbtn:hover {
+  text-decoration: underline;
+}
+
+.pay-subrow>td {
+  /* Sits inside the parent row's borders, tinted so the nesting is obvious
+     without an indent guide. */
+  background: var(--bg-soft);
+  padding: 12px 20px;
+}
+
+.pay-subtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.pay-subtable th {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.pay-subtable td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pay-subtable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pay-subtable th.pay-num,
+.pay-subtable td.pay-num {
+  text-align: right;
+}
+
+/* ── Overview cards ───────────────────────────────────────────────────────── */
+.pay-kpis {
+  display: grid;
+  /* minmax(0,1fr), not 1fr: a long rupee figure in a fixed track pushes the
+     column wider and the row stops lining up. The same fix the hub dashboard
+     KPI row needed. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 0 4px;
+}
+
+.pay-kpi {
+  background: var(--card, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+.pay-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.pay-kpi-value {
+  font-size: 19px;
+  font-weight: 800;
+  margin-top: 4px;
+  /* The value is the one thing that must never be cut off. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pay-kpi-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.35;
+}
+
+.pay-kpi--ok .pay-kpi-value {
+  color: #166534;
+}
+
+.pay-kpi--bad .pay-kpi-value {
+  color: #991b1b;
+}
+
+.pay-kpi--warn .pay-kpi-value {
+  color: #b45309;
+}
+
+/* ── Table ────────────────────────────────────────────────────────────────── */
+.pay-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.pay-table thead th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.pay-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft, #f1f5f9);
+  vertical-align: top;
+}
+
+.pay-table tbody tr {
+  cursor: pointer;
+}
+
+.pay-table tbody tr:hover {
+  background: var(--bg-soft);
+}
+
+.pay-row--on {
+  background: var(--bg-soft);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.pay-num {
+  text-align: right;
+}
+
+.pay-amt {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pay-name {
+  font-weight: 600;
+}
+
+.pay-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.pay-refunded {
+  color: #b45309;
+}
+
+.pay-inv {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+/* ── PaymentLinksPanel embedded on a customer invoice ─────────────────────────
+   The panel is written for the Payments module's Links tab, where it IS the
+   page: a .lb-list with a sticky header and generous cells. Dropped into the
+   half-width column beside an invoice's Payments box, every one of those
+   choices works against it — so the component adds .pay-links--compact there
+   and this block undoes the page furniture. Nothing here touches the Links tab.
+
+   The component also drops its Invoice and Customer columns in that mode (see
+   PaymentsAdminTabs.jsx) — on an invoice screen both repeat the page heading on
+   every row. Between the two changes the row fits, instead of pushing Cancel
+   off the right edge with no way to scroll to it. */
+.pay-links--compact {
+  /* Matches the bordered box the Payments table above it sits in, so the two
+     panels in that column read as a pair rather than a box and a bare list. */
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* `.lb-list .lb-scroll-x` is `overflow: visible` on purpose — a sticky header
+   binds to its nearest scrolling ancestor, so on a list page that wrapper must
+   never scroll and horizontal scrolling belongs to .page-scroll. Neither half
+   of that reasoning applies here: the header below is no longer sticky, and
+   .page-scroll is nowhere near this column. Higher specificity, so it wins. */
+.pay-links--compact.lb-list .lb-scroll-x {
+  overflow-x: auto;
+}
+
+.pay-links--compact.lb-list table th {
+  /* `top: 0` sticks to .page-scroll, which parks this header over the invoice
+     while the rest of the page scrolls underneath it. */
+  position: static;
+  padding: 8px 10px;
+  border-top: 0;
+  border-right: 0;
+  box-shadow: none;
+  background: var(--bg-soft);
+}
+
+.pay-links--compact .pay-table {
+  font-size: 12.5px;
+}
+
+.pay-links--compact .pay-table tbody td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+
+/* These rows are not clickable here, and .pay-table's default says they are. */
+.pay-links--compact .pay-table tbody tr {
+  cursor: default;
+}
+
+.pay-links--compact .pay-table tbody tr:hover {
+  background: transparent;
+}
+
+.pay-links--compact .pay-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Copy and Cancel are one unit — wrapping them strands a lone word on its own line. */
+.pay-links--compact .pay-links-actions {
+  white-space: nowrap;
+}
+
+/* ── Where the money came from ────────────────────────────────────────────
+   MNL = recorded by hand. RZ = Razorpay. Every row carries one, so a gateway
+   payment is marked rather than merely unmarked — the absence of a tag reads
+   as missing data, not as a fact.
+
+   Same geometry as .pay-testtag so the two sit level when a row has both, and
+   quieter than it on purpose: TEST is a warning, this is a label. */
+.pay-src {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  vertical-align: middle;
+}
+/* The outline is an inset shadow, not a border. A border adds 2px to the box,
+   which left this tag sitting one pixel higher than the TEST tag beside it on
+   a gateway row in test mode — visible as a wobble down the column. A shadow
+   draws the same line and changes no geometry. */
+.pay-src--mnl {
+  background: var(--bg-soft); color: var(--text-muted);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+/* Razorpay's own blue, muted. Different enough from MNL to tell apart at a
+   glance down the column, which is the only way this tag is ever read. */
+.pay-src--rz {
+  background: #eff6ff; color: #1d4ed8;
+  box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
+/* Test-mode marker. Loud on purpose: play money joining the revenue figures
+   after go-live is a silent failure that surfaces at the end of a month. */
+.pay-testtag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  vertical-align: middle;
+}
+
+/* ── Status chips ─────────────────────────────────────────────────────────── */
+.pay-st {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pay-st--ok {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.pay-st--bad {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.pay-st--warn {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.pay-st--idle {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+
+.pay-fbadge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.pay-quickrange {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pay-quickrange .btn {
+  font-size: 11.5px;
+  padding: 4px 9px;
+}
+
+.pay-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── Detail drawer ────────────────────────────────────────────────────────── */
+.pay-drawer {
+  background: var(--card, #fff);
+  border-radius: 12px;
+  width: min(560px, 100%);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .22);
+  overflow: hidden;
+}
+
+.pay-dhd {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  /* flex-shrink so the header keeps its height when the body scrolls — the
+     column-flex + overflow trap that squashed the hub topbar. */
+  flex-shrink: 0;
+}
+
+.pay-dref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.pay-dsub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.pay-dclose {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+}
+
+.pay-dbody {
+  padding: 4px 18px 18px;
+  overflow-y: auto;
+}
+
+.pay-dsec {
+  padding-top: 14px;
+}
+
+.pay-dsec-t {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.pay-drow {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 0;
+  font-size: 12.5px;
+}
+
+.pay-dlabel {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.pay-dvalue {
+  text-align: right;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.pay-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.pay-dnote {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.pay-dalert {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  margin-top: 14px;
+}
+
+.pay-dalert--bad {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.pay-dalert--idle {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* ── In-flight strip on the Payouts tab ──
+   Dashed, not solid, and outside the .lb-list card. Both choices say the same
+   thing: this is not settled money. It sits above the table because a
+   sent-but-unconfirmed transfer inside a total somebody reconciles against a
+   bank statement makes the month fail to balance by exactly that amount — and
+   the reason is invisible on the screen showing the figure. */
+.pay-flight {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.pay-flight-hd {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px dashed #cbd5e1;
+  font-size: 12.5px;
+}
+
+.pay-flight-note {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-top: 2px;
+  max-width: 74ch;
+}
+
+.pay-flight .pay-subtable td {
+  border-bottom: 1px dashed var(--border);
+}
+
+.pay-flight .pay-subtable tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ── How the money moved ──
+   A tag in the method column rather than a separate list, because splitting the
+   rows would split the total — and one total over one table is the whole reason
+   this tab reads hub_payments. It answers "where do I look this up", nothing
+   more. Teal for a gateway transfer marks provenance, not a problem. */
+.pay-tag {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+.pay-tag--bank { background: #ccfbf1; color: #0f766e; }
+.pay-tag--hand { background: var(--bg-soft); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* A reversed or failed transfer. Tinted so it is visibly not an ordinary
+   payment, but still IN the list: a bounced transfer that silently disappears
+   from the month it happened in is how nobody finds out the hub was never
+   actually paid. It carries no amount, because its ledger rows were deleted and
+   it contributed nothing. */
+.pay-row--problem td { background: #fffbfb; }
+
+/* The reason an accountant opened this screen. */
+.pay-row--total td {
+  background: var(--bg-soft);
+  border-top: 2px solid var(--border);
+  font-weight: 800;
+}
+
+/* Amber, and distinct from --bad on purpose.
+   The payouts tab uses both, and they mean different things: --bad is "this is
+   broken or dangerous" (test mode, webhooks missing), --warn is "here is
+   something you need to deal with" (hubs that cannot be paid yet). Rendering the
+   second in red makes a routine day-one state look like a fault. */
+.pay-dalert--warn {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+}
+
+.pay-dalert .pay-dnote {
+  color: inherit;
+  opacity: .8;
+}
+
+.pay-refrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-soft, #f1f5f9);
+}
+
+.pay-refamt {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.pay-evrow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 5px 0;
+}
+
+.pay-evtype {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pay-dfoot {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pay-refundbtn {
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+/* ── Narrow screens ───────────────────────────────────────────────────────── */
+/* Six cards across is unreadable below a laptop. Two-up on a phone matches the
+   hub dashboard, which was walked at 390px next to an actual car. */
+@media (max-width: 1200px) {
+  .pay-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .pay-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .pay-kpi {
+    padding: 10px 11px;
+  }
+
+  .pay-kpi-value {
+    font-size: 16px;
+  }
+
+  .pay-kpi-hint {
+    display: none;
+  }
+
+  /* the label carries it; the hint wraps to four lines here */
+  .pay-table {
+    font-size: 12px;
+  }
+
+  .pay-table thead th,
+  .pay-table tbody td {
+    padding: 8px 9px;
+  }
+
+  .pay-drawer {
+    max-height: 92vh;
+    border-radius: 12px 12px 0 0;
+  }
+}
+
+/* ── Module tabs ──────────────────────────────────────────────────────────── */
+.pay-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 0 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.pay-tab {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.pay-tab:hover {
+  color: var(--text);
+}
+
+.pay-tab--on {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* Money received that has not settled an invoice yet — the customer's credit.
+   Amber rather than red: it is not an error, it is money the workshop is
+   holding, and it is the one thing on this row that may need a decision. */
+.pay-alloc {
+  color: #b45309;
+}
+
+.pay-alloc strong {
+  font-weight: 800;
+}
+
+/* An invoice number that opens the invoice. Styled as text rather than as a
+   button so the column still reads as data — the underline on hover is the
+   only affordance, which is enough inside a row that is itself clickable. */
+.pay-inv--link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: #000;
+  cursor: pointer;
+}
+
+.pay-inv--link:hover {
+  text-decoration: underline;
+}

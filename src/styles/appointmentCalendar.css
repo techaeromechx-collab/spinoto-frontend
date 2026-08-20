@@ -1,0 +1,266 @@
+/* ═══ Appointments — month view ══════════════════════════════════════════════ */
+
+.apcal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.apcal-nav {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.apcal-nav:hover { border-color: var(--primary); }
+.apcal-nav--icon {
+  padding: 7px 9px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.apcal-month {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  margin-left: 6px;
+}
+
+.apcal-card { padding: 0; overflow: hidden; }
+
+.apcal-dow,
+.apcal-grid {
+  display: grid;
+  /* minmax(0, 1fr) not 1fr: a long customer name in one cell must not widen
+     that column and knock the whole grid out of square. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.apcal-dow > div {
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+}
+
+.apcal-cell {
+  min-height: 118px;
+  padding: 6px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+/* Seven per row, so every 7th has no right neighbour. */
+.apcal-cell:nth-child(7n) { border-right: none; }
+/* The last row of 42 sits on the footer's own top border. */
+.apcal-cell:nth-child(n + 36) { border-bottom: none; }
+
+/* Days from the neighbouring months. Dimmed rather than hidden: an empty
+   column at the start of the month reads as a rendering fault. */
+.apcal-cell--out { background: var(--bg-soft); }
+.apcal-cell--out .apcal-daynum { opacity: 0.45; }
+
+.apcal-daynum {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 2px 2px 0;
+  min-height: 20px;
+}
+
+.apcal-today {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 700;
+}
+
+.apcal-chip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 7px;
+  cursor: pointer;
+  font-family: inherit;
+  min-width: 0;
+  transition: filter 0.15s;
+}
+.apcal-chip:hover { filter: brightness(0.96); }
+
+.apcal-chip-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.apcal-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Everything in a cell truncates. A cell is a fixed seventh of the width, and
+   one long name must not push its column wider than the other six. */
+.apcal-chip-name,
+.apcal-chip-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  min-width: 0;
+}
+.apcal-chip-name { font-size: 11.5px; font-weight: 700; color: var(--text); }
+.apcal-chip-meta { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
+
+.apcal-more {
+  border: none;
+  background: none;
+  padding: 1px 4px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+.apcal-more:hover { color: var(--primary); text-decoration: underline; }
+
+.apcal-loading { display: flex; justify-content: center; padding: 90px; }
+.apcal-error   { padding: 60px 16px; text-align: center; font-size: 13px; color: #b45309; }
+
+.apcal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+/* ── Legend, behind a button ─────────────────────────────────────────────── */
+.apcal-legend-wrap { position: relative; }
+
+.apcal-legend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.apcal-legend-btn:hover { border-color: var(--primary); color: var(--text); }
+
+.apcal-legend-backdrop { position: fixed; inset: 0; z-index: 999; }
+
+/* Opens UPWARD: the footer sits at the bottom of a tall card, so a downward
+   panel would hang off the end of the page. Anchored left, where there is
+   always room, since the button is the leftmost thing in the footer. */
+.apcal-legend-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 1000;
+  /* Wide enough for three columns of statuses. At 300px it fell back to a
+     single column, which put eighteen of them behind a scrollbar — the whole
+     point of the panel is to read the key at a glance. */
+  min-width: min(470px, calc(100vw - 32px));
+  max-width: min(560px, calc(100vw - 32px));
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.14);
+  text-align: left;
+  cursor: default;
+}
+
+.apcal-legend-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.apcal-legend-hd button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 2px;
+  display: inline-flex;
+}
+.apcal-legend-hd button:hover { color: var(--text); }
+
+/* Columns rather than one long list — eighteen statuses stacked would be
+   taller than the panel can be without scrolling. */
+.apcal-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+  gap: 8px 16px;
+}
+
+.apcal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.apcal-total { font-size: 11.5px; color: var(--text-muted); }
+.apcal-total strong { color: var(--text); }
+
+@media (max-width: 900px) {
+  .apcal-cell { min-height: 96px; }
+  .apcal-chip-meta:last-child { display: none; }   /* drop the plate first */
+}
+
+/* Phone: a 7-column month grid is unreadable at 390px — each cell would be
+   about 50px wide, narrower than a single chip. The grid becomes a scroller
+   with a usable minimum width rather than being crushed. */
+@media (max-width: 700px) {
+  .apcal-card { overflow-x: auto; }
+  .apcal-dow, .apcal-grid { min-width: 700px; }
+  .apcal-month { font-size: 15px; }
+}

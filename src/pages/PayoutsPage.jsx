@@ -15,6 +15,7 @@ import {
   X, ChevronRight, ChevronLeft, Search, CreditCard,
   MoreVertical, AlertTriangle, Trophy, Calendar, CalendarDays,
   History, Receipt, Info, Download, Trash2, ChevronDown as ChevDown, Layers, CalendarClock,
+  Landmark,
 } from 'lucide-react';
 import '../styles/PayoutsPage.css';
 
@@ -62,6 +63,22 @@ function customerPaymentGap(pi) {
   if (due <= 0.01) return null;                        // customer has settled
   return { total, paid, due, partial: paid > 0.01 };
 }
+
+/**
+ * Was this ledger row produced by a bank transfer we sent?
+ *
+ * Such a row cannot be deleted or re-dated by hand — the server refuses with a
+ * 409, because deleting it would leave hub_payouts saying the money left while
+ * the ledger says it did not, and the invoice would be paid a second time. The
+ * UI hides the actions rather than offering buttons that fail: a disabled or
+ * erroring control on a money screen reads as a bug, not as a rule.
+ *
+ * A reversal is a real thing that happens — it just happens at the bank, and
+ * arrives back as a webhook that removes these rows itself.
+ */
+const isBankTransfer = p => Boolean(p?.hub_payout_id);
+/** A whole batch is untouchable if any row in it came from a transfer. */
+const batchIsBankTransfer = e => (e?.payments || []).some(isBankTransfer);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = n => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -247,8 +264,8 @@ function PIPaymentsModal({ pi, onClose, showToast, onChanged }) {
                 <div style={{ fontSize:12, color:'var(--text-muted)' }}>{fmtDate(p.paid_at)}</div>
                 <div style={{ fontSize:13, fontWeight:700, color:'#16a34a' }}>{fmt(p.amount)}</div>
                 <MethodBadge method={p.method}/>
-                <div style={{ fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</div>
-                {canDelete && (
+                <div style={{ fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'} {isBankTransfer(p) && <span className="po-bank-tag" title={`Sent by bank transfer ${p.payout_ref || ''}`.trim()}>BANK</span>}</div>
+                {canDelete && !isBankTransfer(p) && (
                   <span style={{ display:'inline-flex', gap:2, justifyContent:'flex-end' }}>
                     {/* No date edit for a batched payment: it has to move with
                         its batch, which is a Payment History action. The server
@@ -316,6 +333,7 @@ function HubPaymentsTab({ hubName, hubId, onExport, showToast, onChanged }) {
   const canDelete = useCan(...PAYMENT_PERMS);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [loadErr, setLoadErr]   = useState('');
   const [total, setTotal]       = useState(0);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate]     = useState('');
@@ -334,8 +352,14 @@ function HubPaymentsTab({ hubName, hubId, onExport, showToast, onChanged }) {
     if (fromDate) params.set('from', fromDate);
     if (toDate)   params.set('to',   toDate);
     api(`/api/purchase-invoices/hub-payments?${params}`)
-      .then(res => { setPayments(res.payments || []); setTotal(res.total || 0); })
-      .catch(() => setPayments([]))
+      .then(res => { setPayments(res.payments || []); setTotal(res.total || 0); setLoadErr(''); })
+      // Emptying the list on failure made a broken request indistinguishable
+      // from a period in which the hub genuinely received nothing — the footer
+      // read "0 records · ₹0.00" either way, with nothing suggesting a retry.
+      .catch(e => {
+        setPayments([]); setTotal(0);
+        setLoadErr(e?.message || 'Could not load this hub\'s payments.');
+      })
       .finally(() => setLoading(false));
   }, [hubId, fromDate, toDate]);
 
@@ -375,6 +399,18 @@ function HubPaymentsTab({ hubName, hubId, onExport, showToast, onChanged }) {
 
   return (
     <div>
+      {/* A failed load must say so. Silence here is worse than an error:
+          the figures below are the ones somebody reconciles against a bank
+          statement, and a stale or zeroed total that looks calm is how a wrong
+          number gets reported. */}
+      {loadErr && (
+        <div className="po-loaderr">
+          <AlertCircle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+          <div style={{ flex:1 }}>{loadErr}</div>
+          <button type="button" className="po-btn-ghost" style={{ fontSize:12, padding:'4px 12px' }}
+                  onClick={() => load()}>Retry</button>
+        </div>
+      )}
       {/* Filter bar */}
       <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', padding:'12px 16px', borderBottom:'1px solid var(--border)', background:'var(--bg-soft)' }}>
         {/* Search */}
@@ -483,9 +519,9 @@ function HubPaymentsTab({ hubName, hubId, onExport, showToast, onChanged }) {
                       <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
                       <td style={{ ...td, fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
                       <td style={td}><MethodBadge method={p.method}/></td>
-                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</td>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'} {isBankTransfer(p) && <span className="po-bank-tag" title={`Sent by bank transfer ${p.payout_ref || ''}`.trim()}>BANK</span>}</td>
                       <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.created_by_name||'—'}</td>
-                      {canDelete && (
+                      {canDelete && !isBankTransfer(p) && (
                         <td style={{ ...td, textAlign:'right', whiteSpace:'nowrap' }}>
                           <button type="button" className="po-act-btn" title="Change the payment date"
                             aria-label={`Change date of payment of ${fmt(p.amount)}`}
@@ -514,9 +550,9 @@ function HubPaymentsTab({ hubName, hubId, onExport, showToast, onChanged }) {
                       <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>—</td>
                       <td style={{ ...td, fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(e.amount)}</td>
                       <td style={td}><MethodBadge method={e.method}/></td>
-                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.reference_no||'—'}</td>
+                      <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.reference_no||'—'} {batchIsBankTransfer(e) && <span className="po-bank-tag" title="Sent by bank transfer">BANK</span>}</td>
                       <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.created_by_name||'—'}</td>
-                      {canDelete && (
+                      {canDelete && !batchIsBankTransfer(e) && (
                         <td style={{ ...td, textAlign:'right', whiteSpace:'nowrap' }} onClick={ev => ev.stopPropagation()}>
                           <button type="button" className="po-act-btn" title="Change the date on the whole bulk payment"
                             aria-label={`Change date of bulk payment of ${fmt(e.amount)}`}
@@ -534,7 +570,7 @@ function HubPaymentsTab({ hubName, hubId, onExport, showToast, onChanged }) {
                         <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
                         <td style={{ ...td, fontSize:12.5, fontWeight:600, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
                         <td style={td}/><td style={td}/><td style={td}/>
-                        {canDelete && (
+                        {canDelete && !isBankTransfer(p) && (
                           <td style={{ ...td, textAlign:'right' }}>
                             {/* Deletes only THIS invoice's share, leaving the
                                 rest of the batch intact. */}
@@ -608,6 +644,7 @@ function GlobalPaymentHistory({ onExport, showToast, onChanged }) {
   const [byHub, setByHub]       = useState([]);
   const [total, setTotal]       = useState(0);
   const [loading, setLoading]   = useState(true);
+  const [loadErr, setLoadErr]   = useState('');
   const [hubFilter, setHubFilter] = useState('');
   const [search, setSearch]     = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -629,8 +666,19 @@ function GlobalPaymentHistory({ onExport, showToast, onChanged }) {
     if (toDate)    params.set('to',   toDate);
     const q = params.toString() ? `?${params}` : '';
     api(`/api/purchase-invoices/hub-payments${q}`)
-      .then(res => { setPayments(res.payments||[]); setByHub(res.by_hub||[]); setTotal(res.total||0); })
-      .catch(() => {})
+      .then(res => {
+        setPayments(res.payments||[]); setByHub(res.by_hub||[]); setTotal(res.total||0);
+        setLoadErr('');
+      })
+      // The catch used to be empty, and that was the bug: payments, byHub and
+      // total all kept their PREVIOUS values while loading flipped to false, so
+      // the per-hub cards and the All Hubs Total re-presented the old result set
+      // as though it answered the new filter. Someone reconciling August read an
+      // all-time figure sitting directly under an August date range.
+      .catch(e => {
+        setPayments([]); setByHub([]); setTotal(0);
+        setLoadErr(e?.message || 'Could not load payment history.');
+      })
       .finally(() => setLoading(false));
   }, [hubFilter, fromDate, toDate]);
 
@@ -660,6 +708,18 @@ function GlobalPaymentHistory({ onExport, showToast, onChanged }) {
 
   return (
     <div>
+      {/* A failed load must say so. Silence here is worse than an error:
+          the figures below are the ones somebody reconciles against a bank
+          statement, and a stale or zeroed total that looks calm is how a wrong
+          number gets reported. */}
+      {loadErr && (
+        <div className="po-loaderr">
+          <AlertCircle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+          <div style={{ flex:1 }}>{loadErr}</div>
+          <button type="button" className="po-btn-ghost" style={{ fontSize:12, padding:'4px 12px' }}
+                  onClick={() => load()}>Retry</button>
+        </div>
+      )}
       {/* Summary by hub */}
       {byHub.length > 0 && (
         <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:16 }}>
@@ -760,9 +820,9 @@ function GlobalPaymentHistory({ onExport, showToast, onChanged }) {
                         <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
                         <td style={{ ...td, fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
                         <td style={td}><MethodBadge method={p.method}/></td>
-                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'}</td>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.reference_no||'—'} {isBankTransfer(p) && <span className="po-bank-tag" title={`Sent by bank transfer ${p.payout_ref || ''}`.trim()}>BANK</span>}</td>
                         <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.created_by_name||'—'}</td>
-                        {canDelete && (
+                        {canDelete && !isBankTransfer(p) && (
                           <td style={{ ...td, textAlign:'right', whiteSpace:'nowrap' }}>
                             <button type="button" className="po-act-btn" title="Change the payment date"
                               aria-label={`Change date of payment of ${fmt(p.amount)}`}
@@ -791,9 +851,9 @@ function GlobalPaymentHistory({ onExport, showToast, onChanged }) {
                         <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>—</td>
                         <td style={{ ...td, fontSize:13, fontWeight:700, color:'#16a34a', textAlign:'right' }}>{fmt(e.amount)}</td>
                         <td style={td}><MethodBadge method={e.method}/></td>
-                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.reference_no||'—'}</td>
+                        <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.reference_no||'—'} {batchIsBankTransfer(e) && <span className="po-bank-tag" title="Sent by bank transfer">BANK</span>}</td>
                         <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{e.created_by_name||'—'}</td>
-                        {canDelete && (
+                        {canDelete && !batchIsBankTransfer(e) && (
                           <td style={{ ...td, textAlign:'right', whiteSpace:'nowrap' }} onClick={ev => ev.stopPropagation()}>
                             <button type="button" className="po-act-btn" title="Change the date on the whole bulk payment"
                               aria-label={`Change date of bulk payment of ${fmt(e.amount)}`}
@@ -812,7 +872,7 @@ function GlobalPaymentHistory({ onExport, showToast, onChanged }) {
                           <td style={{ ...td, fontSize:12, color:'var(--text-muted)' }}>{p.vehicle_number||'—'}</td>
                           <td style={{ ...td, fontSize:12.5, fontWeight:600, color:'#16a34a', textAlign:'right' }}>{fmt(p.amount)}</td>
                           <td style={td}/><td style={td}/><td style={td}/>
-                          {canDelete && (
+                          {canDelete && !isBankTransfer(p) && (
                             <td style={{ ...td, textAlign:'right' }}>
                               <button type="button" className="po-del-btn" title="Delete only this invoice's share"
                                 aria-label={`Delete ${fmt(p.amount)} from PI-${String(p.purchase_invoice_id).padStart(6,'0')}`}
@@ -1126,6 +1186,216 @@ function BulkPaymentModal({ selectedInvoices, onClose, onSuccess }) {
   );
 }
 
+// ── Paying a hub through the bank ─────────────────────────────────────────────
+
+/**
+ * Can this hub be paid by bank transfer, and if not, why not?
+ *
+ * Asked per hub rather than derived from a list, because the answer changes the
+ * moment somebody edits the hub's account number — a trigger in the database
+ * resets the registration when that happens (migration 144), and a cached
+ * "verified" would offer a Pay button that sends money to an account nobody
+ * approved.
+ *
+ * Returns null while loading and while no hub is selected. A payout goes to ONE
+ * bank account, so "All hubs" has no answer to give.
+ */
+function useHubPayoutReadiness(hubId, reloadKey = 0) {
+  const [state, setState] = useState(null);
+  useEffect(() => {
+    if (!hubId) { setState(null); return; }
+    let alive = true;
+    api(`/api/hub-payouts/hubs/${hubId}/readiness`)
+      .then(r => { if (alive) setState(r); })
+      // A readiness lookup that fails must not break the page. The Pay-via-bank
+      // button simply does not appear, and recording by hand still works — which
+      // is the correct degradation for a screen whose job is paying people.
+      .catch(() => { if (alive) setState({ error: true, blocker: 'unknown' }); });
+    return () => { alive = false; };
+  }, [hubId, reloadKey]);
+  return state;
+}
+
+/**
+ * Confirm-and-send for a real bank transfer.
+ *
+ * Everything on this dialog exists because the action is irreversible from
+ * inside this system. Once the provider accepts it, this application can no
+ * longer stop it — a wrong amount comes back as a conversation with the hub, and
+ * a wrong hub comes back as a conversation with a bank.
+ *
+ * So it shows: which account, the exact per-invoice split, and whether the
+ * customer has actually paid for these jobs. Nothing here is editable except the
+ * decision to go ahead.
+ */
+function BankPayoutModal({ hubName, hubId, readiness, invoices, onClose, onSuccess }) {
+  useEscapeClose(onClose);
+  const r2 = n => Math.round(n * 100) / 100;
+  const sorted = [...invoices].sort((a, b) => a.id - b.id);
+
+  // Full balance, every time. A partial bank transfer is a legitimate thing to
+  // want, but it is not a thing to offer by default on an irreversible action —
+  // the amount typed in the box is the amount that leaves.
+  const lines = sorted.map(pi => ({
+    id: pi.id,
+    amount: r2(parseFloat(pi.grand_total) - parseFloat(pi.amount_paid || 0)),
+    gap: customerPaymentGap(pi),
+  })).filter(l => l.amount > 0);
+
+  const total = r2(lines.reduce((s, l) => s + l.amount, 0));
+  const unpaidByCustomer = lines.filter(l => l.gap);
+
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!lines.length) { setError('Nothing to pay — every selected invoice is settled.'); return; }
+    setSending(true); setError(null);
+    try {
+      const out = await api('/api/hub-payouts', {
+        method: 'POST',
+        body: {
+          hub_id: hubId,
+          lines: lines.map(l => ({ purchase_invoice_id: l.id, amount: l.amount })),
+        },
+      });
+      onSuccess(out.item);
+    } catch (err) {
+      // Left on the dialog rather than closing it. A failed transfer needs the
+      // reason read next to the amount it was for.
+      setError(err.message || 'Could not start the transfer.');
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="po-backdrop">
+      <div className="po-modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
+          <div>
+            <div style={{ fontWeight:700, fontSize:15 }}>Pay by bank transfer</div>
+            <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:2 }}>
+              {hubName} · {lines.length} invoice{lines.length !== 1 ? 's' : ''}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', display:'flex' }}><X size={18}/></button>
+        </div>
+
+        {/* WHERE the money is going, first and largest. On an irreversible
+            action the destination matters more than the amount — a wrong amount
+            is recoverable by conversation, a wrong account often is not. */}
+        <div style={{ background:'var(--bg-soft)', border:'1px solid var(--border)', borderRadius:8, padding:'11px 14px', marginBottom:14 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em' }}>Sending to</div>
+          <div style={{ fontSize:14, fontWeight:700, marginTop:3 }}>
+            Account ••••{readiness?.account_last4 || '????'}
+          </div>
+          <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:2 }}>
+            IFSC {readiness?.ifsc || '—'} · registered with the payout provider
+          </div>
+        </div>
+
+        <div style={{ display:'flex', alignItems:'center', gap:8, background:'#f0fdf4', border:'1px solid #86efac', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#166534', marginBottom:14 }}>
+          <Landmark size={14}/> Total to transfer: <strong>{fmt(total)}</strong>
+        </div>
+
+        {unpaidByCustomer.length > 0 && (
+          <div style={{ display:'flex', gap:9, alignItems:'flex-start', background:'#fffbeb', border:'1px solid #fcd34d', borderRadius:8, padding:'10px 14px', fontSize:12.5, color:'#92400e', marginBottom:14 }}>
+            <AlertTriangle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+            <div>
+              <strong>
+                {unpaidByCustomer.length} of these {lines.length} invoice{lines.length !== 1 ? 's are' : ' is'} for
+                a job the customer has not fully paid.
+              </strong>
+              <div style={{ marginTop:3, opacity:0.9 }}>
+                {fmt(unpaidByCustomer.reduce((s, l) => s + l.gap.due, 0))} is still owed to you.
+                Sending this now means paying out before you have been paid — marked <strong>⚠</strong> below.
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{ border:'1px solid var(--border)', borderRadius:8, overflow:'hidden', marginBottom:14 }}>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr>
+                {['PI #', 'Will send'].map(h => (
+                  <th key={h} style={{ padding:'7px 12px', fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.04em', background:'var(--bg-soft)', borderBottom:'1px solid var(--border)', textAlign: h === 'Will send' ? 'right' : 'left' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => (
+                <tr key={l.id} style={{ background: i % 2 === 0 ? undefined : 'var(--bg-soft)' }}>
+                  <td style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700, color:'var(--primary)' }}>
+                    PI-{String(l.id).padStart(6, '0')}
+                    {l.gap && (
+                      <span title={`Customer still owes ${fmt(l.gap.due)}`}
+                            style={{ color:'#d97706', marginLeft:5, cursor:'help' }}>⚠</span>
+                    )}
+                  </td>
+                  <td style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', fontSize:13, textAlign:'right', fontWeight:700 }}>{fmt(l.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Not a disclaimer. This is the difference between this button and the
+            Record Payment one beside it, and somebody pressing it for the first
+            time has no other way to know. */}
+        <div style={{ fontSize:12, color:'var(--text-muted)', lineHeight:1.5, marginBottom:14 }}>
+          This sends money now. It cannot be cancelled from here once the bank accepts it —
+          the invoice is only marked paid when the transfer is confirmed, which is usually
+          the same day.
+        </div>
+
+        {error && <div style={{ color:'#dc2626', fontSize:12, display:'flex', gap:6, alignItems:'flex-start', marginBottom:10 }}><AlertCircle size={13} style={{ marginTop:2, flexShrink:0 }}/>{error}</div>}
+
+        <form onSubmit={submit} style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+          <button type="button" className="po-btn-ghost" onClick={onClose} disabled={sending}>Cancel</button>
+          <button type="submit" className="po-btn-primary" disabled={sending || !lines.length}>
+            {sending ? 'Sending…' : `Send ${fmt(total)}`}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The band that says why a hub cannot be paid automatically, with the one action
+ * that fixes it.
+ *
+ * Shown instead of failing at press time. Two blockers, two different pieces of
+ * work for two different people: missing bank details is paperwork on the hub
+ * record, missing registration is one button here.
+ */
+function PayoutReadinessBand({ readiness, hubName, canRegister, onRegister, registering }) {
+  if (!readiness || readiness.error || !readiness.blocker) return null;
+  const needsDetails = readiness.blocker === 'bank_details';
+  return (
+    <div className="po-readiness">
+      <AlertTriangle size={15} style={{ flexShrink:0, marginTop:1 }}/>
+      <div style={{ flex:1 }}>
+        <strong>{hubName} cannot be paid by bank transfer yet.</strong>
+        <div style={{ marginTop:3, opacity:0.9 }}>
+          {needsDetails
+            ? `Missing ${readiness.missing.join(', ')}. Add them on the hub record, then come back here.`
+            : 'Bank details are on file but the account is not registered with the payout provider yet.'}
+          {' '}Until then, pay this hub from your banking app and record it here with <strong>Pay</strong>.
+        </div>
+      </div>
+      {!needsDetails && canRegister && (
+        <button className="po-btn-primary" style={{ padding:'5px 14px', fontSize:12, whiteSpace:'nowrap' }}
+                onClick={onRegister} disabled={registering}>
+          {registering ? 'Registering…' : 'Register account'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Invoice Panel (with tabs) ─────────────────────────────────────────────────
 const PAGE_SIZES = [10, 25, 50];
 
@@ -1137,6 +1407,34 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
   const [openMenu, setOpenMenu] = useState(null);
   const [selected, setSelected] = useState(new Set()); // selected PI ids
   const [bulkModal, setBulkModal] = useState(false);
+
+  // ── Bank transfer ──────────────────────────────────────────────────────────
+  // Separate permission from PAYMENT_PERMS above, and deliberately so: those
+  // govern recording a payout somebody already made from their banking app,
+  // which is a bookkeeping entry. This one moves real money and cannot be undone
+  // from this application.
+  const canPayOnline  = useCan('PAY_HUB_ONLINE');
+  const canRegister   = useCan('MANAGE_HUB_PAYOUT_ACCOUNT', 'PAY_HUB_ONLINE');
+  const [readyKey, setReadyKey]   = useState(0);
+  const readiness  = useHubPayoutReadiness(hubId, readyKey);
+  const [registering, setRegistering] = useState(false);
+  const [bankModal, setBankModal] = useState(null);   // invoices to transfer for
+
+  async function registerHub() {
+    setRegistering(true);
+    try {
+      await api(`/api/hub-payouts/hubs/${hubId}/register`, { method: 'POST' });
+      showToast?.(`${hubName} is registered — bank transfers are now available.`);
+      setReadyKey(k => k + 1);
+    } catch (err) {
+      showToast?.(err.message || 'Could not register the hub account.', 'error');
+    } finally { setRegistering(false); }
+  }
+
+  // Offered only when the money can actually go somewhere. A disabled Pay-by-
+  // bank button on an unregistered hub is a button that explains nothing; the
+  // readiness band above the table is what explains it.
+  const bankReady = Boolean(hubId) && canPayOnline && readiness && !readiness.error && !readiness.blocker;
 
   const today    = useMemo(() => { const d=new Date(); d.setHours(0,0,0,0); return d; }, []);
   const sorted   = useMemo(() => [...invoices].sort((a,b)=>a.id-b.id), [invoices]);
@@ -1194,6 +1492,15 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
       {/* Invoices tab */}
       {tab==='invoices' && (
         <>
+          {/* Why this hub cannot be paid automatically — said here, once, rather
+              than discovered at the moment somebody presses a button. */}
+          {canPayOnline && (
+            <PayoutReadinessBand
+              readiness={readiness} hubName={hubName}
+              canRegister={canRegister} onRegister={registerHub} registering={registering}
+            />
+          )}
+
           {/* Bulk selection action bar */}
           {selected.size > 0 && (
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 16px', background:'color-mix(in srgb, var(--primary) 8%, var(--bg))', borderBottom:'1px solid var(--border)', borderTop:'1px solid var(--border)' }}>
@@ -1204,9 +1511,21 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                 <button className="po-btn-ghost" style={{ fontSize:12, padding:'5px 12px' }} onClick={() => setSelected(new Set())}>
                   Clear
                 </button>
-                <button className="po-btn-primary" style={{ fontSize:12, padding:'5px 16px', display:'flex', alignItems:'center', gap:6 }} onClick={() => setBulkModal(true)}>
-                  <CreditCard size={13}/> Pay {selected.size} Invoice{selected.size !== 1 ? 's' : ''}
+                {/* Two buttons, not one with a mode. Recording a payment and
+                    sending one are different actions with different consequences
+                    — a dropdown or a toggle would let the wrong one be pressed
+                    by muscle memory, and only one of them can be undone. The
+                    ghost styling on Record keeps the irreversible one visually
+                    distinct rather than merely adjacent. */}
+                <button className="po-btn-ghost" style={{ fontSize:12, padding:'5px 16px', display:'flex', alignItems:'center', gap:6 }} onClick={() => setBulkModal(true)}>
+                  <CreditCard size={13}/> Record {selected.size} payment{selected.size !== 1 ? 's' : ''}
                 </button>
+                {bankReady && (
+                  <button className="po-btn-primary" style={{ fontSize:12, padding:'5px 16px', display:'flex', alignItems:'center', gap:6 }}
+                          onClick={() => setBankModal(selectedInvoices)}>
+                    <Landmark size={13}/> Pay by bank
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1296,6 +1615,18 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                             <button className="po-icon-btn" onClick={()=>setOpenMenu(openMenu===pi.id?null:pi.id)}><MoreVertical size={15}/></button>
                             {openMenu===pi.id && (
                               <div className="po-menu">
+                                {/* In the menu rather than beside Pay. A one-row
+                                    bank transfer is the less common case — the
+                                    reason to use this feature at all is paying a
+                                    fortnight's invoices in one go — and putting
+                                    an irreversible action next to a reversible
+                                    one at the end of every row is asking for the
+                                    wrong click. */}
+                                {bankReady && pi.payment_status !== 'paid' && (
+                                  <button className="po-menu-item" onClick={()=>{ setBankModal([pi]); setOpenMenu(null); }}>
+                                    <Landmark size={13}/> Pay by bank
+                                  </button>
+                                )}
                                 <button className="po-menu-item" onClick={()=>{ onViewPayments(pi); setOpenMenu(null); }}>
                                   <History size={13}/> View Payments
                                 </button>
@@ -1347,6 +1678,25 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
           selectedInvoices={selectedInvoices}
           onClose={() => setBulkModal(false)}
           onSuccess={() => { setBulkModal(false); setSelected(new Set()); onBulkSuccess?.(); }}
+        />
+      )}
+
+      {/* Bank transfer */}
+      {bankModal && bankModal.length > 0 && (
+        <BankPayoutModal
+          hubName={hubName} hubId={hubId} readiness={readiness} invoices={bankModal}
+          onClose={() => setBankModal(null)}
+          onSuccess={(payout) => {
+            setBankModal(null); setSelected(new Set());
+            // The message says what actually happened, which is NOT "paid". A
+            // queued transfer that reports "Paid" is how somebody concludes the
+            // hub has its money and moves on — the invoice only closes when the
+            // bank confirms.
+            showToast?.(payout?.status === 'processed'
+              ? `${payout.payout_ref} sent — ${fmt(payout.amount)} confirmed by the bank.`
+              : `${payout?.payout_ref || 'Transfer'} sent to the bank. The invoice is marked paid once it confirms.`);
+            onBulkSuccess?.();
+          }}
         />
       )}
     </div>

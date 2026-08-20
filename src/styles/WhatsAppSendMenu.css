@@ -1,0 +1,288 @@
+/* ══ WhatsAppSendMenu ════════════════════════════════════════════════════════
+   The header control and its preview dialog. Its own stylesheet, imported by
+   the component, because it is mounted on four pages whose stylesheets already
+   define overlapping est-, ci- and pi- names — a fifth copy of the same rules
+   under a fifth prefix is how those three ended up drifting.
+
+   Every class here is wa-, except four that are wsm-, and that is not a style
+   choice. wa- was never as private as this file assumed: WhatsAppSettings.css
+   uses it too and loads AFTER this one, so its rules won every collision.
+
+     .wa-modal    there is a dialog BOX — width 420px, white card, border.
+                  Here it was on the fixed, full-screen BACKDROP. So the
+                  backdrop became a 420px white panel pinned to the top-left of
+                  the window, and the send-preview dialog opened half off the
+                  left edge of the screen instead of centred.
+     .wa-var      there is a settings row; here it is a template variable row.
+     .wa-actions  there is a toolbar; here it is the dialog's button row.
+
+   Those four are now wsm-, which nothing else uses. The rest keep wa- because
+   nothing else defines them — checked across all 38 stylesheets, not assumed.
+
+   No asterisk-slash inside these comments. Written as "est-*<slash>ci-*" it
+   closed the comment four lines early and the parser ate the .wa-send rule
+   below along with the rest of the prose, so the control lost position:relative
+   and display:inline-flex while every other rule in the file kept working. */
+
+.wa-send {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* Square when it is one icon, a little wider when the caret is there. Matches
+   the 34px icon buttons the detail headers use, so it sits in that row rather
+   than beside it. */
+.btn.wa-send-btn {
+  padding: 0;
+  width: 34px;
+  height: 34px;
+  gap: 0;
+}
+.wa-send-btn:has(.wa-chev) { width: 46px; gap: 2px; }
+
+/* ── Labelled, full-width variant ────────────────────────────────────────────
+   For the chat panel's closed bar, where this button stands in for the reply
+   box. The fixed 34/46px width above is deliberate in a header row and wrong
+   here, so it is overridden at equal-or-higher specificity rather than by
+   hoping this rule comes later. */
+.wa-send--wide { display: flex; flex: 1 1 auto; min-width: 0; }
+.btn.wa-send-btn.wa-send-btn--wide {
+  width: auto;
+  flex: 1 1 auto;
+  padding: 7px 14px;
+  gap: 7px;
+}
+.wa-send-btn--wide:has(.wa-chev) { width: auto; gap: 7px; }
+.wa-send-label { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+
+
+.wa-chev { transition: transform 0.16s ease; }
+.wa-chev--on { transform: rotate(180deg); }
+
+/* Under the menu and over everything else, so the dismissing click cannot also
+   press what is beneath it. */
+.wa-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.wa-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1000;
+  min-width: 260px;
+  max-width: 340px;
+  padding: 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  text-align: left;
+}
+
+/* Opens UPWARD, for the chat panel's closed bar.
+
+   MUST come after .wa-menu, not before. Written above it, .wa-menu's own
+   `top: calc(100% + 6px)` won the cascade while this rule's `bottom` still
+   applied — the box was stretched between both edges and collapsed to a 12px
+   sliver below the button. Same class, same specificity, order decides.
+
+   Opening upward is not cosmetic: the button sits on the bottom edge of a panel
+   with overflow:hidden, so a menu dropping downward is clipped away entirely. */
+.wa-menu--up {
+  top: auto;
+  bottom: calc(100% + 6px);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.wa-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.wa-menu-item:hover { background: var(--bg-soft); }
+/* The registry's body copy, clamped to two lines. It is a hint about which
+   message this is, not the message — the preview is the thing you check. */
+.wa-menu-item > em {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  font-style: normal;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* ── The dialog ─────────────────────────────────────────────────────────── */
+/* Above the detail's own modals, which sit at 1100. */
+.wsm-modal { z-index: 1200; }
+
+.wa-modal-body {
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+/* Which template this is. The dialog is reached from a menu of several, and
+   without this the only thing naming the choice is the click you just made. */
+.wa-tpl {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.wa-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.wa-cap {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.wa-to {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-soft);
+}
+.wa-to strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.wa-torow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.wa-num {
+  margin-top: 3px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.wa-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f9d76;
+  cursor: pointer;
+}
+.wa-link:hover { text-decoration: underline; }
+
+/* The values in the order the approved template will consume them. A table
+   rather than a sentence, because the point is that position 3 is checkable. */
+.wsm-vars {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.wsm-var {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 7px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.wsm-var:last-child { border-bottom: 0; }
+.wsm-var > span { color: var(--text-muted); text-transform: capitalize; white-space: nowrap; }
+/* overflow-wrap, because a link value has no spaces and would otherwise push
+   the dialog wider than the viewport on a phone. */
+.wsm-var > b { font-weight: 600; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+
+.wa-note { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+
+/* Amber, not red: overriding the number is a legitimate act, not an error.
+   Red here would train people to click through it. */
+.wa-warn {
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #92400e;
+}
+
+.wa-ok {
+  padding: 10px 12px;
+  border: 1px solid #86efac;
+  border-radius: 9px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.wa-bad {
+  padding: 10px 12px;
+  border: 1px solid #fca5a5;
+  border-radius: 9px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.wsm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+@media screen and (max-width: 560px) {
+  .wa-menu { min-width: 0; width: min(320px, calc(100vw - 32px)); }
+}
+
+/* ── Inline mode ─────────────────────────────────────────────────────────────
+   The same .wa-menu-item rows without the popover around them, for a pane that
+   is already open (WhatsAppThread's Templates tab). No absolute positioning, no
+   z-index, nothing to be clipped by. */
+.wa-inline { display: flex; flex-direction: column; gap: 1px; }
+.wa-inline-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 12px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.wa-inline-empty span { font-size: 11px; }

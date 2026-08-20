@@ -195,3 +195,173 @@
   flex-shrink: 0;
   margin-top: 4px;
 }
+
+/* ═══ Dashboard ═══════════════════════════════════════════════════════════════
+   KPI grid.
+
+   Column counts are 1 / 2 / 3 / 6 — every one a divisor of the six cards — so a
+   row is never left with a single orphan card hanging under a full row.
+
+   `minmax(0, 1fr)` rather than plain `1fr` is the fix for the clipped "View →"
+   and the squashed values: a grid track's default minimum is `auto`, so a long
+   value like ₹60,728.42 pushed its own track wider than its share and shoved
+   everything to its right off the card.                                        */
+.hubdash-kpis {
+  display: grid;
+  gap: 16px;
+  /* Two up is the PHONE default, not a fallback. Six full-width cards put
+     roughly 750px of scrolling between the top of the page and the appointment
+     list — and on a phone the list is what the workshop actually came for. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 359px)  { .hubdash-kpis { grid-template-columns: minmax(0, 1fr); } }
+@media (min-width: 900px)  { .hubdash-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1700px) { .hubdash-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+
+.hubdash-kpi {
+  position: relative;
+  /* Icon on its own row rather than beside the text. Side-by-side, the 42px
+     icon plus its gap ate ~56px of a ~210px card, leaving too little for
+     "₹60,728.42" — which then ellipsized to "₹60,728…". Stacked, the label and
+     value get the card's full inner width. */
+  display: block;
+  padding: 16px 18px 18px;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.hubdash-kpi--link { cursor: pointer; }
+.hubdash-kpi--link:hover {
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.10);
+  transform: translateY(-2px);
+}
+
+.hubdash-kpi-icon {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.hubdash-kpi-body { min-width: 0; }
+
+/* Two lines' worth of height whether the label needs one or two, so the values
+   sit on the same line across the row. */
+.hubdash-kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  line-height: 1.35;
+  min-height: 2.7em;
+  margin-bottom: 2px;
+}
+
+.hubdash-kpi-value {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.25;
+  /* Digits share one advance width, so the numbers line up down the row
+     instead of drifting with how many 1s they happen to contain. */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  /* A safety net, not the plan: with the icon moved off this line there is
+     room for a lakh-scale figure at this size. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hubdash-kpi-sub {
+  font-size: 11.5px;
+  font-weight: 500;
+  margin-top: 5px;
+  line-height: 1.35;
+}
+
+/* Absolutely positioned, so it no longer competes with the value for width —
+   that competition is what clipped it to "Vie" on the widest cards. Sits level
+   with the icon, where there is always free space. */
+.hubdash-kpi-go {
+  position: absolute;
+  right: 16px;
+  top: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.hubdash-kpi--link:hover .hubdash-kpi-go { opacity: 0.9; }
+
+/* ═══ Phone ══════════════════════════════════════════════════════════════════
+   The hub portal is used standing next to a car, so these are the sizes that
+   matter most — not an afterthought below the desktop rules.
+
+   Everything here is scoped to .hub-shell / .hub-topbar. The portal shares
+   .shell, .topbar and .content with AppShell, whose own mobile rules assume a
+   layout the hub portal does not have. */
+
+@media (max-width: 768px) {
+  /* AppShell hides the search on mobile because staff get a bottom nav and a
+     separate mobile search. The hub portal has neither, so that rule would
+     take away the only search on the device where scrolling a list is worst.
+     It comes back as its own full-width row under the title instead of
+     fighting the bell and the menu button for space. */
+  /* .topbar.hub-topbar, not .hub-topbar: app.css sets `.topbar { height: 54px }`
+     at this breakpoint, which has the SAME specificity and wins on source
+     order. The wrapped search row then overflowed a 54px box and sat on top of
+     the page heading. Two classes beats one, whatever the bundle order. */
+  .topbar.hub-topbar {
+    height: auto;
+    min-height: 54px;
+    /* .main is a column flex container with overflow:hidden, so the header is a
+       flex ITEM and shrinks by default. With the search wrapped to a second
+       row it needs 78px, got squeezed back to 54, and the overflow landed on
+       top of the page heading. A header does not shrink. */
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 8px 12px;
+    row-gap: 8px;
+  }
+  .topbar.hub-topbar .topbar-center {
+    display: flex;
+    order: 3;
+    flex: 1 0 100%;
+    padding: 0;
+  }
+  .topbar.hub-topbar .topbar-search-wrap { width: 100%; }
+  /* No physical keyboard to press it with. */
+  .topbar.hub-topbar .topbar-search-kbd { display: none; }
+
+  /* AppShell reserves 74px at the bottom of every page for its mobile bottom
+     nav. The hub portal has no bottom nav, so that is 74px of dead space at
+     the end of every scroll. */
+  .hub-shell .content { padding-bottom: 16px !important; }
+
+
+  /* app.css makes the block inside .page-header a flex ROW, so the heading and
+     its subtitle sit side by side and the subtitle gets squeezed to nothing on
+     a phone. Scoped to the hub portal so no staff page shifts. */
+  .hub-shell .page-header > div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+
+}
+
+@media (max-width: 420px) {
+  .hubdash-kpi { padding: 13px 14px 15px; }
+  .hubdash-kpi-value { font-size: 19px; }
+  /* Smaller icon and tighter gap — six cards on a phone, so every pixel of
+     card height is multiplied by three rows.
+     The label KEEPS its two-line reservation: at two cards per row, a
+     one-line label beside a two-line one would put their numbers on
+     different lines. */
+  .hubdash-kpi-icon { width: 30px; height: 30px; border-radius: 8px; margin-bottom: 8px; }
+  .hubdash-kpi-go { display: none; }
+
+}

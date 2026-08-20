@@ -6,11 +6,115 @@ import { useCan, useAuth } from '../auth/AuthContext.jsx';
 import { useBodyLock } from '../hooks/useBodyLock.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
+import { waTarget } from '../lib/phone.js';
+import WhatsAppThread from '../components/WhatsAppThread.jsx';
+
+/**
+ * The source chips, and the grouping behind them.
+ *
+ * ⚠️ MUST STAY IN STEP WITH leads.controller.js's `source` filter. The server
+ * groups the same way for /api/leads?source=… and the CSV export; if the two
+ * drift, a chip and an export of "the same" filter return different leads and
+ * nobody can tell which is right.
+ *
+ * lead_source is free text (VARCHAR(80), no FK) with years of typed values in
+ * it, so these are GROUPS rather than exact names:
+ *
+ *   Manual   — no source at all, or a walk-up channel. A lead typed by an
+ *              advisor has no campaign behind it; that absence IS the value.
+ *   Meta Ads — every spelling Facebook/Instagram traffic has arrived under.
+ *   Other    — the complement, defined so a source nobody anticipated still
+ *              shows up SOMEWHERE instead of being invisible under every chip.
+ */
+const SOURCE_CHIPS = [
+  { key: 'all',      label: 'All' },
+  { key: 'whatsapp', label: 'WhatsApp' },
+  { key: 'website',  label: 'Website' },
+  { key: 'meta ads', label: 'Meta Ads' },
+  { key: 'manual',   label: 'Manual' },
+  { key: 'other',    label: 'Other' },
+];
+
+/* ── Who owns it — a SEPARATE axis from where it came from ───────────────────
+   Not folded into SOURCE_CHIPS. Source answers "where did this come from" and
+   owner answers "whose is it"; a customer can be a WhatsApp lead AND mine AND
+   unassigned, and one strip of chips that mixes the two can only express one of
+   those at a time. They combine instead: WhatsApp + Unassigned is the queue. */
+/* ── "What happened to this lead last" ────────────────────────────────────────
+   The six types leads.controller.js and appointments.controller.js actually
+   write, plus note_added which the query synthesises from lead_notes. Anything
+   unrecognised falls back to the raw type with underscores stripped rather than
+   rendering blank — a new activity type added next year should look untidy, not
+   invisible. */
+function activityLabel(row) {
+  const to = (row.last_activity_new || '').trim();
+  switch (row.last_activity_type) {
+    case 'status_changed':      return to ? `Status → ${to}` : 'Status changed';
+    case 'assigned_changed':    return to ? `Assigned to ${to}` : 'Unassigned';
+    case 'appointment_created': return 'Converted to appointment';
+    case 'service_added':       return to ? `Service added: ${to}` : 'Service added';
+    case 'service_removed':     return to ? `Service removed: ${to}` : 'Service removed';
+    case 'note_added':          return to ? `Note: ${to}` : 'Note added';
+    case 'created':             return 'Lead created';
+    default:
+      return String(row.last_activity_type || '').replace(/_/g, ' ') || '';
+  }
+}
+
+/* Recent enough to be useful, old enough to be a date.
+   "2h ago" answers "is this live?" without arithmetic; past two days that
+   question stops mattering and the actual date is what people want. */
+function timeAgo(v) {
+  if (!v) return '';
+  const then = new Date(v);
+  if (isNaN(then)) return '';
+  const mins = Math.floor((Date.now() - then.getTime()) / 60000);
+
+  if (mins < 1)    return 'just now';
+  if (mins < 60)   return `${mins}m ago`;
+  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
+  if (mins < 2880) return 'yesterday';
+
+  return then.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    ...(then.getFullYear() === new Date().getFullYear() ? {} : { year: '2-digit' }),
+  });
+}
+
+const OWNER_CHIPS = [
+  { key: 'all',        label: 'Everyone' },
+  { key: 'mine',       label: 'Mine' },
+  { key: 'unassigned', label: 'Unassigned' },
+];
+
+export function matchesOwnerChip(lead, chip, userId) {
+  if (!chip || chip === 'all') return true;
+  if (chip === 'unassigned')   return !lead.assigned_to;
+  if (chip === 'mine')         return userId != null && Number(lead.assigned_to) === Number(userId);
+  return true;
+}
+
+const META_SOURCES   = ['meta ads', 'meta', 'facebook', 'instagram', 'facebook ads', 'instagram ads', 'social media'];
+const MANUAL_SOURCES = ['manual', 'walk-in', 'walk in', 'phone call', 'referral'];
+
+export function matchesSourceChip(leadSource, chip) {
+  if (!chip || chip === 'all') return true;
+  const s = (leadSource || '').trim().toLowerCase();
+  if (chip === 'whatsapp') return s === 'whatsapp';
+  if (chip === 'website')  return s === 'website';
+  if (chip === 'meta ads') return META_SOURCES.includes(s);
+  if (chip === 'manual')   return s === '' || MANUAL_SOURCES.includes(s);
+  if (chip === 'other')    return s !== '' && !META_SOURCES.includes(s) && !MANUAL_SOURCES.includes(s) && s !== 'whatsapp' && s !== 'website';
+  return s === chip;
+}
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch } from '../hooks/useDebouncedSearch.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
+import WhatsAppSendMenu from '../components/WhatsAppSendMenu.jsx';
 import '../styles/listLayout.css';
 import {
+  ArrowLeft,
   PlusCircle, Search, User, Calendar, MapPin, Car, Bike,
   MoreVertical, Eye, Pencil, Trash2, X, CheckCircle2,
   AlertCircle, Phone, MessageCircle, Tag, FileText,
@@ -334,9 +438,18 @@ function ActionMenu({ lead, canEdit, canDelete, onView, onEdit, onDelete }) {
 }
 
 // ── View Lead Modal ───────────────────────────────────────────────────────────
-function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLeadLoaded }) {
+function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLeadLoaded, onOpenConvert }) {
+  // useBodyLock STAYS, but it is no longer what holds this still. The detail is
+  // a layer over the LIST inside .content — not over the viewport — so the
+  // thing that actually had to be stopped was .page-scroll, which is this
+  // layer's containing block: let it scroll and the whole detail slides off the
+  // top. That is done in CSS (.page-scroll:has(.lp-vp)). This call remains as
+  // the outermost belt: on a browser without :has(), body scroll is still
+  // pinned.
   useBodyLock();
   useEscapeClose(onClose);
+  // Phone only — ignored above the breakpoint, where both panes are visible.
+  const [paneTab, setPaneTab] = useState('details');
   const { user: currentUser } = useAuth();
   const [lead, setLead] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -352,16 +465,22 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
   const timelineEndRef = useRef(null);
   const [rescheduleId, setRescheduleId] = useState(null); // follow-up event id to reschedule
 
+  // Pulled out of the effect so the header's status control can call it after a
+  // change. Re-reading rather than patching `lead` locally is deliberate: a
+  // status change can also write a lost reason, a follow-up or an appointment,
+  // and a local patch would show the new badge above stale everything-else.
+  const reloadLead = useCallback(() => {
+    return api(`/api/leads/${leadId}`)
+      .then(r => { setLead(r.item); onLeadLoaded?.(r.item); })
+      .catch(e => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onLeadLoaded is a
+    // stable URL-sync callback, not a data dependency.
+  }, [leadId]);
+
   useEffect(() => {
     setLoading(true);
-    api(`/api/leads/${leadId}`)
-      .then(r => { setLead(r.item); onLeadLoaded?.(r.item); })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onLeadLoaded intentionally
-    // not tracked: it's a stable callback used to sync the URL once, not a data
-    // dependency; adding it would risk re-fetching on every parent re-render.
-  }, [leadId]);
+    reloadLead().finally(() => setLoading(false));
+  }, [leadId, reloadLead]);
 
   // Load notes + activities + follow-ups once lead is fetched
   useEffect(() => {
@@ -467,14 +586,51 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
     : (lead?.mobile?.slice(-2) ?? '??');
 
   return (
-    <div className="lp-modal-backdrop">
-      <div className="lp-modal lp-modal--lg lp-view-modal" onClick={e => e.stopPropagation()}>
+    <div className="lp-vp">
+      <div className="lp-vp-inner">
 
-        {/* ── Header ── */}
-        <div className="lp-vm-header">
+        {/* ── Page header ──────────────────────────────────────────────────
+            No breadcrumb here any more. It had one — "Leads › <token>" — from
+            when this layer covered the entire viewport and the app's own
+            topbar was hidden behind it. The topbar is visible again and
+            already renders "Home › Leads › <token>" for exactly this route, so
+            an identical trail one line below it is the same sentence twice.
+
+            What stays is what the topbar does NOT say: the way back, and the
+            status. */}
+        <div className="lp-vm-header lp-vp-header">
           <div className="lp-vm-header-left">
-            <span className="lp-vm-title">Lead Details</span>
-            {lead && <StatusBadge status={lead.status} />}
+            <button className="lp-vp-back" onClick={onClose} title="Back to Leads">
+              <ArrowLeft size={15} />
+            </button>
+            <span className="lp-vp-title">{lead?.name || (lead ? lead.mobile : 'Lead')}</span>
+            {/* The status, changeable in place.
+                StatusInlineSelect, not a second dropdown written for this
+                header — it is the same control the leads LIST uses, and it
+                already carries everything a status change actually involves:
+                asking for a Lost reason, opening the appointment form for a
+                converts_to_appointment status, logging a call, scheduling a
+                follow-up. A plain <select> here would look identical and
+                silently skip all four.
+
+                Only the CONVERTED case is guarded here. A locked status is
+                already handled inside the component — it renders its own
+                padlocked badge with the reason — and duplicating that check
+                would mean two places to keep in step. Converted is different:
+                the component has no way to know a lead became an appointment,
+                because that is a fact about the lead, not about its status. */}
+            {lead && (lead.is_converted
+              ? <StatusBadge status={lead.status} statusList={statusList} />
+              : (
+                <StatusInlineSelect
+                  leadId={lead.id}
+                  leadName={lead.name || lead.mobile}
+                  current={lead.status}
+                  statusList={statusList}
+                  onOpenConvert={onOpenConvert}
+                  onChange={reloadLead}
+                />
+              ))}
           </div>
           <div className="lp-vm-header-actions">
             {canEdit && lead && !lead.is_converted && (
@@ -491,11 +647,34 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
                 <CheckCircle2 size={13} /> Converted to Appointment
               </span>
             )}
+            {/* Distinct from the wa.me button in the contact card below. That
+                one opens YOUR WhatsApp with this person's chat and logs
+                nothing; this one queues an approved template through the
+                business account and records what was sent and whether it
+                arrived — the difference between chasing a lead and being able
+                to show you chased it.
+
+                Which templates it offers is the server's answer: the ones
+                mapped to entity_type 'lead' and enabled in Settings. */}
+            {lead?.id && <WhatsAppSendMenu entityType="lead" entityId={lead.id} />}
             <button className="lp-modal-close" onClick={onClose}><X size={18} /></button>
           </div>
         </div>
 
-        <div className="lp-modal-body lp-vm-body">
+        {/* Two columns cannot stack on a phone — the chat would end up far
+            below the notes and nobody would scroll to it. Tabs instead, and
+            only below the breakpoint (the bar is display:none on desktop). */}
+        <div className="lp-vp-tabs">
+          <button className={paneTab === 'details' ? 'on' : ''} onClick={() => setPaneTab('details')}>
+            Details
+          </button>
+          <button className={paneTab === 'chat' ? 'on' : ''} onClick={() => setPaneTab('chat')}>
+            <MessageCircle size={13} /> WhatsApp
+          </button>
+        </div>
+
+        <div className={`lp-vp-split lp-vp-split--${paneTab}`}>
+        <div className="lp-modal-body lp-vm-body lp-vp-main">
           {loading && <div className="lp-loading">Loading…</div>}
           {error && <div className="lp-error"><AlertCircle size={14} /> {error}</div>}
           {lead && (
@@ -533,11 +712,17 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
                     href={`tel:${lead.mobile}`}>
                     <Phone size={15} /> Call
                   </a>
-                  <a className="lp-vm-btn lp-vm-btn--wa"
-                    href={`https://wa.me/${(lead.whatsapp || lead.mobile).replace(/\D/g, '')}`}
-                    target="_blank" rel="noreferrer">
-                    <MessageCircle size={15} /> WhatsApp
-                  </a>
+                  {/* waTarget adds the country code, which this link was
+                      missing entirely — wa.me/9876543210 resolves to nothing.
+                      Returns null for numbers WhatsApp cannot reach, and the
+                      button is then hidden rather than rendered broken. */}
+                  {waTarget(lead) && (
+                    <a className="lp-vm-btn lp-vm-btn--wa"
+                      href={waTarget(lead)}
+                      target="_blank" rel="noreferrer">
+                      <MessageCircle size={15} /> WhatsApp
+                    </a>
+                  )}
                 </div>
               </div>
 
@@ -1013,6 +1198,31 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
 
             </div>
           )}
+        </div>
+
+        {/* ── WhatsApp rail ────────────────────────────────────────────────
+            Beside the detail, not inside it. Keyed by the NUMBER rather than
+            the lead id: the thread is one continuous exchange with a person
+            that happens to touch this lead. whatsapp first, mobile as the
+            fallback — the same precedence utils/phone.js resolveTarget uses.
+
+            It stays put while the left column scrolls, and stays visible while
+            the Edit modal is open on top, which is the whole reason this is a
+            page: you can read what the customer asked for while you fill the
+            form in. */}
+        {lead && (
+          <aside className="lp-vp-rail">
+            <WhatsAppThread
+              mobile={lead.whatsapp || lead.mobile}
+              /* This page already knows the lead, so the template button in the
+                 closed bar does not have to wait for the thread request to tell
+                 it. The Customer page has no such id and falls back to the
+                 conversation's resolved lead. */
+              entityType="lead"
+              entityId={lead.id}
+            />
+          </aside>
+        )}
         </div>
       </div>
       {rescheduleId && (
@@ -3212,6 +3422,8 @@ export default function LeadsPage() {
   const canExport = useCan('EXPORT_LEADS');
   const canViewReports = useCan('VIEW_REPORTS');
   const canViewLead = useCan('VIEW_LEAD');
+  // The Mine chip needs to know who "me" is.
+  const { user: currentUser } = useAuth();
   const canViewTeam = useCan('VIEW_TEAM_LEADS');
   const canManageFollowUps = useCan('MANAGE_FOLLOW_UPS');
 
@@ -3286,15 +3498,20 @@ export default function LeadsPage() {
   const [fMake, setFMake] = useState(ls.fMake ?? '');
   const [fModel, setFModel] = useState(ls.fModel ?? '');
   const [fSource, setFSource] = useState(ls.fSource ?? '');
+  // The broad source chips. Separate from fSource, which is an EXACT source
+  // name from the Advanced dropdown — the two answer different questions and
+  // combining them into one control would lose the narrow one.
+  const [sourceChip, setSourceChip] = useState(ls.sourceChip ?? 'all');
+  const [ownerChip, setOwnerChip]   = useState(ls.ownerChip ?? 'all');
 
   // Persist whenever any of these change
   useEffect(() => {
     writeListState('sp_leads_list_v1', {
       page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
-      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource,
+      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip,
     });
   }, [page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
-      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
+      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip]);
 
   useListScrollRestore('sp_leads_list_v1', !loading);
 
@@ -3351,9 +3568,21 @@ export default function LeadsPage() {
   const [agentsList, setAgentsList] = useState([]);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Bulk status change. bulkLost holds the status name while the reason is
+  // being asked for — a "Lost" status needs one, exactly as it does for a
+  // single lead, and applying it to twenty leads without asking would put
+  // twenty blank reasons in the pipeline report.
+  const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
+  const [bulkStatusBusy, setBulkStatusBusy] = useState(false);
+  const [bulkLost, setBulkLost] = useState(null);   // { statusName }
 
   // Modals
   const [viewId, setViewId] = useState(null);
+  // Bumped after an edit saves. Used as part of the detail page's key so it
+  // remounts and refetches — as a modal it was unmounted on Edit and
+  // reloaded on reopen, which is the staleness guard that disappears the
+  // moment the page stays open behind the dialog.
+  const [leadRefresh, setLeadRefresh] = useState(0);
   const [editLead, setEditLead] = useState(null);
   const [deleteLead, setDeleteLead] = useState(null);
 
@@ -3430,6 +3659,15 @@ export default function LeadsPage() {
     setTimeout(() => setToast(null), 3000);
   }
 
+  // Compliance is behind MANAGE_FOLLOW_UPS or VIEW_REPORTS (see
+  // routes/lead_events.routes.js). Asked for unconditionally, it 403s on every
+  // page load for every caller who does not have it — silent to them, and a
+  // console full of red for anybody debugging something else entirely.
+  //
+  // Checked here rather than swallowed in the catch: a .catch() cannot tell a
+  // permission from an outage, so it hides both.
+  const canCompliance = useCan('MANAGE_FOLLOW_UPS', 'VIEW_REPORTS');
+
   useEffect(() => {
     api('/api/lead-statuses').then(r => setStatusList(r.items)).catch(() => { });
     api('/api/users/assignable').then(r => setAgentsList(r.items || [])).catch(() => { });
@@ -3438,8 +3676,10 @@ export default function LeadsPage() {
       if (r.items?.length) setLeadSources(r.items.map(s => s.name));
     }).catch(() => { }); // keep fallback LEAD_SOURCES if API fails
     api('/api/leads/stage-stats').then(r => setStageStats(r.items || [])).catch(() => { });
-    api('/api/lead-events/compliance').then(r => setCompliance(r)).catch(() => { });
-  }, []);
+    if (canCompliance) {
+      api('/api/lead-events/compliance').then(r => setCompliance(r)).catch(() => { });
+    }
+  }, [canCompliance]);
 
   // Open lead from duplicate detection click in NewLeadModal
   useEffect(() => {
@@ -3604,6 +3844,10 @@ export default function LeadsPage() {
 
     // Source
     if (fSource && l.lead_source !== fSource) return false;
+    if (!matchesSourceChip(l.lead_source, sourceChip)) return false;
+
+    // Owner
+    if (!matchesOwnerChip(l, ownerChip, currentUser?.id)) return false;
 
     return true;
   });
@@ -3615,7 +3859,7 @@ export default function LeadsPage() {
   useEffect(() => {
     if (skipFirstPageReset.current) { skipFirstPageReset.current = false; return; }
     setPage(1);
-  }, [search, statusFilters, assigneeFilters, creatorFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource]);
+  }, [search, statusFilters, assigneeFilters, creatorFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip]);
 
   // Status counts — scoped to selected assignee(s) if any are active
   const leadsForCounts = assigneeFilters.length
@@ -3675,6 +3919,9 @@ export default function LeadsPage() {
   function handleEditSaved(updated) {
     setLeads(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l));
     setEditLead(null);
+    // Refetch the open detail page. Without this the page sitting behind the
+    // dialog keeps showing the values from before the save.
+    setLeadRefresh(n => n + 1);
     showToast('Lead updated successfully.');
   }
 
@@ -3708,6 +3955,58 @@ export default function LeadsPage() {
     return s ? { color: s.color, bg: s.bg_color } : { color: '#6b7280', bg: '#f3f4f6' };
   }
 
+  /* ── Bulk status change ────────────────────────────────────────────────────
+     What the selection bar's Status control offers, and what it deliberately
+     leaves out.
+
+     A status that CONVERTS TO AN APPOINTMENT is not offered. Choosing it for
+     one lead opens the appointment form — vehicle, service, date — and there is
+     no sane way to fill that in once for a selection of twenty. The server
+     refuses it too; this list is what stops anybody getting that far.
+
+     Statuses that log a call or ask for a follow-up ARE offered, but the modal
+     that normally collects those details is skipped: a call outcome belongs to
+     one conversation and a follow-up to one lead. The status still moves and
+     the timeline still records it — you just add the call notes per lead
+     afterwards, which is the only place they mean anything.
+
+     A LOST status is the exception that keeps its prompt. One reason genuinely
+     can describe a batch ("price", "went elsewhere"), and a Lost lead with no
+     reason is the one gap the pipeline report cannot fill in later. */
+  const bulkStatusOptions = statusList.filter(s => !s.converts_to_appointment);
+
+  async function applyBulkStatus(statusName, lostReason = null) {
+    setBulkStatusBusy(true);
+    setBulkStatusOpen(false);
+    try {
+      const body = { lead_ids: [...selectedLeads], status: statusName };
+      if (lostReason) body.lost_reason = lostReason;
+      const r = await api('/api/leads/bulk-status', { method: 'POST', body });
+
+      // Reflect it locally rather than refetching the list: the server told us
+      // exactly which ids moved, so patching those is both faster and honest —
+      // a lead it skipped keeps the status it actually has.
+      const moved = new Set(r.ids || []);
+      if (moved.size) {
+        setLeads(prev => prev.map(l => (moved.has(l.id) ? { ...l, status: r.status } : l)));
+      }
+      setSelectedLeads(new Set());
+
+      // Say what was skipped. "10 selected" followed by "8 updated" with no
+      // explanation is the thing that makes people stop trusting bulk actions.
+      const bits = [];
+      bits.push(`${r.updated} lead${r.updated !== 1 ? 's' : ''} moved to ${r.status}`);
+      if (r.unchanged)         bits.push(`${r.unchanged} already there`);
+      if (r.skipped_locked)    bits.push(`${r.skipped_locked} locked`);
+      if (r.skipped_converted) bits.push(`${r.skipped_converted} already converted`);
+      showToast(bits.join(' · '), r.updated ? 'success' : 'warning');
+    } catch (e) {
+      showToast(e.message || 'Could not change the status.', 'error');
+    } finally {
+      setBulkStatusBusy(false);
+    }
+  }
+
   return (
     /* lb-page cancels the app wrapper's padding and max-width. This page
        already set .content padding to 0 for its locked-scroll layout, so the
@@ -3734,6 +4033,17 @@ export default function LeadsPage() {
         <RescheduleFollowUpModal
           onConfirm={handleRescheduleDrawer}
           onCancel={() => setRescheduleEvent(null)}
+        />
+      )}
+
+      {/* One reason for the whole selection. At page level, like the convert
+          modal above it, so re-rendering the list underneath cannot close it
+          half-answered. */}
+      {bulkLost && (
+        <LostReasonModal
+          statusName={bulkLost.statusName}
+          onConfirm={reason => { const m = bulkLost; setBulkLost(null); applyBulkStatus(m.statusName, reason); }}
+          onCancel={() => setBulkLost(null)}
         />
       )}
 
@@ -4082,6 +4392,53 @@ export default function LeadsPage() {
           only. Plain .lb-list — the page scrolls, same as the other four. */}
       <div className="lb-list lp-table-card">
 
+        {/* ── Where leads came from ────────────────────────────────────────
+            Chips rather than another dropdown: this is the one filter people
+            reach for constantly now that leads arrive on their own from
+            WhatsApp, and "is this ours or did it walk in?" should be one click.
+
+            The exact-source <select> in Advanced filters stays — it answers a
+            narrower question ("only Exhibition"). These answer the broad one. */}
+        <div className="lp-src-chips">
+          {SOURCE_CHIPS.map(c => (
+            <button
+              key={c.key}
+              className={`lp-src-chip${sourceChip === c.key ? ' lp-src-chip--on' : ''}`}
+              onClick={() => setSourceChip(c.key)}
+            >
+              {c.label}
+              <span className="lp-src-chip-n">
+                {c.key === 'all' ? leads.length : leads.filter(l => matchesSourceChip(l.lead_source, c.key)).length}
+              </span>
+            </button>
+          ))}
+
+          {/* ── Whose is it ───────────────────────────────────────────────
+              Same strip, its own group, because it combines with the one on
+              the left rather than replacing it: WhatsApp + Unassigned is the
+              shared queue, which is the view somebody starting their shift
+              actually wants.
+
+              The counts respect the source chip already chosen, so the number
+              on Unassigned is the number you would see if you pressed it —
+              not a global total that changes the moment you do. */}
+          <span className="lp-src-sep" aria-hidden="true" />
+          {OWNER_CHIPS.map(c => (
+            <button
+              key={c.key}
+              className={`lp-src-chip lp-src-chip--own${ownerChip === c.key ? ' lp-src-chip--on' : ''}`}
+              onClick={() => setOwnerChip(c.key)}
+            >
+              {c.label}
+              <span className="lp-src-chip-n">
+                {leads.filter(l =>
+                  matchesSourceChip(l.lead_source, sourceChip) &&
+                  matchesOwnerChip(l, c.key, currentUser?.id)).length}
+              </span>
+            </button>
+          ))}
+        </div>
+
         {/* ── Filters ── */}
         <div className="lp-filters">
           {/* ── Toolbar ──
@@ -4422,6 +4779,53 @@ export default function LeadsPage() {
               </div>
               {bulkAssigning && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Assigning…</span>}
 
+              {/* ── Change Status ──────────────────────────────────────────
+                  Next to Assign To because they are the same kind of act:
+                  the two things you decide about a batch of leads without
+                  opening any of them. Delete is deliberately last and red —
+                  it is not in that family. */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  className="lp-bulk-btn"
+                  onClick={() => setBulkStatusOpen(o => !o)}
+                  disabled={bulkStatusBusy}
+                >
+                  <Tag size={14} /> {bulkStatusBusy ? 'Updating…' : 'Change Status'} <ChevronDown size={12} />
+                </button>
+                {bulkStatusOpen && (
+                  <div className="lp-bulk-dropdown lp-bulk-dropdown--status">
+                    <div className="lp-bulk-dd-head">
+                      Set status on {selectedLeads.size} lead{selectedLeads.size !== 1 ? 's' : ''}
+                    </div>
+                    {bulkStatusOptions.map(s => (
+                      <button
+                        key={s.id}
+                        className="lp-bulk-dd-opt"
+                        onClick={() => {
+                          // Same interception the single-lead dropdown makes,
+                          // so "Lost" means the same thing from either place.
+                          if (s.name.toLowerCase().includes('lost')) {
+                            setBulkStatusOpen(false);
+                            setBulkLost({ statusName: s.name });
+                            return;
+                          }
+                          applyBulkStatus(s.name);
+                        }}
+                      >
+                        <span
+                          className="lp-bulk-dd-dot"
+                          style={{ background: s.color || '#6b7280' }}
+                        />
+                        {s.name}
+                      </button>
+                    ))}
+                    {!bulkStatusOptions.length && (
+                      <div className="lp-bulk-dd-empty">No statuses available.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Delete */}
               {!bulkDeleteConfirm ? (
                 <button
@@ -4470,7 +4874,7 @@ export default function LeadsPage() {
                 </span>
               )}
             </div>
-            <button className="lp-bulk-clear" onClick={() => { setSelectedLeads(new Set()); setBulkDeleteConfirm(false); }}>
+            <button className="lp-bulk-clear" onClick={() => { setSelectedLeads(new Set()); setBulkDeleteConfirm(false); setBulkStatusOpen(false); }}>
               Clear selection
             </button>
           </div>
@@ -4498,15 +4902,16 @@ export default function LeadsPage() {
                 <th>Status</th>
                 <th><div className="th-cell">Assign To</div></th>
                 <th><div className="th-cell">Next Follow-up</div></th>
+                <th><div className="th-cell">Recent Activity</div></th>
                 <th><div className="th-cell">Created By</div></th>
                 <th style={{ width: 44 }} />
               </tr>
             </thead>
             <tbody>
               {loading && leads.length === 0 ? (
-                <tr><td colSpan="9" className="lp-empty">Loading leads…</td></tr>
+                <tr><td colSpan="12" className="lp-empty">Loading leads…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan="9" className="lp-empty">
+                <tr><td colSpan="12" className="lp-empty">
                   {leads.length === 0 ? 'No leads yet. Capture your first lead!' : 'No leads match your filters.'}
                 </td></tr>
               ) : paginated.map(l => (
@@ -4549,9 +4954,15 @@ export default function LeadsPage() {
                         </span>
                         <div className="lp-contact-btns" onClick={e => e.stopPropagation()}>
                           <a className="lp-contact-btn lp-contact-btn--call" href={`tel:${l.mobile}`} title="Call"><Phone size={12} /></a>
-                          <a className="lp-contact-btn lp-contact-btn--wa"
-                            href={`https://wa.me/${(l.whatsapp || l.mobile).replace(/\D/g, '')}`}
-                            target="_blank" rel="noreferrer" title="WhatsApp"><MessageCircle size={12} /></a>
+                          {/* waTarget, not a hand-built wa.me URL — the inline
+                              version had no country code, so wa.me/9876543210
+                              resolved to nothing. Hidden when the number is not
+                              messageable, same as the detail pane. */}
+                          {waTarget(l) && (
+                            <a className="lp-contact-btn lp-contact-btn--wa"
+                              href={waTarget(l)}
+                              target="_blank" rel="noreferrer" title="WhatsApp"><MessageCircle size={12} /></a>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -4638,6 +5049,22 @@ export default function LeadsPage() {
                       );
                     })() : <span className="lp-muted">—</span>}
                   </td>
+                  {/* ── Recent Activity ──────────────────────────────────
+                      The last thing that happened, from the server's LATERAL
+                      over lead_activities AND lead_notes. Two lines: what, then
+                      when and by whom — because "Status → Junk" without a time
+                      is not an answer to "is anyone working this?". */}
+                  <td>
+                    {l.last_activity_at ? (
+                      <div className="lp-act-cell">
+                        <span className="lp-act-what" title={activityLabel(l)}>{activityLabel(l)}</span>
+                        <span className="lp-act-when">
+                          {timeAgo(l.last_activity_at)}
+                          {l.last_activity_by && <span className="lp-act-who"> · {l.last_activity_by}</span>}
+                        </span>
+                      </div>
+                    ) : <span className="lp-muted">—</span>}
+                  </td>
                   {/* Created By column */}
                   <td>
                     {l.created_by_name ? (
@@ -4679,11 +5106,15 @@ export default function LeadsPage() {
                       href={`tel:${l.mobile}`} title="Call">
                       <Phone size={13} /> Call
                     </a>
-                    <a className="lp-mc-action-btn lp-mc-action-btn--wa"
-                      href={`https://wa.me/${(l.whatsapp || l.mobile).replace(/\D/g, '')}`}
-                      target="_blank" rel="noreferrer" title="WhatsApp">
-                      <MessageCircle size={13} /> WhatsApp
-                    </a>
+                    {/* waTarget adds the missing country code and hides the
+                        button when the number cannot be messaged. */}
+                    {waTarget(l) && (
+                      <a className="lp-mc-action-btn lp-mc-action-btn--wa"
+                        href={waTarget(l)}
+                        target="_blank" rel="noreferrer" title="WhatsApp">
+                        <MessageCircle size={13} /> WhatsApp
+                      </a>
+                    )}
                   </div>
                 </div>
                 <div className="lp-mc-right" onClick={e => e.stopPropagation()}>
@@ -4794,11 +5225,19 @@ export default function LeadsPage() {
       </div>
 
       {/* Modals */}
+      {/* The detail is a PAGE now, rendered over the list rather than in a
+          modal. onEdit no longer clears viewId: the Edit dialog opens ON TOP
+          and the conversation stays visible behind it, which is the point of
+          the layout. Clearing it here would drop you back to the list the
+          moment you clicked Edit. */}
       {viewId && (
-        <ViewLeadModal leadId={viewId} canEdit={canEdit} statusList={statusList}
+        <ViewLeadModal key={`${viewId}:${leadRefresh}`} leadId={viewId} canEdit={canEdit} statusList={statusList}
           onLeadLoaded={handleLeadLoaded}
           onClose={closeLead}
-          onEdit={l => { setViewId(null); setEditLead(l); }} />
+          /* Same handler the list passes, so a converts_to_appointment status
+             opens the same appointment form from either screen. */
+          onOpenConvert={setPageConvertModal}
+          onEdit={l => setEditLead(l)} />
       )}
       {editLead && (
         <EditLeadModal lead={editLead} statusList={statusList} leadSources={leadSources}

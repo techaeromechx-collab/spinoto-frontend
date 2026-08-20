@@ -1,0 +1,32 @@
+[package]
+name = "spinoto-crm"
+version = "0.1.0"
+description = "Spinoto CRM desktop shell"
+authors = ["Spinoto"]
+edition = "2021"
+
+# Cargo will not accept the space in "Spinoto CRM", so the crate is
+# spinoto-crm. The name the user sees comes from productName in
+# tauri.conf.json, not from here.
+
+[lib]
+name = "spinoto_crm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-notification = "2"
+
+[profile.release]
+# Smaller installer, and a CRM shell has no hot loop that needs the extra
+# codegen units. Roughly halves the binary versus the default release profile.
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

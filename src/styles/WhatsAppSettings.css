@@ -1,0 +1,1133 @@
+/* Settings → WhatsApp.
+ *
+ * Rail of templates on the left, the selected template's mapping on the right.
+ *
+ * Colour is doing real work on this screen, not decoration: a template that is
+ * LIVE (enabled + auto-send) sends messages to real customers without anyone
+ * touching it again. The green accent on the card and the dot in the rail are
+ * the only at-a-glance signal of that, which is why they are the one thing here
+ * that is not neutral grey.
+ */
+
+.wa-page {
+  padding: 4px 0 32px;
+  /* Capped, and it matters more here than on a list screen. This page is mostly
+     PROSE — a warning about variable order, a message preview, a test result to
+     read against a handset. On a 1920px monitor the banner ran the full width
+     and a single sentence became one 200-character line, which is past the
+     point most people stop reading carefully. That warning is the one thing on
+     this page that must be read carefully. */
+  max-width: 1180px;
+}
+
+.wa-head h2 {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 20px; font-weight: 800; margin: 0 0 8px;
+}
+.wa-head p {
+  margin: 0 0 16px; max-width: 720px;
+  font-size: 13px; line-height: 1.6; color: var(--text-muted);
+}
+
+/* ── Banners ──────────────────────────────────────────────────────────────── */
+.wa-banner {
+  display: flex; gap: 10px; align-items: flex-start;
+  border-radius: 9px; padding: 11px 13px;
+  font-size: 12.5px; line-height: 1.55; margin-bottom: 14px;
+}
+.wa-banner strong { font-weight: 700; }
+.wa-banner code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; padding: 1px 5px; border-radius: 4px;
+  background: rgba(0, 0, 0, .06);
+}
+.wa-banner svg { flex-shrink: 0; margin-top: 1px; }
+.wa-banner--info  { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; }
+.wa-banner--warn  { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.wa-banner--error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+/* Sits inside a card rather than above the page — no bottom margin of its own,
+   the card's padding provides it. */
+.wa-banner--inline { margin-bottom: 0; font-size: 12px; }
+
+/* ── Split: rail + detail ─────────────────────────────────────────────────── */
+.wa-split {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.wa-rail {
+  background: var(--card, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.wa-rail-hd {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.wa-rail-count {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .03em;
+  padding: 2px 7px; border-radius: 999px;
+  background: var(--bg-soft); color: var(--text-muted);
+}
+.wa-rail-list { max-height: 60vh; overflow-y: auto; }
+
+.wa-list-item {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; cursor: pointer;
+  padding: 10px 12px; border-bottom: 1px solid var(--border-soft, #f1f5f9);
+  /* The active marker is an inset shadow, not a border — a border would shift
+     every other row by 3px as the selection moves. */
+  box-shadow: inset 3px 0 0 transparent;
+  font: inherit; color: inherit;
+}
+.wa-list-item:last-child { border-bottom: none; }
+.wa-list-item:hover { background: var(--bg-soft); }
+.wa-list-item--active {
+  background: var(--bg-soft);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+.wa-list-name {
+  font-size: 12.5px; font-weight: 600; line-height: 1.35;
+  /* Template names are long. Wrapping keeps the rail narrow; truncating would
+     make two similar names indistinguishable. */
+  word-break: break-word;
+}
+.wa-list-state {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 3px; font-size: 11px; color: var(--text-muted);
+}
+/* A template that is OFF sends nothing. Greying the whole row says that at a
+   glance, where a small grey dot on otherwise-normal text does not. */
+.wa-list-item:has(.wa-dot--off) .wa-list-name { color: var(--text-muted); font-weight: 500; }
+
+.wa-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--text-muted);
+}
+.wa-dot--live   { background: #16a34a; }   /* enabled + auto — sending on its own */
+.wa-dot--manual { background: #d97706; }   /* enabled, but a human presses send */
+.wa-dot--off    { background: #cbd5e1; }
+
+/* ── The detail card ──────────────────────────────────────────────────────── */
+.wa-card {
+  background: var(--card, #fff);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  /* Left accent, coloured by state. Transparent by default so the card does not
+     jump when a template is switched on. */
+  box-shadow: inset 3px 0 0 transparent;
+}
+.wa-card--live { box-shadow: inset 3px 0 0 #16a34a; }
+.wa-card--off  { opacity: .72; }
+
+/* The identity block is capped so the toggles sit beside the template they
+   control. Pushed to opposite edges of a wide card they read as page-level
+   switches rather than as this template's. */
+.wa-card-top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 20px; padding: 14px 16px; flex-wrap: wrap;
+}
+.wa-card-top > div:first-child { flex: 1 1 380px; max-width: 620px; }
+.wa-card-title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+
+.wa-meta {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-top: 6px;
+}
+.wa-meta-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+
+.wa-input, .wa-select {
+  padding: 6px 9px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--bg, #fff);
+  color: var(--text); font-size: 12.5px; font-family: inherit;
+  min-width: 0;
+}
+.wa-input:focus, .wa-select:focus {
+  outline: none; border-color: var(--primary);
+}
+.wa-input--code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-width: 190px; flex: 1 1 190px;
+}
+.wa-input--lang { width: 64px; text-align: center; }
+
+/* The "fires when" value, shown in place of the status dropdown for templates
+   that are triggered from code. Deliberately plain text and not a disabled
+   <select>: a greyed-out control still reads as "something you could set if you
+   had permission", which is the wrong idea. There is nothing to choose. */
+.wa-fires-when {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  /* The sentence is longer than a status name, so it wraps rather than pushing
+     the row wide and misaligning the card. */
+  min-width: 0; line-height: 1.4;
+}
+
+/* ── Toggles ──────────────────────────────────────────────────────────────── */
+.wa-toggles { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.wa-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 11px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--bg, #fff);
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+.wa-toggle input { cursor: inherit; margin: 0; }
+.wa-toggle--on { border-color: #86efac; background: #f0fdf4; color: #166534; }
+/* Auto-send is the higher-stakes switch: on means messages leave without anyone
+   looking. Amber rather than green so the two toggles are not read as one. */
+.wa-toggle--auto.wa-toggle--on { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
+.wa-toggle--disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Preview ──────────────────────────────────────────────────────────────── */
+/* Capped to roughly a phone's line length. This is a preview of something the
+   customer reads on a handset; stretched across a desktop card it stops looking
+   like a message and the wrapping no longer resembles what they will see. */
+.wa-preview {
+  max-width: 560px;
+  margin: 0 16px 14px; padding: 11px 13px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+  font-size: 13px; line-height: 1.55; color: #14532d;
+  /* A template body can be long and its {{placeholders}} contain no spaces. */
+  word-break: break-word;
+}
+.wa-preview-note {
+  margin-top: 5px; font-size: 11px; color: #15803d; opacity: .85;
+}
+
+/* ── Variable order ───────────────────────────────────────────────────────── */
+.wa-section { padding: 0 16px 14px; }
+/* The variable list is the error-prone part of this screen and the reason the
+   test button exists. Left to fill a wide card, each row became 1300px of empty
+   space holding twenty characters, and the position marker ended up nowhere
+   near the controls that move it. */
+.wa-varlist { max-width: 560px; }
+.wa-section-h {
+  font-size: 11px; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px;
+}
+
+.wa-var {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px 6px 10px; border-radius: 7px;
+  background: var(--bg-soft); margin-bottom: 4px;
+  border: 1px solid transparent;
+}
+.wa-var:hover { border-color: var(--border); }
+.wa-var-pos {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; font-weight: 700; color: var(--primary);
+  flex-shrink: 0;
+}
+.wa-var-name { font-size: 12.5px; flex: 1; min-width: 0; word-break: break-word; }
+/* The reorder and remove controls stay hidden until the row is touched — the
+   list is read far more often than it is edited, and a stray click on ✕ here
+   silently changes what a customer receives. */
+/* Always visible, not hover-revealed.
+   Reordering IS the task on this screen — the banner at the top says a wrong
+   order sends customers the wrong value in every slot and nothing errors.
+   Hiding the only controls that fix that behind a hover was my mistake: it also
+   left them undiscoverable on touch, and made rows jump as the pointer moved. */
+.wa-var-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+.wa-mini {
+  display: inline-grid; place-items: center;
+  width: 24px; height: 24px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg, #fff);
+  color: var(--text-muted); cursor: pointer; padding: 0;
+}
+.wa-mini:hover:not(:disabled) { background: var(--bg-soft); color: var(--text); }
+.wa-mini:disabled { opacity: .35; cursor: not-allowed; }
+.wa-mini--danger:hover:not(:disabled) {
+  color: #b91c1c; border-color: #fecaca; background: #fef2f2;
+}
+
+/* ── Test send ────────────────────────────────────────────────────────────── */
+/* This footer carries the only check that exists.
+   The banner at the top of the page says so in as many words: Interakt cannot
+   report a template's variable order, a wrong order raises no error, and the
+   test message is the only way to catch it. It was also the smallest, faintest
+   control on the screen — so it gets a label saying what it is for, and the
+   input is capped rather than stretching the width of the card. */
+.wa-foot {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+.wa-foot::before {
+  content: 'Verify the order';
+  flex: 1 1 100%;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: -2px;
+}
+.wa-test { flex: 0 1 240px; min-width: 0; }
+
+.wa-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 8px; border: 1px solid transparent;
+  background: var(--primary); color: #fff;
+  font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.wa-btn:disabled { opacity: .55; cursor: not-allowed; }
+.wa-btn--ghost {
+  background: var(--bg, #fff); color: var(--text); border-color: var(--border);
+}
+.wa-btn--ghost:hover:not(:disabled) { background: var(--bg-soft); }
+
+/* ── Test result ──────────────────────────────────────────────────────────── */
+.wa-result {
+  margin: 0 16px 14px; padding: 10px 13px;
+  border-radius: 8px; font-size: 12.5px; line-height: 1.55;
+}
+.wa-result--ok  { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.wa-result--bad { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+.wa-result-h { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.wa-result-hint { margin-top: 4px; opacity: .85; font-size: 11.5px; }
+
+/* Position, key and resolved value — the three things needed to spot a
+   mis-mapping by eye, which is the whole reason to send a test. */
+.wa-check { margin-top: 6px; }
+.wa-check-row {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 3px 0; font-size: 12px;
+}
+.wa-check-pos {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700; flex-shrink: 0; opacity: .8;
+}
+.wa-check-key { color: var(--text-muted); flex-shrink: 0; }
+.wa-check-val { font-weight: 600; min-width: 0; word-break: break-word; }
+
+.wa-empty {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 40px 20px; color: var(--text-muted); font-size: 13px;
+}
+
+/* ── Narrow screens ───────────────────────────────────────────────────────── */
+@media (max-width: 860px) {
+  /* The rail stacks above the detail rather than shrinking — at 240px minus a
+     phone's margins the template names wrap to four lines each. */
+  .wa-split { grid-template-columns: minmax(0, 1fr); }
+  .wa-rail-list { max-height: 220px; }
+  .wa-card-top { flex-direction: column; gap: 12px; }
+  .wa-toggles { width: 100%; }
+  /* No hover on touch, so the reorder controls have to be permanent. */
+  .wa-var-actions { opacity: 1; }
+}
+
+/* ══ Added with the template-authoring feature ═══════════════════════════════
+   Registering an already-approved Interakt template from this screen, editing
+   which records may send it, and seeing what a mapping actually produces. */
+
+/* ── Which records may send a template ── */
+.wa-ents { display: flex; gap: 7px; flex-wrap: wrap; }
+.wa-ent {
+  padding: 5px 12px;
+  border: 1px solid var(--border, #e5e9ef);
+  border-radius: 999px;
+  background: var(--bg, #fff);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+}
+.wa-ent:hover:not(:disabled) { border-color: var(--text-muted, #64748b); color: var(--text, #0f172a); }
+.wa-ent--on { background: #ecfdf5; border-color: #6ee7b7; color: #047857; }
+.wa-ent:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── What this mapping will actually send ──
+   The test send proves the plumbing reaches a handset. This shows the MEANING,
+   and it updates the instant a variable moves — without it, a reorder is
+   invisible until somebody reads a message on a phone. */
+.wa-rendered { font-size: 12.5px; line-height: 1.8; color: var(--text, #0f172a); }
+.wa-rendered b {
+  background: #d1fae5;
+  color: #065f46;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+/* A slot with nothing mapped. Red, because it is not a formatting nicety —
+   Interakt refuses the send outright on a count mismatch. */
+.wa-rendered .wa-gap {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-style: normal;
+  font-weight: 700;
+}
+.wa-mismatch {
+  margin-top: 9px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #991b1b;
+}
+
+/* ── The add form ── */
+.wa-add {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--border, #e5e9ef);
+  border-radius: 12px;
+  background: var(--bg, #fff);
+}
+.wa-add-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 14px;
+}
+.wa-add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+
+/* A plain action row. Deliberately NOT .wa-foot, which carries a
+   "Verify the order" label in ::before for the test-send row it belongs to. */
+.wa-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border, #e5e9ef);
+}
+
+.wa-fld { display: block; margin-bottom: 14px; }
+.wa-fld > span {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 6px;
+}
+/* The explanation under a field. <em> rather than a class on a div so the
+   markup stays short — there is one of these under nearly every input, and
+   they carry the reasoning that stops a field being filled in wrongly. */
+.wa-fld > em {
+  display: block;
+  margin-top: 5px;
+  font-size: 11.5px;
+  font-style: normal;
+  line-height: 1.5;
+  color: var(--text-muted, #64748b);
+}
+.wa-fld .wa-input, .wa-fld .wa-select { width: 100%; }
+.wa-textarea { min-height: 74px; resize: vertical; line-height: 1.6; font-family: inherit; }
+.wa-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+
+.wa-btn--primary {
+  background: var(--primary, #16b994);
+  border-color: var(--primary, #16b994);
+  color: #fff;
+}
+.wa-btn--primary:disabled { opacity: .45; cursor: not-allowed; }
+/* Retire. Quiet until hovered — it is the one action on this screen that
+   cannot be undone from this screen. */
+.wa-btn--danger {
+  background: var(--bg, #fff);
+  border-color: var(--border, #e5e9ef);
+  color: #b91c1c;
+}
+.wa-btn--danger:hover:not(:disabled) { background: #fef2f2; border-color: #fca5a5; }
+.wa-btn--danger:disabled { opacity: .4; cursor: not-allowed; }
+
+@media screen and (max-width: 680px) {
+  .wa-add-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Tabs: Templates | Automations ────────────────────────────────────────────
+   Two halves of one system — WHAT can send vs WHEN it sends (wa_automations,
+   migration 151). Styled as underlined tabs rather than buttons so they read
+   as views of one page, not actions. */
+.wa-tabs {
+  display: flex; gap: 4px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.wa-tab {
+  appearance: none; background: none; border: none; cursor: pointer;
+  padding: 8px 14px 9px; font-size: 13px; font-weight: 700;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.wa-tab:hover { color: var(--text); }
+.wa-tab--active { color: var(--text); border-bottom-color: var(--primary); }
+
+/* ── Automations list ─────────────────────────────────────────────────────── */
+.wa-auto-list { margin-bottom: 18px; }
+.wa-auto-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; padding: 11px 14px; margin-bottom: 6px;
+  border: 1px solid var(--border); border-radius: 9px;
+  background: var(--bg, #fff);
+}
+/* Paused rows stay visible — a rule that exists but does nothing should look
+   dimmed, not deleted. */
+.wa-auto-row--off { opacity: .55; }
+.wa-auto-main { min-width: 0; }
+.wa-auto-event {
+  font-size: 13px; font-weight: 700; line-height: 1.45;
+}
+.wa-auto-when {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; font-weight: 700; color: var(--primary);
+  background: rgba(0, 0, 0, .04); border-radius: 5px;
+  padding: 1px 6px; margin-left: 4px;
+}
+.wa-auto-template {
+  font-size: 12.5px; color: var(--text); margin-top: 3px; line-height: 1.45;
+}
+.wa-auto-recipient { color: var(--text-muted); font-size: 12px; }
+/* Same palette as .wa-banner--warn, row-sized: an automation that is ON but
+   cannot send is the one state on this tab that needs a second look. */
+.wa-auto-warn {
+  display: flex; align-items: flex-start; gap: 6px; margin-top: 6px;
+  font-size: 11.5px; line-height: 1.5; color: #92400e;
+}
+.wa-auto-warn svg { flex-shrink: 0; margin-top: 2px; }
+.wa-auto-actions {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+
+/* ── Add-automation form ──────────────────────────────────────────────────── */
+.wa-auto-add {
+  border: 1px dashed var(--border); border-radius: 9px;
+  padding: 14px 16px;
+}
+.wa-auto-add-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px; align-items: end;
+}
+.wa-auto-add-btn { padding-bottom: 2px; }
+
+@media (max-width: 860px) {
+  .wa-auto-row { flex-direction: column; }
+  .wa-auto-actions { align-self: flex-end; }
+}
+
+/* ── Connection tab ───────────────────────────────────────────────────────────
+   Write-only credential fields: status line, input, actions. Grid rather than
+   a flex row so the input keeps a readable width and the status/buttons do
+   not shove it around. */
+.wa-conn-row {
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  gap: 8px; max-width: 560px;
+}
+.wa-conn-btns { display: flex; gap: 8px; }
+.wa-conn-state { font-size: 12.5px; font-weight: 600; }
+.wa-conn-state code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; padding: 1px 5px; border-radius: 4px;
+  background: rgba(0, 0, 0, .06);
+}
+.wa-conn-state--on  { color: #166534; }
+.wa-conn-state--off { color: var(--text-muted); }
+
+/* ═══ Redesign (stats · guided cards · automations panel · log) ═══════════════
+   Appended as one block so the earlier rules keep working for anything not
+   redesigned; later rules win where they overlap. */
+
+/* Base test row, redefined as a proper flex row: the earlier `flex: 0 1 240px`
+   dates from a layout where it sat inside a flex footer that no longer
+   exists, and it left `margin-left: auto` on the Retire button doing nothing. */
+.wa-test {
+  display: flex; align-items: center; gap: 8px;
+  flex: initial; min-width: 0;
+  padding: 0 16px 14px;
+}
+.wa-test--guide { padding: 0 0 10px; }
+.wa-test--adv   { padding: 0 0 10px; }
+
+/* ── Status chips ─────────────────────────────────────────────────────────────
+   One word that answers "what state is this in?" — used on template cards,
+   automation rows and the message log so the vocabulary is identical
+   everywhere. Same palette logic as the toggles: green = live, amber =
+   half-on, grey = off, red = failed. */
+.wa-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: .01em;
+  vertical-align: middle; white-space: nowrap;
+}
+.wa-card-title .wa-chip { margin-left: 8px; }
+.wa-chip--live   { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.wa-chip--manual { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.wa-chip--off    { background: var(--bg-soft, #f3f4f6); border: 1px solid var(--border); color: var(--text-muted); }
+.wa-chip--bad    { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+
+/* Module chips on automation rows — a colour per module so a mixed list can
+   be scanned by eye. Muted backgrounds, strong text, same shape as above. */
+.wa-chip--module { margin-right: 7px; }
+.wa-chip--lead        { background: #eef2ff; border: 1px solid #c7d2fe; color: #3730a3; }
+.wa-chip--appointment { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+.wa-chip--estimate    { background: #fdf4ff; border: 1px solid #f5d0fe; color: #86198f; }
+.wa-chip--invoice     { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
+.wa-chip--payment     { background: #f0fdfa; border: 1px solid #99f6e4; color: #115e59; }
+.wa-chip--x           { background: var(--bg-soft, #f3f4f6); border: 1px solid var(--border); color: var(--text-muted); }
+
+/* ── Stats row ────────────────────────────────────────────────────────────────
+   The "is it working?" cards. Number first in visual weight; the rate line
+   under it is the judgement call, so failure red only appears when the count
+   is non-zero — a row of zeros should read as calm, not as five alarms. */
+.wa-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px; margin-bottom: 16px;
+}
+.wa-stat {
+  display: flex; gap: 11px; align-items: flex-start;
+  padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg, #fff); min-width: 0;
+}
+.wa-stat-ic {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+}
+.wa-stat-ic--green  { background: #f0fdf4; color: #16a34a; }
+.wa-stat-ic--blue   { background: #eff6ff; color: #2563eb; }
+.wa-stat-ic--teal   { background: #f0fdfa; color: #0d9488; }
+.wa-stat-ic--red    { background: #fef2f2; color: #dc2626; }
+.wa-stat-ic--violet { background: #f5f3ff; color: #7c3aed; }
+.wa-stat-label {
+  font-size: 11px; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.wa-stat-value { font-size: 21px; font-weight: 800; line-height: 1.25; }
+.wa-stat-value--bad { color: #dc2626; }
+.wa-stat-sub { font-size: 11px; color: var(--text-muted); min-height: 14px; }
+.wa-stat-sub--bad { color: #dc2626; font-weight: 600; }
+
+/* ── The guided enable strip on a disabled template card ──────────────────── */
+.wa-guide {
+  margin: 0 16px 14px; padding: 12px 14px;
+  border: 1px dashed var(--border); border-radius: 9px;
+  background: var(--bg-soft, #fafafa);
+}
+.wa-guide .wa-result { margin: 0 0 10px; }
+.wa-guide-step {
+  display: flex; gap: 9px; align-items: flex-start; margin-bottom: 8px;
+}
+.wa-guide-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 999px; flex-shrink: 0;
+  background: var(--bg, #fff); border: 1px solid var(--border);
+  font-size: 11px; font-weight: 800; color: var(--text-muted);
+  margin-top: 1px;
+}
+.wa-guide-num--done { background: #f0fdf4; border-color: #86efac; color: #16a34a; }
+.wa-guide-text { font-size: 12.5px; line-height: 1.5; min-width: 0; }
+.wa-guide-text strong { font-weight: 700; }
+.wa-guide-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+
+/* ── Advanced mapping (collapsed) ───────────────────────────────────────────── */
+.wa-adv { margin: 0 16px 14px; }
+.wa-adv summary {
+  display: inline-flex; align-items: center; gap: 6px;
+  list-style: none; cursor: pointer; user-select: none;
+  font-size: 12px; font-weight: 700; color: var(--text-muted);
+  padding: 5px 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg, #fff);
+}
+.wa-adv summary::-webkit-details-marker { display: none; }
+.wa-adv summary:hover { color: var(--text); }
+.wa-adv-chev { transition: transform .15s ease; }
+.wa-adv[open] .wa-adv-chev { transform: rotate(180deg); }
+.wa-adv-body {
+  margin-top: 10px; padding-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+/* Sections inside the fold already carry the card's side padding — the fold
+   itself is inset, so neutralise the double indent. */
+.wa-adv-body .wa-section { padding-left: 0; padding-right: 0; }
+.wa-adv-body .wa-test { padding-left: 0; padding-right: 0; }
+.wa-adv-body .wa-result { margin-left: 0; margin-right: 0; }
+
+/* ── Automations: list + create/edit panel ──────────────────────────────────── */
+.wa-auto-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px; align-items: start;
+}
+.wa-auto-listhead {
+  font-size: 11.5px; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.wa-auto-row--editing { border-color: var(--primary); }
+.wa-auto-panel {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; background: var(--bg, #fff);
+  position: sticky; top: 12px;
+}
+.wa-auto-panel-h {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13.5px; font-weight: 800; margin-bottom: 12px;
+}
+.wa-auto-fixed {
+  font-size: 12.5px; font-weight: 600; color: var(--text-muted);
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg-soft, #fafafa);
+}
+
+/* ── Recent messages log ────────────────────────────────────────────────────── */
+.wa-log {
+  margin-top: 18px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg, #fff); padding: 10px 14px 6px;
+}
+.wa-log-h {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.wa-log-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0; border-top: 1px solid var(--bg-soft, #f3f4f6);
+  font-size: 12.5px; min-width: 0;
+}
+.wa-log-who { min-width: 0; flex: 1 1 160px; display: flex; flex-direction: column; }
+.wa-log-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wa-log-num  { font-size: 11px; color: var(--text-muted); }
+.wa-log-tpl  { flex: 1 1 140px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wa-log-ref  {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+}
+.wa-log-time { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+
+/* ── Connection checklist headings ──────────────────────────────────────────── */
+.wa-step-h {
+  display: flex; align-items: center; gap: 8px;
+  text-transform: none; letter-spacing: 0; font-size: 13px;
+}
+
+@media (max-width: 980px) {
+  /* The editor panel stacks above the list on narrow screens — creating is
+     the rarer act, but a sticky column at 300px of a phone is unusable. */
+  .wa-auto-split { grid-template-columns: minmax(0, 1fr); }
+  .wa-auto-panel { position: static; order: -1; }
+}
+
+/* ═══ Create-automation modal + WhatsApp template preview panel ═══════════════ */
+
+/* Title row: the page's one primary action sits beside the heading. */
+.wa-head-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 8px;
+}
+.wa-head-row h2 { margin: 0; }
+
+/* ── Modal ────────────────────────────────────────────────────────────────── */
+.wa-modal-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(15, 23, 42, .45);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 8vh 16px 16px;
+}
+.wa-modal {
+  width: 420px; max-width: 100%;
+  max-height: 84vh; overflow-y: auto;
+  background: var(--bg, #fff);
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
+}
+
+/* ── Automation rows are clickable (they drive the preview) ──────────────── */
+.wa-auto-row--click { cursor: pointer; }
+.wa-auto-row--click:hover { border-color: #cbd5e1; }
+.wa-auto-row--selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+
+/* ── Preview panel chrome ─────────────────────────────────────────────────── */
+.wa-wachip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 700; padding: 2px 8px;
+  border-radius: 999px; background: #f0fdf4; border: 1px solid #bbf7d0;
+  color: #166534;
+}
+.wa-prev-sub {
+  font-size: 12px; color: var(--text-muted); margin: -6px 0 10px;
+  line-height: 1.45;
+}
+.wa-prev-hint {
+  font-size: 12.5px; color: var(--text-muted); line-height: 1.55;
+  padding: 8px 0;
+}
+
+/* ── The phone ────────────────────────────────────────────────────────────────
+   Deliberately WhatsApp's own palette rather than the app's — the point of
+   the panel is "this is what the customer sees", and it only reads that way
+   if it looks like their phone, not like another Spinoto card. */
+.wa-phone {
+  border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.wa-phone-head {
+  display: flex; align-items: center; gap: 9px;
+  background: #075e54; color: #fff; padding: 9px 12px;
+}
+.wa-phone-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 999px; flex-shrink: 0;
+  background: #fff; color: #075e54; font-weight: 800; font-size: 13px;
+}
+.wa-phone-who { display: flex; flex-direction: column; min-width: 0; }
+.wa-phone-name {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12.5px; font-weight: 700; line-height: 1.3;
+}
+.wa-phone-name svg { color: #34d399; }
+.wa-phone-sub { font-size: 10.5px; opacity: .75; }
+.wa-phone-bg {
+  /* WhatsApp's chat wallpaper tone; a faint diagonal texture so it reads as
+     the chat screen without shipping an image. */
+  background: #ece5dd;
+  background-image: repeating-linear-gradient(
+    45deg, rgba(255, 255, 255, .35) 0 2px, transparent 2px 14px);
+  padding: 16px 12px 22px;
+  min-height: 110px;
+}
+.wa-phone-bubble {
+  position: relative;
+  background: #fff; border-radius: 8px; border-top-left-radius: 2px;
+  padding: 8px 11px 16px;
+  max-width: 92%;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, .12);
+  font-size: 12.5px; line-height: 1.55; color: #111b21;
+  word-break: break-word; white-space: pre-line;
+}
+.wa-phone-text--empty { color: var(--text-muted); font-size: 12px; }
+.wa-phone-var {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; font-weight: 700; color: #075e54;
+  background: #e7f6f3; border-radius: 4px; padding: 0 4px;
+}
+.wa-phone-time {
+  position: absolute; right: 9px; bottom: 3px;
+  font-size: 10px; color: #667781;
+}
+
+/* ── Variables under the phone ────────────────────────────────────────────── */
+.wa-prev-varh {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.wa-prev-varh span {
+  font-weight: 600; letter-spacing: 0; text-transform: none; font-size: 11px;
+}
+.wa-prev-var {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 9px; border-radius: 7px;
+  background: var(--bg-soft, #f6f7f8); margin-bottom: 4px;
+  font-size: 12.5px;
+}
+.wa-prev-var-pos {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; font-weight: 700; color: var(--primary); flex-shrink: 0;
+}
+.wa-prev-var-name { min-width: 0; }
+
+@media (max-width: 640px) {
+  .wa-head-row { flex-wrap: wrap; }
+}
+/* Base for the bubble text span (the --empty variant modifies it). */
+.wa-phone-text { display: inline; }
+
+/* A record-type chip the current variables make impossible. Dimmed but still
+   readable, because the tooltip on it is the explanation. */
+.wa-ent--blocked { opacity: .45; cursor: not-allowed; text-decoration: line-through; }
+
+/* ── Skipped-send rows in the log ─────────────────────────────────────────────
+   Amber, because every one is an action item: the reason names the fix
+   (add a map link, switch auto-send on, approve the invoice first). */
+.wa-log-row--skip {
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 7px;
+  padding: 7px 9px; margin-bottom: 4px;
+}
+.wa-log-reason {
+  flex: 2 1 220px; min-width: 0;
+  font-size: 12px; line-height: 1.45; color: #92400e;
+}
+
+/* Clear-all + refresh, side by side. .wa-log-h is justify-content: space-between,
+   so the pair has to be one child or the two buttons push to opposite edges. */
+.wa-log-acts { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+/* Dismiss one row.
+   Amber rather than grey so it belongs to the amber card instead of looking
+   like a control borrowed from the row above, and flex-shrink:0 because the
+   reason text next to it is flex: 2 1 220px and would otherwise squeeze it to
+   nothing on a narrow screen. */
+.wa-log-x {
+  display: inline-grid; place-items: center;
+  width: 20px; height: 20px; flex-shrink: 0;
+  padding: 0; border: 0; border-radius: 5px;
+  background: transparent; color: #b45309;
+  cursor: pointer; opacity: .55;
+}
+.wa-log-x:hover { opacity: 1; background: #fef3c7; }
+/* Keyboard users get the same affordance the mouse gets on hover — without
+   this the button is invisible to anyone tabbing through the panel. */
+.wa-log-x:focus-visible { opacity: 1; outline: 2px solid #b45309; outline-offset: 1px; }
+
+/* ══ Routing tab ═════════════════════════════════════════════════════════════
+   The rota — who receives an inbound WhatsApp lead.
+
+   Every class here is war-, not wa-. wa- is not private to this file: it is
+   also used by WhatsAppSendMenu.css, and the two collided badly enough once
+   already that a full-screen backdrop rendered as a 420px card in the corner.
+   A distinct prefix costs nothing and cannot do that. */
+
+.war { display: flex; flex-direction: column; gap: 14px; }
+
+.war-loading {
+  display: flex; align-items: center; gap: 8px;
+  padding: 24px 4px;
+  font-size: 13px; color: var(--text-muted);
+}
+.war-empty {
+  padding: 26px 12px; text-align: center;
+  font-size: 13px; font-style: italic; color: var(--text-muted);
+}
+
+/* Green, matching .wa-banner--info's shape. Not a --ok on .wa-banner itself,
+   because that class lives in this file for the tabs beside this one and
+   adding variants to a shared thing to serve one screen is how shared things
+   stop being shareable. */
+.war-banner--ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+
+/* ── The category chips ─────────────────────────────────────────────────── */
+.war-cats {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--bg, #fff);
+}
+.war-cats-hd {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.war-cats-hd > span { font-size: 12.5px; font-weight: 700; color: var(--text); }
+.war-cats-hd > em {
+  font-style: normal; font-size: 11.5px; color: var(--text-muted);
+}
+.war-cats-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.war-cat {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 8px 5px 12px;
+  border: 1px solid var(--border); border-radius: 20px;
+  background: var(--bg-soft);
+  font-size: 12px; font-weight: 600; color: var(--text);
+  white-space: nowrap;
+}
+.war-cat > button {
+  display: inline-grid; place-items: center;
+  width: 18px; height: 18px; padding: 0;
+  border: 0; border-radius: 50%;
+  background: transparent; color: var(--text-muted);
+  cursor: pointer;
+}
+.war-cat > button:hover { background: #fee2e2; color: #b91c1c; }
+
+.war-cat-add { display: inline-flex; align-items: center; gap: 6px; }
+.war-cat-add input {
+  width: 150px; padding: 5px 10px;
+  border: 1px solid var(--border); border-radius: 20px;
+  font: inherit; font-size: 12px; color: var(--text);
+  background: var(--bg, #fff);
+}
+.war-cat-add button {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 11px;
+  border: 1px solid var(--border); border-radius: 20px;
+  background: var(--bg, #fff);
+  font: inherit; font-size: 12px; font-weight: 700; color: var(--text);
+  cursor: pointer;
+}
+.war-cat-add button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── The grid ───────────────────────────────────────────────────────────── */
+/* Scrolls sideways rather than squeezing: add a fourth and fifth option to the
+   flow and the checkbox columns stay legible instead of collapsing to slivers. */
+.war-grid-wrap {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+  background: var(--bg, #fff);
+}
+.war-grid { width: 100%; border-collapse: collapse; }
+
+.war-grid th {
+  padding: 10px 12px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--text-muted); text-align: center;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.war-th-user { text-align: left !important; }
+.war-th-user svg { vertical-align: -2px; margin-right: 5px; }
+.war-th-duty, .war-th-last { width: 1%; }
+
+.war-grid td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.war-grid tr:last-child td { border-bottom: 0; }
+
+/* Off duty is PAUSED, not disabled.
+   Fading the whole row — including the switch that turns it back on — made a
+   row somebody had merely stood down look like a row the screen had locked. So
+   the ticks and the name dim to say "not today", and the switch stays at full
+   strength because it is the one control that must obviously still work. */
+.war-row--off .war-user,
+.war-row--off .war-cell:not(.war-cell--duty) { opacity: .45; }
+.war-row--off .war-last { opacity: .6; }
+
+.war-user { display: flex; flex-direction: column; gap: 1px; min-width: 150px; }
+.war-user strong { font-size: 13px; font-weight: 700; color: var(--text); }
+.war-user em {
+  font-style: normal; font-size: 11px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;
+}
+
+.war-cell { text-align: center; }
+
+/* A drawn box rather than the native checkbox: the native one is 13px on most
+   platforms, which is a hard target in a grid of them. */
+.war-cell label { display: inline-flex; cursor: pointer; }
+.war-cell input { position: absolute; opacity: 0; width: 0; height: 0; }
+.war-box {
+  display: inline-block;
+  width: 19px; height: 19px;
+  border: 1.5px solid var(--border); border-radius: 5px;
+  background: var(--bg, #fff);
+  position: relative;
+  transition: background .12s, border-color .12s;
+}
+.war-cell input:checked + .war-box {
+  background: #0f9d76; border-color: #0f9d76;
+}
+.war-cell input:checked + .war-box::after {
+  content: ''; position: absolute;
+  left: 6px; top: 2px; width: 5px; height: 10px;
+  border: solid #fff; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.war-cell input:focus-visible + .war-box { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── On-duty switch ─────────────────────────────────────────────────────── */
+.war-duty {
+  width: 38px; height: 21px;
+  border: 0; border-radius: 20px; padding: 0;
+  background: var(--border);
+  cursor: pointer; position: relative;
+  transition: background .15s;
+}
+.war-duty > span {
+  position: absolute; top: 2px; left: 2px;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: #fff;
+  transition: transform .15s;
+}
+.war-duty--on { background: #0f9d76; }
+.war-duty--on > span { transform: translateX(17px); }
+
+.war-last {
+  font-size: 11.5px; color: var(--text-muted);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.war-never { color: #0f9d76; font-weight: 600; }
+
+.war-actions { display: flex; align-items: center; gap: 12px; }
+.war-actions .btn { display: inline-flex; align-items: center; gap: 7px; }
+.war-dirty { font-size: 12px; font-weight: 600; color: #92400e; }
+
+@media screen and (max-width: 700px) {
+  .war-user em { display: none; }
+  .war-th-last, .war-last { display: none; }
+}
+
+/* ── One person takes everything ─────────────────────────────────────────────
+   A single switch, presented as one. Off, it is a quiet row of settings text;
+   on, it is the loudest thing on the screen, because everything below it has
+   stopped applying and that must not be discoverable only by wondering why the
+   ticks are not working. */
+.war-all {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg, #fff);
+}
+.war-all--on {
+  border-color: #0f9d76;
+  background: #f0fdf4;
+  box-shadow: inset 3px 0 0 #0f9d76;
+}
+.war-all-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.war-all-txt strong { font-size: 13px; font-weight: 700; color: var(--text); }
+.war-all-txt em {
+  font-style: normal; font-size: 11.5px; line-height: 1.5; color: var(--text-muted);
+  max-width: 620px;
+}
+.war-all--on .war-all-txt em { color: #166534; }
+.war-all select {
+  flex-shrink: 0;
+  min-width: 210px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--text);
+  background: var(--bg, #fff);
+  cursor: pointer;
+}
+.war-all--on select { border-color: #0f9d76; color: #166534; }
+
+/* ── …and who takes what it cannot sort ──────────────────────────────────────
+   Blue rather than the green above, and that is not decoration. Both switches
+   name one person, both sit in the same box, and when both are on a screen
+   with two identical green bars invites reading them as one setting shown
+   twice. Different colour, different job: green stops the rota, blue only
+   catches what falls through it. */
+.war-all--fb.war-all--on {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+.war-all--fb.war-all--on .war-all-txt em { color: #1d4ed8; }
+.war-all--fb.war-all--on select { border-color: #2563eb; color: #1d4ed8; }
+
+/* The rota, while one person is taking everything.
+   pointer-events:none rather than a disabled attribute on every control: it is
+   one rule instead of threading a flag through each checkbox, and it cannot
+   drift out of step with the banner above. Faded enough to read as inactive,
+   readable enough to see what will come back when the mode is turned off. */
+.war-off {
+  opacity: .45;
+  pointer-events: none;
+  user-select: none;
+}

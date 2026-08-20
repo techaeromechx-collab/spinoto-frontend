@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, memo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
+import { useAppPaths } from '../lib/appPaths.js';
 import { api, API_URL, getToken } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
 import SplitPane, { RecordCard } from '../components/SplitPane.jsx';
@@ -9,18 +10,60 @@ import { useMediaQuery, MOBILE_LIST_QUERY } from '../hooks/useMediaQuery.js';
 import { useDetailRail } from '../hooks/useDetailRail.js';
 import InvoiceExtrasEditor from '../components/InvoiceExtrasEditor.jsx';
 import InvoiceDateDialog from '../components/InvoiceDateDialog.jsx';
-import { openDocumentPdf, downloadDocumentPdf } from '../lib/documentPdf.js';
+import CollectPaymentModal from '../components/CollectPaymentModal.jsx';
+import { PaymentLinksPanel } from '../components/PaymentsAdminTabs.jsx';
+import { openDocumentPdf, downloadDocumentPdf, openAdvanceVoucher } from '../lib/documentPdf.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { getRoundingFunction } from '../lib/math.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
+import { useFlipPopup } from '../hooks/useFlipPopup.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
 import { usePageCrumb } from '../lib/pageCrumbStore.js';
 import {
   Receipt, Search, RefreshCw, X, Eye, Trash2, SlidersHorizontal, ArrowDown,
   AlertCircle, CheckCircle2, Clock, Plus, ChevronLeft, ChevronRight, Printer, Download, Car, ChevronDown, Pencil,
+  CreditCard, Link2, Lock, Wallet, FileText, Loader2,
+  // Icon labels on the document header replace an 84px text column per row —
+  // which is what buys the width for the summary to sit beside Bill To and
+  // Vehicle rather than underneath them. See ci-doc-il in the stylesheet.
+  User, Phone, Building2, MapPin, Tag, Layers, Calendar, BadgeCheck, Landmark,
+  // Coverage marks in the Warranty panel. These replace 🛡 and ✔, which render
+  // as OS colour emoji and were the last cartoon glyphs on the document.
+  ShieldCheck,
+  // Send the invoice to the customer on WhatsApp.
+  MessageCircle,
 } from 'lucide-react';
+
+/**
+ * A payment taken through the gateway rather than recorded by hand.
+ *
+ * `source` comes from customer_invoice_payments (migration 125). The fallback
+ * on txn_ref covers a response served before that column reached the API — an
+ * online payment misread as manual would show a delete button the backend
+ * refuses, which is the one wrong answer worth guarding against here.
+ */
+const isOnline = pay => pay?.source === 'gateway' || Boolean(pay?.txn_ref);
+
+/**
+ * An advance applied to this invoice, rather than a payment recorded against it.
+ *
+ * The money was taken against the estimate before this invoice existed, so the
+ * ledger row's customer_invoice_id is NULL and both the edit and delete handlers
+ * — which match on `id AND customer_invoice_id` — return 404 for it. Rendering
+ * it as an ordinary payment would put a pencil and a bin on a row where neither
+ * can work. It is managed from the customer's Payments tab instead.
+ */
+const isAdvance = pay => pay?.payment_type === 'advance';
+
+/**
+ * True when only part of the advance landed on this invoice. The row shows the
+ * applied figure — the rest is still credit — and saying so prevents "we took
+ * ₹2,000 but the invoice says ₹1,500" being read as a missing payment.
+ */
+const isPartial = pay =>
+  isAdvance(pay) && Number(pay?.payment_amount || 0) - Number(pay?.amount || 0) > 0.01;
 import '../styles/listLayout.css';
 import '../styles/CustomerInvoicesPage.css';
 
@@ -48,6 +91,25 @@ function fmtDate(d) {
     : null;
   const dt = ymd ? new Date(ymd[0], ymd[1] - 1, ymd[2]) : new Date(d);
   return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+/**
+ * A full timestamp, for the audit footer.
+ *
+ * Separate from fmtDate on purpose: that one deliberately strips the time,
+ * because invoice_date and paid_at are calendar DATES and building them from
+ * parts is what stops them rendering a day early west of UTC. created_at and
+ * updated_at are real instants — they carry a timezone and want the clock time,
+ * which is the whole point of an audit line.
+ */
+function fmtDateTime(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  });
 }
 
 // The date shown to the user is the invoice's legal date. created_at is only a
@@ -507,14 +569,14 @@ function ciCard(inv) {
 
 // ── Detail Drawer ─────────────────────────────────────────────────────────────
 function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }) {
-  const rawNavigate = useNavigate();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isHubUser = !!user?.hub_id;
-  // Hub Portal renders this drawer as a plain tab with no nested routing, and
-  // its admin-only routes (Estimates/Customers/Purchase Invoices) bounce hub
-  // users straight back to /hub (App.jsx's RequireAdmin). So navigate() has
-  // to be a no-op here for hub users — the drawer still opens fine locally.
-  const navigate = isHubUser ? () => {} : rawNavigate;
+  // Where each linked document lives for THIS user — /estimates for staff,
+  // /hub/estimates for a hub login. null means the hub portal has no such
+  // screen, and the link is hidden rather than pointed somewhere wrong.
+  const P = useAppPaths();
+
 
   const [inv, setInv] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -542,6 +604,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   // Editable CI notes — independent of the estimate's notes (which are only
   // copied over once, at generation time).
   const [showAddPayment, setShowAddPayment] = useState(false);
+  const [showCollect, setShowCollect] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
@@ -588,6 +651,32 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   }, [invoiceId, showToast]);
 
   useEffect(() => { load(); }, [load]);
+
+  const [applyingCredit, setApplyingCredit] = useState(false);
+
+  /**
+   * Put the customer's unused money on this invoice, oldest receipt first.
+   *
+   * ONE request, not one per receipt. The server does the whole thing in a
+   * single transaction — a browser closed halfway cannot leave the invoice
+   * part-paid from three receipts and untouched by a fourth.
+   */
+  async function applyCustomerCredit() {
+    if (!inv || applyingCredit) return;
+    setApplyingCredit(true);
+    try {
+      const out = await api('/api/payments/apply-credit', {
+        method: 'POST',
+        body: { mobile: inv.mobile, customer_invoice_id: inv.id },
+      });
+      showToast(out.message);
+      await load();
+    } catch (e) {
+      showToast(e.message || 'Could not apply the credit.', 'error');
+    } finally {
+      setApplyingCredit(false);
+    }
+  }
 
   async function deletePayment(payId) {
     setDeletingPayId(payId);
@@ -668,6 +757,22 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
     slab.sgst = r2(slab.gstTotal - slab.cgst);
   });
   const gstSlabs = Object.values(gstSlabMap).sort((a, b) => b.pct - a.pct);
+  /**
+   * The half-rate to print in the CGST/SGST column headers, or null when the
+   * lines do not agree.
+   *
+   * Only taxed lines count: a zero-GST line (an exempt part, a warranty redo at
+   * ₹0) is not a second slab, and letting it in would drop every ordinary
+   * invoice back to the generic header for no reason.
+   */
+  const uniformHalfPct = (() => {
+    const rates = [...new Set(
+      items.map(i => parseFloat(i.gst_percent ?? 0)).filter(r => r > 0)
+    )];
+    if (rates.length !== 1) return null;
+    const half = rates[0] / 2;
+    return half.toFixed(half % 1 === 0 ? 0 : 1);
+  })();
   const paid = inv?.amount_paid ?? payments.reduce((s, p) => s + parseFloat(p.amount ?? 0), 0);
   const balance = Math.max(0, parseFloat(grandTotal) - parseFloat(paid));
 
@@ -682,6 +787,147 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   // the backend enforces it too; here it drives the warning + disabled button.
   const hubAlreadyPaid = parseFloat(inv?.linked_pi_amount_paid || 0);
   const canEditPayDate = useCan('EDIT_INVOICE_PAYMENT');
+  // Putting money already received against an invoice is its own permission —
+  // see payments.routes.js. Nothing new arrives; what changes is where it counts.
+  const canAllocateCredit = useCan('ALLOCATE_PAYMENT');
+  const customerCredit = parseFloat(inv?.customer_credit || 0);
+  // Taking money through the gateway is its own permission, separate from
+  // recording a payment by hand: one opens a charge on the company's merchant
+  // account, the other writes a bookkeeping row. Hub logins never see it — the
+  // backend refuses them outright, and offering a button that always 403s is
+  // worse than not offering one.
+  const canCollectOnline = useCan('COLLECT_PAYMENT') && !isHubUser;
+  // A link is a public URL that keeps working for whoever it is forwarded to,
+  // which is a different risk from taking a payment on a device you are
+  // holding — hence its own permission rather than riding on COLLECT_PAYMENT.
+  const canPayLink = useCan('CREATE_PAYMENT_LINK') && !isHubUser;
+  const [linkBusy, setLinkBusy] = useState(false);
+
+  // ── Send the invoice on WhatsApp ────────────────────────────────────────
+  //
+  // Its own permission, not COLLECT_PAYMENT: this messages the customer on a
+  // channel the workshop pays per conversation for, and a template send is
+  // irreversible in a way a payment link (which nobody has to open) is not.
+  // Hidden for a hub — the message goes out as Spinoto, from Spinoto's number.
+  const canSendWa = useCan('SEND_WHATSAPP') && !isHubUser;
+  const [waOpen, setWaOpen]       = useState(false);
+  const [waPreview, setWaPreview] = useState(null);
+  const [waLoading, setWaLoading] = useState(false);
+  const [waSending, setWaSending] = useState(false);
+  const [waError, setWaError]     = useState('');
+  // The number the message will actually go to, and whether it is being edited.
+  //
+  // Seeded from the preview rather than from inv.mobile: the dispatcher decides
+  // the target (whatsapp number, else mobile) and typing the mobile in here by
+  // hand would quietly override a customer's separate WhatsApp number.
+  const [waTo, setWaTo]           = useState('');
+  const [waEditTo, setWaEditTo]   = useState(false);
+
+  // Preview BEFORE send, always, even though it costs a round trip.
+  //
+  // wa_templates stores the variable ORDER by hand — Meta owns the body text
+  // and this system owns only the list of values to slot into it. A template
+  // edited on Interakt without the order being re-transcribed here sends the
+  // vehicle number where the amount should be, to a real customer, with no way
+  // to recall it. The preview is the only place that mismatch is visible, so
+  // the button opens it rather than firing.
+  const openWhatsApp = useCallback(async () => {
+    if (!inv) return;
+    setWaOpen(true); setWaPreview(null); setWaError(''); setWaLoading(true);
+    setWaTo(''); setWaEditTo(false);
+    try {
+      const r = await api(
+        `/api/whatsapp/messages/preview?entity_type=invoice&entity_id=${inv.id}` +
+        `&template_key=invoice_ready`
+      );
+      setWaPreview(r);
+      setWaTo(r?.to || '');
+    } catch (e) {
+      setWaError(e.message || 'Could not build the message preview.');
+    } finally {
+      setWaLoading(false);
+    }
+  }, [inv]);
+
+  const sendWhatsApp = useCallback(async () => {
+    if (!inv) return;
+    setWaSending(true); setWaError('');
+    try {
+      const typed = waTo.trim();
+      // `to` is sent ONLY when it differs from what the dispatcher resolved.
+      // Echoing the resolved number back would record every send as an override
+      // in wa_messages, and the log would stop being able to answer "did we
+      // message the number on file, or one somebody typed?".
+      const overridden = typed && typed !== (waPreview?.to || '');
+      await api('/api/whatsapp/messages/send', {
+        method: 'POST',
+        body: {
+          entity_type: 'invoice',
+          entity_id: inv.id,
+          template_key: 'invoice_ready',
+          ...(overridden ? { to: typed } : {}),
+        },
+      });
+      setWaOpen(false);
+      showToast(overridden ? `Invoice queued for ${typed}.` : 'Invoice queued for WhatsApp.', 'success');
+    } catch (e) {
+      setWaError(e.message || 'Could not send.');
+    } finally {
+      setWaSending(false);
+    }
+  }, [inv, showToast, waTo, waPreview]);
+
+  // ── The payment split button ────────────────────────────────────────────
+  // Record Payment, Collect Online and Payment Link used to be three buttons
+  // side by side, which with Print and Download made five in one header and a
+  // second row on a narrow window.
+  //
+  // They are NOT merged into one menu. Recording money already received and
+  // charging a customer's card are different acts, and a flat list would put
+  // them one keystroke apart — so Record Payment keeps its own direct click and
+  // only the two online actions moved behind the caret.
+  //
+  // hasPayMenu, not `true`: both online actions are staff-only, so a hub login
+  // has nothing behind the caret and must not be shown one. Same for a staff
+  // user holding neither permission — the button then renders as an ordinary
+  // single button, exactly as it did before this existed.
+  const hasPayMenu = canCollectOnline || canPayLink;
+  const [showPayMenu, setShowPayMenu] = useState(false);
+  const [payMenuRef, payMenuFlip] = useFlipPopup(showPayMenu);
+  // Only while the menu is open, so this never competes with a dialog's own
+  // Escape handler — the menu is always closed by the time one is showing.
+  useEscapeClose(() => setShowPayMenu(false), showPayMenu);
+
+  /**
+   * Creates a payment link and puts it on the clipboard in one action.
+   *
+   * Lifted out of the old button's inline handler unchanged. The menu stays
+   * OPEN while this runs — that is what `linkBusy` is for, and closing first
+   * would take the "Creating…" label off the screen with nothing in its place.
+   */
+  async function createPaymentLink() {
+    setLinkBusy(true);
+    try {
+      const r = await api('/api/payments/links', {
+        method: 'POST',
+        body: { customer_invoice_id: inv.id },
+      });
+      // Built from this app's own origin rather than the server's configured
+      // base when that is unset, so a link is still usable in development
+      // instead of reading '/pay/<token>'.
+      const url = r.url && r.url.startsWith('http')
+        ? r.url
+        : `${window.location.origin}/pay/${r.link.token}`;
+      await navigator.clipboard?.writeText(url);
+      showToast('Payment link copied. It expires in 7 days.');
+    } catch (e) {
+      showToast(e.message || 'Could not create a payment link.');
+    } finally {
+      setLinkBusy(false);
+      setShowPayMenu(false);
+    }
+  }
+
   // Changing the legal date is its own permission — it moves revenue between
   // reporting periods and shifts the warranty clock. The override is separate
   // again, for going past the window or into a locked period.
@@ -760,35 +1006,120 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
 
       {/* ── Screen header bar — hidden when printing ── */}
       <div className="est-detail-header est-screen-only">
+        {/* The document number, and nothing else.
+            "Customer Invoice #66" said the same thing twice — you are on the
+            customer invoice screen — and #66 is not the number printed on the
+            document, which is CI-000066. One string that matches the paper.
+
+            The status pill is gone from here too: it is already in the document
+            header band below, next to the figures it describes, and a second
+            copy in the chrome made the bar compete with the invoice. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Receipt size={18} style={{ color: 'var(--primary)' }} />
-          <span style={{ fontWeight: 700, fontSize: 16 }}>Customer Invoice {inv ? `#${inv.id}` : ''}</span>
-          {inv && <StatusBadge status={inv.status} />}
+          <span style={{ fontWeight: 700, fontSize: 16 }}>
+            {inv ? `CI-${String(inv.id).padStart(6, '0')}` : 'Customer Invoice'}
+          </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* First in the row, and the only filled button: recording a payment
               is the action you came here to take, while Print and Download are
               things you do with the result.
 
-              Hidden once the balance reaches zero rather than disabled — with
-              nothing left to pay, a permanently dead button is worse than none.
-              `ci-internal` keeps it off the printed invoice. */}
+              One condition for all three payment actions, which is why they
+              live in one block: the invoice is approved or partially paid AND
+              something is still owed. Hidden once the balance reaches zero
+              rather than disabled — with nothing left to pay, a permanently
+              dead button is worse than none. Because the condition is shared,
+              the caret can never be left standing over an empty menu.
+              `ci-internal` keeps the whole cluster off the printed invoice. */}
           {canAddPayment && balance > 0.001 && (
-            <button
-              type="button"
-              className="btn btn-primary ci-internal"
-              onClick={() => setShowAddPayment(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-            >
-              <Plus size={15} /> Record Payment
-            </button>
+            <div className="ci-paysplit ci-internal">
+              <button
+                type="button"
+                className={`btn btn-primary ci-paysplit-main${hasPayMenu ? '' : ' ci-paysplit-solo'}`}
+                onClick={() => setShowAddPayment(true)}
+              >
+                <Plus size={15} /> Record Payment
+              </button>
+
+              {hasPayMenu && (
+                <button
+                  type="button"
+                  className="btn btn-primary ci-paysplit-caret"
+                  aria-haspopup="menu"
+                  aria-expanded={showPayMenu}
+                  aria-label="Other ways to take this payment"
+                  onClick={() => setShowPayMenu(v => !v)}
+                >
+                  <ChevronDown
+                    size={14}
+                    className={`ci-paysplit-chev${showPayMenu ? ' ci-paysplit-chev--on' : ''}`}
+                  />
+                </button>
+              )}
+
+              {showPayMenu && (
+                <>
+                  {/* Click-anywhere-else to dismiss. A fixed full-screen layer
+                      rather than a document listener, so it also swallows the
+                      click that closed it — otherwise dismissing the menu would
+                      press whatever happened to be underneath. */}
+                  <div className="ci-paymenu-backdrop" onClick={() => setShowPayMenu(false)} />
+                  <div
+                    ref={payMenuRef}
+                    className={`ci-paymenu${payMenuFlip ? ' ci-paymenu--flip' : ''}`}
+                    role="menu"
+                  >
+                    {/* CHARGES the customer now — the subtitle is not
+                        decoration. Once these sit in a list with Record
+                        Payment above them, the one-line difference between
+                        "money already received" and "take it now" is the only
+                        thing separating two very different acts. */}
+                    {canCollectOnline && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="ci-paymenu-item"
+                        onClick={() => { setShowPayMenu(false); setShowCollect(true); }}
+                      >
+                        <CreditCard size={15} />
+                        <span>
+                          Collect Online
+                          <span className="ci-paymenu-sub">Charge the customer now</span>
+                        </span>
+                      </button>
+                    )}
+
+                    {/* The customer is not standing here. Creates a link and
+                        puts it on the clipboard in one action — the next thing
+                        anyone does with it is paste it into WhatsApp, so a
+                        dialog in between would be a step that exists only to be
+                        dismissed. */}
+                    {canPayLink && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="ci-paymenu-item"
+                        disabled={linkBusy}
+                        onClick={createPaymentLink}
+                      >
+                        <Link2 size={15} />
+                        <span>
+                          {linkBusy ? 'Creating…' : 'Payment Link'}
+                          <span className="ci-paymenu-sub">Copies a link to send</span>
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
           {/* Server-rendered themed PDF. Replaces the old window.print() of
               the on-screen layout, which ignored the configured theme, logo
               and accent colour entirely. */}
           <button
-            className="btn btn-ghost"
             disabled={themedPdfLoading}
             onClick={async () => {
               if (!inv) return;
@@ -801,16 +1132,18 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                 setThemedPdfLoading(false);
               }
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-            title="Open the themed PDF"
+            className="btn btn-ghost ci-hdr-icon"
+            title={themedPdfLoading ? 'Generating the PDF…' : 'Print / PDF'}
+            aria-label="Print or open the PDF"
           >
-            <Printer size={15} /> {themedPdfLoading ? 'Generating…' : 'Print / PDF'}
+            {themedPdfLoading
+              ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+              : <Printer size={16} />}
           </button>
           {/* Separate from Print because only a download can carry the proper
               filename. Print opens a blob URL, and a blob URL has no name — the
               viewer's own save button can only produce its blob uuid. */}
           <button
-            className="btn btn-ghost"
             disabled={themedPdfSaving}
             onClick={async () => {
               if (!inv) return;
@@ -823,11 +1156,33 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                 setThemedPdfSaving(false);
               }
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-            title="Download the PDF as CI-000000_VEHICLE_Model.pdf"
+            className="btn btn-ghost ci-hdr-icon"
+            title={themedPdfSaving ? 'Saving…' : 'Download the PDF as CI-000000_VEHICLE_Model.pdf'}
+            aria-label="Download the PDF"
           >
-            <Download size={15} /> {themedPdfSaving ? 'Saving…' : 'Download'}
+            {themedPdfSaving
+              ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+              : <Download size={16} />}
           </button>
+
+          {/* Sends the customer the public invoice LINK, not the PDF as an
+              attachment — that is what the approved invoice_ready template
+              carries, and the link opens the same document with no login.
+
+              Deliberately beside Print and Download rather than in the payment
+              menu: this is "give the customer their bill", which is the same
+              family of act as printing it, and nothing about it collects
+              money. */}
+          {canSendWa && (
+            <button
+              className="btn btn-ghost ci-internal ci-hdr-icon"
+              onClick={openWhatsApp}
+              title="Send this invoice to the customer on WhatsApp"
+              aria-label="Send on WhatsApp"
+            >
+              <MessageCircle size={16} />
+            </button>
+          )}
 
           {/* Close. This is the only in-page way back now that the page-header
               bar is gone, and it is the ONLY one below 1100px where the rail is
@@ -853,27 +1208,36 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
       ) : !inv ? null : (
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-          {/* Info grid — two-column bill-to / invoice-meta layout */}
-          <div className="ci-info-grid" style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0,
-            background: 'var(--bg-soft)', borderRadius: 12, overflow: 'hidden',
-          }}>
-            {/* Left: customer details */}
-            <div style={{ padding: '16px 20px', borderRight: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Bill To</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {/* ── The document header band ──────────────────────────────────────
+              Three columns: who it is for, what it is for, and what it comes to.
+
+              The third one is the change that matters. The summary used to sit
+              BELOW the line items, so on any invoice longer than three lines you
+              scrolled past the work to find out what was owed — and the totals
+              were the reason the invoice was opened. Top-right is where a person
+              looks first on a bill.
+
+              It only fits because the rows below carry an ICON instead of an
+              84px label column. That is 62px back per row, per column, which is
+              roughly what the summary needs. */}
+          <div className="ci-doc-meta">
+            {/* Who the invoice is for */}
+            <div className="ci-doc-col">
+              <div className="ci-doc-cap">Bill To</div>
+              <div className="ci-doc-rows">
                 {[
                   ...(inv.is_b2b ? [
-                    { label: 'Company Name', value: inv.b2b_company_name, b2b: true },
-                    { label: 'GST No', value: inv.b2b_gst_number, b2b: true },
+                    { label: 'Company Name', Icon: Building2, value: inv.b2b_company_name, b2b: true },
+                    { label: 'GST No', Icon: BadgeCheck, value: inv.b2b_gst_number, b2b: true, mono: true },
                   ] : []),
-                  { label: 'Customer', value: inv.customer_name },
-                  { label: 'Mobile', value: inv.mobile },
+                  { label: 'Customer', Icon: User, value: inv.customer_name },
+                  { label: 'Mobile', Icon: Phone, value: inv.mobile, mono: true },
                   ...(inv.is_b2b ? [
-                    { label: 'Address', value: inv.b2b_address, b2b: true },
+                    { label: 'Address', Icon: MapPin, value: inv.b2b_address, b2b: true, wrap: true },
                   ] : []),
                   {
                     label: 'Hub / Branch',
+                    Icon: Landmark,
                     value: (
                       <>
                         <span className="est-no-print">{inv.hub_full_name || inv.hub_name}</span>
@@ -881,43 +1245,52 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                       </>
                     )
                   },
-                ].map(({ label, value, b2b }) => (
-                  <div key={label} className={b2b && !includeB2bPrint ? 'est-no-print' : ''} style={{ display: 'flex' }}>
-                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>{label}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{value || '—'}</span>
+                ].map(({ label, Icon, value, b2b, mono, wrap }) => (
+                  /* title AND aria-label, both. An icon on its own is not a
+                     label: without them "9712301573" beside a phone glyph is a
+                     guess for a screen reader, and for anyone on their first day.
+                     The print stylesheet restores the text labels — a printed
+                     invoice has no hover. */
+                  <div key={label}
+                       className={`ci-doc-il${wrap ? ' ci-doc-il--wrap' : ''}${b2b && !includeB2bPrint ? ' est-no-print' : ''}`}
+                       title={label} aria-label={label}>
+                    <Icon size={14} aria-hidden="true" />
+                    <span className="ci-doc-il-lbl">{label}</span>
+                    <span className={mono ? 'ci-doc-il-v ci-doc-mono' : 'ci-doc-il-v'}>{value || '—'}</span>
                   </div>
                 ))}
               </div>
             </div>
-            {/* Right: vehicle details + invoice meta */}
-            <div style={{ padding: '16px 20px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Vehicle & Invoice</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {/* Vehicle number */}
-                <div style={{ display: 'flex' }}>
-                  <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Reg. No.</span>
-                  <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.vehicle_number || '—'}</span>
+            {/* What the invoice is for */}
+            <div className="ci-doc-col">
+              <div className="ci-doc-cap">Vehicle &amp; Invoice</div>
+              <div className="ci-doc-rows">
+                <div className="ci-doc-il" title="Registration number" aria-label="Registration number">
+                  <Car size={14} aria-hidden="true" />
+                  <span className="ci-doc-il-lbl">Reg. No.</span>
+                  <span className="ci-doc-il-v ci-doc-mono">{inv.vehicle_number || '—'}</span>
                 </div>
-                {/* Make + Model */}
                 {(inv.make_name || inv.model_name) && (
-                  <div style={{ display: 'flex' }}>
-                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Make / Model</span>
-                    <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{[inv.make_name, inv.model_name].filter(Boolean).join(' ')}</span>
+                  <div className="ci-doc-il" title="Make and model" aria-label="Make and model">
+                    <Tag size={14} aria-hidden="true" />
+                    <span className="ci-doc-il-lbl">Make / Model</span>
+                    <span className="ci-doc-il-v">{[inv.make_name, inv.model_name].filter(Boolean).join(' ')}</span>
                   </div>
                 )}
-                {/* 4W: Body Type */}
                 {inv.body_type_name && (
-                  <div style={{ display: 'flex' }}>
-                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Body Type</span>
-                    <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.body_type_name}{inv.segment_names ? ` (${inv.segment_names})` : ''}</span>
+                  <div className="ci-doc-il" title="Body type" aria-label="Body type">
+                    <Layers size={14} aria-hidden="true" />
+                    <span className="ci-doc-il-lbl">Body Type</span>
+                    <span className="ci-doc-il-v">{inv.body_type_name}{inv.segment_names ? ` (${inv.segment_names})` : ''}</span>
                   </div>
                 )}
 
                 {/* Invoice meta */}
                 {[
-                  { label: 'Invoice No.', value: `CI-${String(inv.id).padStart(6, '0')}` },
+                  { label: 'Invoice No.', Icon: FileText, mono: true, value: `CI-${String(inv.id).padStart(6, '0')}` },
                   {
                     label: 'Date',
+                    Icon: Calendar,
                     node: (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>
@@ -946,9 +1319,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                       </span>
                     ),
                   },
-                  { label: 'Status', node: <StatusBadge status={inv.status} /> },
+                  { label: 'Status', Icon: BadgeCheck, node: <StatusBadge status={inv.status} /> },
                   ...(inv.warranty_claim_id ? [{
                     label: 'Invoice Type',
+                    Icon: BadgeCheck,
                     node: (
                       <span style={{
                         fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99,
@@ -958,12 +1332,62 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                       </span>
                     ),
                   }] : []),
-                ].map(({ label, value, node }) => (
-                  <div key={label} style={{ display: 'flex', alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>{label}</span>
-                    {node ?? <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{value || '—'}</span>}
+                ].map(({ label, Icon, value, node, mono }) => (
+                  <div key={label} className="ci-doc-il" title={label} aria-label={label}>
+                    <Icon size={14} aria-hidden="true" />
+                    <span className="ci-doc-il-lbl">{label}</span>
+                    {node ?? <span className={mono ? 'ci-doc-il-v ci-doc-mono' : 'ci-doc-il-v'}>{value || '—'}</span>}
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* ── What it comes to ────────────────────────────────────────────
+                Moved here from below the line items. The words stay words: these
+                are distinct legal amounts on a tax document and a reader has to
+                be certain which is which — no icon distinguishes CGST from SGST,
+                and space was never the constraint in this column. */}
+            <div className="ci-doc-col ci-doc-col--sum">
+              <div className="ci-doc-cap">Summary</div>
+              <div className="ci-doc-sum">
+                <div className="ci-doc-sumrow">
+                  <span>Subtotal (ex-GST)</span><b>{fmt(subtotal)}</b>
+                </div>
+
+                {hasDiscount && (
+                  <div className="ci-doc-sumrow ci-doc-sumrow--disc">
+                    <span>
+                      {ciDiscountMode === 'transaction'
+                        ? `Discount (${ciTxDiscountType === 'percent' ? ciTxDiscountValue + '%' : '₹' + ciTxDiscountValue})`
+                        : 'Total Discount'}
+                    </span>
+                    <b>−{fmt(totalDiscount)}</b>
+                  </div>
+                )}
+
+                {/* Each slab, not a single "tax" line: a two-slab invoice owes
+                    two different rates and the GST return needs them apart. */}
+                {gstSlabs.map(slab => {
+                  const halfLabel = (slab.pct / 2).toFixed(slab.pct % 2 === 0 ? 0 : 1);
+                  return (
+                    <div key={slab.pct} className="ci-doc-taxpair">
+                      <div className="ci-doc-taxrow"><span>CGST {halfLabel}%</span><span>{fmt(slab.cgst)}</span></div>
+                      <div className="ci-doc-taxrow"><span>SGST {halfLabel}%</span><span>{fmt(slab.sgst)}</span></div>
+                    </div>
+                  );
+                })}
+
+                <div className="ci-doc-sumrule" />
+
+                {/* One of the only two places green appears on this screen. The
+                    other is the Paid pill. Used in five places it meant nothing;
+                    used twice it means "this is the number" and "this is
+                    settled". */}
+                <div className="ci-doc-total"><span>Grand Total</span><b>{fmt(grandTotal)}</b></div>
+                <div className="ci-doc-sumrow"><span>Paid</span><b>{fmt(paid)}</b></div>
+                <div className={`ci-doc-sumrow ci-doc-due${balance > 0.001 ? ' ci-doc-due--open' : ''}`}>
+                  <span>Balance Due</span><b>{fmt(balance)}</b>
+                </div>
               </div>
             </div>
           </div>
@@ -1011,15 +1435,25 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                     <th style={{ textAlign: 'right' }}>Rate</th>
                     {hasDiscount && <th style={{ textAlign: 'center' }}>Discount</th>}
                     <th style={{ textAlign: 'right' }}>Taxable</th>
-                    <th style={{ textAlign: 'right' }}>CGST %</th>
-                    <th style={{ textAlign: 'right' }}>SGST %</th>
-                    <th style={{ textAlign: 'right' }}>Tax Amount</th>
+                    {/* THE RATE GOES IN THE HEADER ONLY IF EVERY LINE SHARES IT.
+                        Three columns — CGST %, SGST %, Tax Amount — carried two
+                        facts, and the third was a total of the first two. Rate in
+                        the header, rupees in the cells, is how a GST invoice is
+                        normally read and what the printed PDF already does.
+
+                        But an invoice CAN mix slabs (5% parts beside 18% labour),
+                        and a header claiming 9% over a column holding two
+                        different rates would be a false statement on a tax
+                        document. When they differ the header stays generic and
+                        each cell shows its own rate. */}
+                    <th style={{ textAlign: 'right' }}>{uniformHalfPct != null ? `CGST ${uniformHalfPct}%` : 'CGST'}</th>
+                    <th style={{ textAlign: 'right' }}>{uniformHalfPct != null ? `SGST ${uniformHalfPct}%` : 'SGST'}</th>
                     <th style={{ textAlign: 'right' }}>Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.length === 0 ? (
-                    <tr><td colSpan={hasDiscount ? 11 : 10} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
+                    <tr><td colSpan={hasDiscount ? 10 : 9} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
                   ) : items.map((it, i) => {
                     const exRate = parseFloat(it.customer_rate ?? it.rate ?? 0);
                     const qty = parseFloat(it.quantity ?? 1);
@@ -1066,9 +1500,22 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                           </td>
                         )}
                         <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(taxable)}</td>
-                        <td style={{ textAlign: 'right' }}>{halfPct > 0 ? `${halfPct.toFixed(1)}%` : '—'}</td>
-                        <td style={{ textAlign: 'right' }}>{halfPct > 0 ? `${halfPct.toFixed(1)}%` : '—'}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(gstAmt)}</td>
+                        {/* Halved, because CGST and SGST each take half of the
+                            slab. gstAmt is the whole of it, so displaying it in
+                            both columns would show twice the tax that was
+                            charged. */}
+                        <td style={{ textAlign: 'right' }}>
+                          {halfPct > 0 ? fmt(gstAmt / 2) : '—'}
+                          {uniformHalfPct == null && halfPct > 0 && (
+                            <span className="ci-doc-rate">{halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          {halfPct > 0 ? fmt(gstAmt / 2) : '—'}
+                          {uniformHalfPct == null && halfPct > 0 && (
+                            <span className="ci-doc-rate">{halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%</span>
+                          )}
+                        </td>
                         <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(total)}</td>
                       </tr>
                     );
@@ -1078,20 +1525,33 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
             </div>
           </div>
 
-          {/* ── Totals ── */}
-          <div className="ci-totals-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+          {/* ── Amount in words, and notes ──
+              The totals that used to sit to the right of this are in the header
+              band now. What is left is a caption and a sentence, so it is a
+              caption and a sentence — not a card with a coloured stripe down its
+              side, which is a lot of decoration for one line of text. */}
+          <div className="ci-doc-words-block">
 
-            {/* Bottom-left corner: Amount in words, with Notes stacked below it */}
-            <div style={{ flex: '1 1 220px', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{
-                background: '#f8fafc', borderRadius: 10,
-                padding: '12px 16px', borderLeft: '3px solid #16b994',
-              }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Amount in Words</div>
-                <div style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontStyle: 'italic', lineHeight: 1.7 }}>
-                  {amountToWords(parseFloat(grandTotal))}
-                </div>
+            {/* The sentence on the left, Add note on the right of the SAME line.
+                Stacked, a dashed 130px box sitting under a one-line sentence was
+                the loudest thing in the lower half of the document — and it left
+                two thirds of the band empty, which is what made this area read as
+                unfinished rather than as the foot of an invoice. */}
+            <div className="ci-doc-words-row">
+              <div className="ci-doc-words">
+                <span className="ci-doc-cap">Amount in Words</span>
+                <em>{amountToWords(parseFloat(grandTotal))}</em>
               </div>
+              {!(inv.notes || editingNotes) && (
+                <button
+                  type="button"
+                  className="ci-doc-addnote est-no-print"
+                  onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
+                >
+                  <Plus size={13} /> Add note
+                </button>
+              )}
+            </div>
 
               {/* Optional invoice fields (PO no., e-way bill, batch/exp/mfg,
                   free-item flag, custom fields/columns). Renders nothing
@@ -1103,7 +1563,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                 onSaved={updated => setInv(updated)}
               />
 
-              {(inv.notes || editingNotes) ? (
+              {(inv.notes || editingNotes) && (
                 <div className={editingNotes ? 'est-no-print' : (includeNotesPrint ? '' : 'est-no-print')} style={{
                   background: 'var(--bg-soft)',
                   borderRadius: 8,
@@ -1155,126 +1615,17 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                     inv.notes
                   )}
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  className="est-no-print"
-                  onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start',
-                    background: 'none', border: '1px dashed var(--border)', borderRadius: 8,
-                    padding: '8px 12px', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600,
-                  }}
-                >
-                  <Plus size={13} /> Add note
-                </button>
               )}
-            </div>
-
-            {/* Summary — right */}
-            <div style={{ flex: '0 0 auto', minWidth: 250, display: 'flex', flexDirection: 'column', gap: 0 }}>
-
-              {/* Subtotal */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6b7280', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
-                <span>Subtotal (ex-GST)</span>
-                <span style={{ fontWeight: 600, color: '#374151', minWidth: 100, textAlign: 'right' }}>{fmt(subtotal)}</span>
-              </div>
-
-              {/* Total Discount */}
-              {hasDiscount && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: '1px solid #f3f4f6', background: '#fffbeb', margin: '0 -2px', padding: '5px 2px' }}>
-                  <span style={{ color: '#b45309', fontWeight: 600 }}>
-                    {ciDiscountMode === 'transaction'
-                      ? `Discount (${ciTxDiscountType === 'percent' ? ciTxDiscountValue + '%' : '₹' + ciTxDiscountValue})`
-                      : 'Total Discount'}
-                  </span>
-                  <span style={{ fontWeight: 700, color: '#b45309', minWidth: 100, textAlign: 'right' }}>−{fmt(totalDiscount)}</span>
-                </div>
-              )}
-
-              {/* Tax breakdown */}
-              {gstSlabs.length > 0 && (
-                <div style={{ padding: '6px 0', borderBottom: '1px solid #f3f4f6' }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Tax Breakdown</div>
-                  {gstSlabs.map(slab => {
-                    const halfLabel = (slab.pct / 2).toFixed(slab.pct % 2 === 0 ? 0 : 1);
-                    return (
-                      <div key={slab.pct} style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 2 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280' }}>
-                          <span>CGST ({halfLabel}%)</span>
-                          <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(slab.cgst)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280' }}>
-                          <span>SGST ({halfLabel}%)</span>
-                          <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(slab.sgst)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Grand Total */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, color: '#16b994', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
-                <span>Grand Total</span>
-                <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(grandTotal)}</span>
-              </div>
-
-              {/* Paid */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#16a34a', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
-                <span style={{ fontWeight: 500 }}>Paid</span>
-                <span style={{ fontWeight: 600, minWidth: 100, textAlign: 'right' }}>{fmt(paid)}</span>
-              </div>
-
-              {/* Balance Due */}
-              <div style={{
-                display: 'flex', justifyContent: 'space-between',
-                fontSize: 13, fontWeight: 800, padding: '8px 0',
-                color: balance > 0.001 ? '#dc2626' : '#16a34a',
-              }}>
-                <span>Balance Due</span>
-                <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(balance)}</span>
-              </div>
-
-            </div>
           </div>
 
-          {/* ── Linked document links — screen only ── */}
-          {!isHubUser && (inv?.estimate_id || inv?.linked_purchase_invoice_id) && (
-            <div className="ci-internal" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-              {inv.estimate_id && (
-                <button
-                  onClick={() => navigate(inv.estimate_token ? `/estimates/${inv.estimate_token}` : '/estimates', inv.estimate_token ? undefined : { state: { openId: inv.estimate_id } })}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 7,
-                    padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
-                    background: '#f0fdf4', border: '1px solid #86efac',
-                    color: '#166534', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                  }}
-                >
-                  <CheckCircle2 size={13} />
-                  View Estimate #EST-{String(inv.estimate_id).padStart(6, '0')}
-                </button>
-              )}
-              {inv.linked_purchase_invoice_id && (
-                <button
-                  onClick={() => navigate(inv.linked_purchase_invoice_token ? `/purchase-invoices/${inv.linked_purchase_invoice_token}` : '/purchase-invoices', inv.linked_purchase_invoice_token ? undefined : { state: { openId: inv.linked_purchase_invoice_id } })}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 7,
-                    padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
-                    background: '#f0f9ff', border: '1px solid #7dd3fc',
-                    color: '#0369a1', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
-                  }}
-                >
-                  <CheckCircle2 size={13} />
-                  View Spinoto Invoice #{inv.linked_purchase_invoice_id}
-                </button>
-              )}
-            </div>
-          )}
-
           {/* ── Warranty & Guarantee + Payments — side by side ── */}
-          <div className="ci-wg-pay-row" style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          {/* Both are PANELS now — a bordered box with a grey header strip —
+              rather than a bare <h4> above a table. Two headings floating over
+              two differently-shaped blocks of content is what left this half of
+              the screen looking like two unrelated widgets that happened to land
+              beside each other. The border is what says "these are two things,
+              and each one ends here". */}
+          <div className="ci-panels">
 
             {/* Left — Warranty & Guarantee coverage table */}
             {(() => {
@@ -1291,89 +1642,133 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
               if (groups.length === 0) return null;
               const claimables = (inv.items || []).filter(it => warrantyLabel(it) || guaranteeLabel(it));
               return (
-                <div style={{ flex: '1.2 1 340px', minWidth: 300 }}>
-                  <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Warranty &amp; Guarantee</h4>
-                  <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
-                    <table className="ci-table ci-coverage-table">
+                <section className="ci-panel ci-panel--wg">
+                  <div className="ci-panel-h">
+                    <span className="ci-doc-cap">Warranty &amp; Guarantee</span>
+                    <span className="ci-panel-count">{groups.length}</span>
+                  </div>
+                  <div className="ci-panel-scroll">
+                    <table className="ci-table ci-panel-table ci-coverage-table">
                       <thead>
                         <tr>
                           <th style={{ width: '45%' }}>Service / Package</th>
                           <th style={{ width: '22%' }}>Type</th>
-                          <th style={{ width: '33%' }}>Coverage / Validity</th>
+                          <th style={{ width: '33%' }}>Validity</th>
                         </tr>
                       </thead>
                       <tbody>
                         {groups.map((g, i) => (
                           <tr key={i}>
-                            <td style={{ fontSize: 12, fontWeight: 500 }}>{g.names.join(', ')}</td>
-                            <td style={{ fontSize: 12, whiteSpace: 'nowrap', fontWeight: 600, color: g.ptype === 'Guarantee' ? '#3730a3' : '#166534' }}>
-                              {g.ptype === 'Guarantee' ? '✔' : '🛡'} {g.ptype}
+                            <td className="ci-panel-strong">{g.names.join(', ')}</td>
+                            {/* Was an emoji — 🛡 and ✔ render as a colour glyph in
+                                the OS font and were two of the few cartoon marks
+                                left on the document. A stroked icon matches every
+                                other icon on the page. */}
+                            <td>
+                              <span className={g.ptype === 'Guarantee' ? 'ci-panel-tag ci-panel-tag--g' : 'ci-panel-tag'}>
+                                {g.ptype === 'Guarantee'
+                                  ? <BadgeCheck size={12} aria-hidden="true" />
+                                  : <ShieldCheck size={12} aria-hidden="true" />}
+                                {g.ptype}
+                              </span>
                             </td>
-                            <td style={{ fontSize: 12 }}>{g.label}</td>
+                            <td>{g.label}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 6, fontStyle: 'italic' }}>
-                    Warranty / guarantee is valid from the date of invoice.
-                  </div>
-                  {/* Claim actions — internal, never printed */}
-                  <div className="ci-internal" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
-                    {/* Existing claims — one chip per claim, linking to it */}
-                    {claimables.filter(it => it.claim_id).map((it, i) => (
-                      <button
-                        key={it.id || i}
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); navigate(`/warranty-claims?claim=${it.claim_id}`); }}
-                        title={`${cleanItemName(it.description || it.name)} — open this ${it.claim_type || 'warranty'} claim`}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5,
-                          fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 99,
-                          background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {it.claim_type === 'guarantee' ? '✔' : '🛡'} {it.claim_code || `Claim #${it.claim_id}`}
-                        <span style={{ fontWeight: 500, color: '#3b82f6' }}>· {(it.claim_status || '').replace(/_/g, ' ')}</span>
-                      </button>
-                    ))}
-                    {/* One entry point for new claims — the register modal
-                        already lists this customer's claimable items */}
-                    {inv.status === 'paid' && claimables.some(it => !it.claim_id) && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); navigate(`/warranty-claims?register_mobile=${encodeURIComponent(inv.mobile || '')}`); }}
-                        title="Register a warranty/guarantee claim for an item on this invoice"
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 6,
-                          fontSize: 11, fontWeight: 700, padding: '5px 14px', borderRadius: 8,
-                          background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d', cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        🛡 Register a Claim
-                      </button>
+                  {/* The footer carries the validity note AND the claim
+                      controls. They used to be a separate row hanging below the
+                      table, outside any box, one of them a bright amber pill —
+                      which gave two internal buttons more weight than the
+                      coverage they refer to.
+
+                      Claim actions are internal and never printed. Hidden
+                      entirely for a hub: every control here goes to
+                      /warranty-claims, which the hub portal has no screen for.
+                      Claims are raised and tracked by Spinoto. */}
+                  <div className="ci-panel-foot">
+                    <span>Valid from the date of invoice.</span>
+                    {P.warrantyClaims && (
+                      <span className="ci-internal ci-panel-foot-acts">
+                        {/* Existing claims — one chip per claim, linking to it */}
+                        {claimables.filter(it => it.claim_id).map((it, i) => (
+                          <button
+                            key={it.id || i}
+                            type="button"
+                            className="ci-claimchip"
+                            onClick={(e) => { e.stopPropagation(); navigate(`${P.warrantyClaims}?claim=${it.claim_id}`); }}
+                            title={`${cleanItemName(it.description || it.name)} — open this ${it.claim_type || 'warranty'} claim`}
+                          >
+                            {it.claim_type === 'guarantee'
+                              ? <BadgeCheck size={11} aria-hidden="true" />
+                              : <ShieldCheck size={11} aria-hidden="true" />}
+                            {it.claim_code || `Claim #${it.claim_id}`}
+                            <em>· {(it.claim_status || '').replace(/_/g, ' ')}</em>
+                          </button>
+                        ))}
+                        {/* One entry point for new claims — the register modal
+                            already lists this customer's claimable items */}
+                        {inv.status === 'paid' && claimables.some(it => !it.claim_id) && (
+                          <button
+                            type="button"
+                            className="ci-doc-reflink"
+                            onClick={(e) => { e.stopPropagation(); navigate(`${P.warrantyClaims}?register_mobile=${encodeURIComponent(inv.mobile || '')}`); }}
+                            title="Register a warranty/guarantee claim for an item on this invoice"
+                          >
+                            Register a claim
+                          </button>
+                        )}
+                      </span>
                     )}
                   </div>
-                </div>
+                </section>
               );
             })()}
 
             {/* Right — Payments */}
-            <div style={{ flex: '1 1 320px', minWidth: 280 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Payments</h4>
-              <span style={{
-                background: 'var(--bg-soft)', border: '1px solid var(--border)',
-                borderRadius: 99, padding: '1px 8px', fontSize: 12, fontWeight: 700, color: 'var(--text-muted)',
-              }}>{payments.length}</span>
+            <div className="ci-panel-stack">
+            <section className="ci-panel">
+            <div className="ci-panel-h">
+              <span className="ci-doc-cap">Payments</span>
+              <span className="ci-panel-count">{payments.length}</span>
             </div>
+
+            {/* ── Credit the customer has already given us ─────────────────
+                An advance taken against the estimate applied itself when this
+                invoice was generated. Money taken ON ACCOUNT has no such
+                destination, so it waits — and waiting unseen is how a customer
+                who has already paid gets billed the full amount again.
+
+                So the invoice says so, here, where somebody is about to chase
+                the balance. It offers; it does not decide — the money may have
+                been left for a different vehicle. */}
+            {customerCredit > 0.01 && canAllocateCredit && (
+              <div className="ci-panel-alert ci-internal">
+                <div className="ci-panel-alert-t">
+                  {fmt(customerCredit)} credit available
+                </div>
+                <div className="ci-panel-alert-s">
+                  This customer has already paid this money and it is not on any invoice yet.
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={applyingCredit}
+                  onClick={applyCustomerCredit}
+                  style={{ marginTop: 9, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  {applyingCredit ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={13} />}
+                  Apply {fmt(Math.min(customerCredit, parseFloat(inv.balance || 0)))} to this invoice
+                </button>
+              </div>
+            )}
             {payments.length === 0 ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>No payments recorded yet.</div>
+              <div className="ci-panel-empty">No payments recorded yet.</div>
             ) : (
-              <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
-                <table className="ci-table ci-payments-table">
+              <div className="ci-panel-scroll">
+                <table className="ci-table ci-panel-table ci-payments-table">
                   <thead>
                     <tr>
                       <th>Date</th>
@@ -1407,7 +1802,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                           ) : (
                             <span style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
                               {fmtDate(pay.paid_at || pay.created_at)}
-                              {canEditPayDate && (
+                              {/* Online payments carry the gateway's date, and the
+                                  backend refuses to move it — offering a pencil
+                                  that always 409s is worse than offering none. */}
+                              {canEditPayDate && !isOnline(pay) && !isAdvance(pay) && (
                                 <button
                                   className="icon-action ci-internal"
                                   title="Change payment date"
@@ -1422,9 +1820,41 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                             </span>
                           )}
                         </td>
-                        <td><MethodBadge method={pay.method} /></td>
+                        <td>
+                          <MethodBadge method={pay.method} />
+                          {isOnline(pay) && (
+                            <span
+                              title={pay.txn_ref ? `Reference ${pay.txn_ref}` : 'Taken through the payment gateway'}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 5, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, letterSpacing: .3, background: 'var(--bg-soft)', color: 'var(--text-muted)', verticalAlign: 'middle' }}
+                            >
+                              <CreditCard size={9} /> ONLINE
+                            </span>
+                          )}
+                          {/* Money taken before this invoice existed. The badge
+                              carries the receipt number, because that is the
+                              document the customer was given and the number an
+                              accountant will match this line against. */}
+                          {isAdvance(pay) && (
+                            <span
+                              title={pay.voucher_no
+                                ? `Advance receipt ${pay.voucher_no} — taken before this invoice was raised`
+                                : 'Advance taken before this invoice was raised'}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 5, padding: '1px 6px', borderRadius: 999, fontSize: 9.5, fontWeight: 700, letterSpacing: .3, background: '#fef3c7', color: '#92400e', verticalAlign: 'middle' }}
+                            >
+                              <Wallet size={9} /> ADVANCE
+                            </span>
+                          )}
+                        </td>
                         <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          <div>{pay.reference_no || '—'}</div>
+                          <div>{pay.voucher_no || pay.txn_ref || pay.reference_no || '—'}</div>
+                          {/* Part of the advance is still credit. Without this
+                              line the applied figure reads as a smaller payment
+                              than the customer remembers making. */}
+                          {isPartial(pay) && (
+                            <div style={{ fontSize: 10, color: '#92400e', marginTop: 2 }}>
+                              {fmt(pay.payment_amount)} advance · {fmt(pay.amount)} applied here
+                            </div>
+                          )}
                           {pay.notes && (
                             <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, fontStyle: 'italic' }}>
                               Note: {pay.notes}
@@ -1434,14 +1864,41 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                         <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(pay.amount)}</td>
                         {canDeletePay && (
                           <td>
-                            <button
-                              className="icon-action icon-action--danger"
-                              title="Delete payment"
-                              disabled={deletingPayId === pay.id}
-                              onClick={() => (inv.status === 'paid' || hubAlreadyPaid > 0) ? setConfirmDeletePay(pay) : deletePayment(pay.id)}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            {/* Gateway money is reversed by refund, never deleted —
+                                the ledger row and its payment_transactions record
+                                have to stay together. The Payments screen owns
+                                that action, so this cell points there instead of
+                                offering a button the backend will refuse. */}
+                            {/* An advance cannot be edited or deleted here, but
+                                it CAN be opened — the receipt voucher is the
+                                document the customer holds, and the invoice is
+                                where someone goes looking for it. */}
+                            {isAdvance(pay) ? (
+                              <button
+                                className="icon-action"
+                                title={`Open receipt ${pay.voucher_no || ''} — this advance is managed from the customer's Payments tab`}
+                                onClick={() => openAdvanceVoucher(pay.id)
+                                  .catch(e => alert(e.message))}
+                              >
+                                <FileText size={13} />
+                              </button>
+                            ) : isOnline(pay) ? (
+                              <span
+                                title="Taken online — refund it from the Payments screen rather than deleting it"
+                                style={{ color: 'var(--text-muted)', display: 'inline-flex' }}
+                              >
+                                <Lock size={12} />
+                              </span>
+                            ) : (
+                              <button
+                                className="icon-action icon-action--danger"
+                                title="Delete payment"
+                                disabled={deletingPayId === pay.id}
+                                onClick={() => (inv.status === 'paid' || hubAlreadyPaid > 0) ? setConfirmDeletePay(pay) : deletePayment(pay.id)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
                           </td>
                         )}
                       </tr>
@@ -1451,8 +1908,68 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
               </div>
             )}
 
-            </div>{/* /right column */}
-          </div>{/* /side-by-side row */}
+            </section>{/* /payments panel */}
+
+            {/* Payment links raised against THIS invoice.
+                PaymentLinksPanel has always taken a customerInvoiceId and
+                nothing ever passed one, so a link created from this screen
+                vanished the moment the clipboard was overwritten — no way to
+                see whether it had been opened, when it expires, or to cancel
+                it, without going to the Payments module and searching.
+
+                Its own panel rather than a second heading inside the Payments
+                box: a link is not a payment, and stacking them under one
+                border said they were the same list. */}
+            {canCollectOnline && (
+              <section className="ci-panel ci-internal">
+                <div className="ci-panel-h">
+                  <span className="ci-doc-cap">Payment links</span>
+                </div>
+                <PaymentLinksPanel customerInvoiceId={inv.id} />
+              </section>
+            )}
+
+            </div>{/* /right stack */}
+          </div>{/* /panels */}
+
+          {/* ── Where this invoice came from, and who made it ──
+              These were two large pill buttons — the most visually prominent
+              controls on a page whose job is to show an invoice. They are
+              NAVIGATION, not actions: nobody opens an invoice in order to press
+              them. As links in the audit footer they are still one click away
+              and no longer compete with Print, Download and Record Payment.
+
+              It sits LAST, under the panels, because that is what a footer is —
+              between the invoice and the panels it was a rule across the middle
+              of the page, splitting the document from the things attached to it.
+
+              The created/updated line is new. An invoice with no author and no
+              last-touched time is the one somebody asks about six months later. */}
+          <div className="ci-doc-foot ci-internal">
+            <span className="ci-doc-foot-who">
+              Created{inv.created_by_name ? ` by ${inv.created_by_name}` : ''}
+              {inv.created_at ? ` · ${fmtDateTime(inv.created_at)}` : ''}
+              {inv.updated_at && inv.updated_at !== inv.created_at
+                ? ` · Last updated ${fmtDateTime(inv.updated_at)}`
+                : ''}
+            </span>
+            {!isHubUser && (inv?.estimate_id || inv?.linked_purchase_invoice_id) && (
+              <span className="ci-doc-foot-links">
+                {inv.estimate_id && (
+                  <button type="button" className="ci-doc-reflink"
+                    onClick={() => navigate(inv.estimate_token ? `${P.estimates}/${inv.estimate_token}` : P.estimates, inv.estimate_token ? undefined : { state: { openId: inv.estimate_id } })}>
+                    EST-{String(inv.estimate_id).padStart(6, '0')}
+                  </button>
+                )}
+                {inv.linked_purchase_invoice_id && (
+                  <button type="button" className="ci-doc-reflink"
+                    onClick={() => navigate(inv.linked_purchase_invoice_token ? `${P.salesInvoices}/${inv.linked_purchase_invoice_token}` : P.salesInvoices, inv.linked_purchase_invoice_token ? undefined : { state: { openId: inv.linked_purchase_invoice_id } })}>
+                    Spinoto Invoice #{inv.linked_purchase_invoice_id}
+                  </button>
+                )}
+              </span>
+            )}
+          </div>
 
           {/* The Add Payment bar used to sit here. It is a dialog now, opened
               from the button beside the Payments heading — see showAddPayment. */}
@@ -1466,28 +1983,168 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
             />
           )}
 
-          {/* ── Invoice Footer ── */}
-          <div className="ci-invoice-footer" style={{
-            marginTop: 8,
-            borderTop: '1px solid #e5e7eb',
-            paddingTop: 14,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 4,
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>Thank you for your business.</div>
-            <div style={{ fontSize: 10, color: '#9ca3af' }}>This is a computer generated invoice and does not require a physical signature.</div>
-            {(company?.phone || company?.email) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, fontSize: 11, color: '#6b7280', fontWeight: 500, marginTop: 4 }}>
-                {company.phone && <span>📞 {company.phone}</span>}
-                {company.phone && company.email && <span style={{ color: '#d1d5db' }}>|</span>}
-                {company.email && <span>✉ {company.email}</span>}
-              </div>
-            )}
-          </div>
+          {showCollect && (
+            <CollectPaymentModal
+              invoice={inv}
+              balance={balance}
+              showToast={showToast}
+              onClose={() => setShowCollect(false)}
+              // Reloaded even when verification errored: the webhook may have
+              // recorded the capture in the meantime, and the freshest truth is
+              // on the server, never in this component's state.
+              onSuccess={async () => { await load(); onRefreshList(); }}
+            />
+          )}
+
+          {/* No footer here. "Thank you for your business", the
+              computer-generated-invoice line and the phone/email strip belong on
+              the DOCUMENT, not the screen — on screen they are three lines of
+              boilerplate under every invoice you look at.
+
+              They are not hidden with @media print: the PDF and the printed copy
+              are rendered server-side from backend/src/utils/documentConfig.js,
+              which carries its own copy. Deleting this one changes the screen
+              only, and there is no second copy here to drift out of sync. */}
 
           {/* ── Confirm: delete payment off a PAID invoice ── */}
+          {/* ── WhatsApp: preview, then send ────────────────────────────────
+              Shows the destination number and every value that will be slotted
+              into the template, in position order. If the dispatcher could not
+              resolve one, it is listed and Send stays disabled — sending a
+              template with a hole in it is not recoverable. */}
+          {waOpen && (
+            <div className="modal-backdrop" style={{ zIndex: 1100 }} onClick={() => !waSending && setWaOpen(false)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+                <div className="modal-header">
+                  <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <MessageCircle size={16} style={{ color: '#0f766e' }} /> Send on WhatsApp
+                  </h3>
+                  <button className="modal-close" disabled={waSending} onClick={() => setWaOpen(false)}><X size={18} /></button>
+                </div>
+                <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 13 }}>
+                  {waLoading && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-muted)' }}>
+                      <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Building the preview…
+                    </div>
+                  )}
+
+                  {waError && (
+                    <div className="ci-wa-bad">{waError}</div>
+                  )}
+
+                  {waPreview && (
+                    <>
+                      {/* The destination, editable.
+                          Read-only until you ask for it: the number on file is
+                          right almost every time, and an open input box invites
+                          a typo into the one field where a typo means the
+                          invoice goes to a stranger. Change is one click away
+                          for the case that matters — the customer gives a
+                          different number at the counter. */}
+                      <div className="ci-wa-to">
+                        <span className="ci-doc-cap">Sending to</span>
+                        {waEditTo ? (
+                          <>
+                            <input
+                              className="form-input ci-wa-num"
+                              value={waTo}
+                              maxLength={20}
+                              inputMode="tel"
+                              autoFocus
+                              placeholder="+919812345678"
+                              onChange={e => setWaTo(e.target.value)}
+                            />
+                            <span className="ci-wa-note">
+                              Include the country code. The server normalises it before sending, and
+                              rejects a number it cannot read rather than guessing.
+                              {waTo.trim() !== (waPreview.to || '') && (
+                                <>
+                                  {' '}
+                                  <button type="button" className="ci-doc-reflink" onClick={() => setWaTo(waPreview.to || '')}>
+                                    Use the number on file
+                                  </button>
+                                </>
+                              )}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <div className="ci-wa-torow">
+                              <strong>{waTo || waPreview.to || '—'}</strong>
+                              <button type="button" className="ci-doc-reflink" onClick={() => setWaEditTo(true)}>
+                                <Pencil size={11} /> Change
+                              </button>
+                            </div>
+                            {/* The customer gave a WhatsApp number different from
+                                the one on the job, or gave none and we fell back.
+                                Worth saying out loud before it goes. */}
+                            {waPreview.fell_back_to_mobile && (
+                              <span className="ci-wa-note">No separate WhatsApp number on file — using the mobile.</span>
+                            )}
+                          </>
+                        )}
+                        {/* Loud, because this is the case where the invoice
+                            reaches somebody who is not the customer. */}
+                        {waTo.trim() && waTo.trim() !== (waPreview.to || '') && (
+                          <span className="ci-wa-warn">
+                            Not the number on this invoice — {waPreview.to || 'none on file'}.
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Position order, because position IS the contract with
+                          the approved template. Reading them top to bottom is
+                          how a wrong mapping becomes visible. */}
+                      <div className="ci-wa-vars">
+                        {(waPreview.positions || []).map(p => (
+                          <div key={p.position} className="ci-wa-var">
+                            <span>{p.key.replace(/_/g, ' ')}</span>
+                            <b>{p.value || '—'}</b>
+                          </div>
+                        ))}
+                      </div>
+
+                      {waPreview.missing?.length > 0 && (
+                        <div className="ci-wa-bad">
+                          Cannot send — no value for {waPreview.missing.join(', ')}.
+                          {waPreview.missing.includes('invoice_link')
+                            ? ' PUBLIC_APP_URL is not set on the server, so there is no address to send.'
+                            : ''}
+                        </div>
+                      )}
+
+                      {/* Approving the invoice already queues this same
+                          template automatically. A manual send bypasses that
+                          dedupe on purpose — which is right for a re-send and
+                          surprising if you did not know it happened. */}
+                      {inv?.status !== 'draft' && !waPreview.missing?.length && (
+                        <div className="ci-wa-note">
+                          The customer may already have received this when the invoice was approved.
+                          Sending now delivers another copy.
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 2 }}>
+                    <button className="btn btn-ghost" disabled={waSending} onClick={() => setWaOpen(false)}>Cancel</button>
+                    <button
+                      className="btn btn-primary"
+                      disabled={waSending || waLoading || !waPreview?.ok
+                                || waPreview?.missing?.length > 0
+                                /* Blanking the field is not "send to the number
+                                   on file" — it is an unfinished edit. */
+                                || !waTo.trim()}
+                      onClick={sendWhatsApp}
+                    >
+                      {waSending ? 'Sending…' : 'Send'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {confirmDeletePay && (
             <div className="modal-backdrop" style={{ zIndex: 1100 }} onClick={() => setConfirmDeletePay(null)}>
               <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
@@ -1633,17 +2290,15 @@ export function urlFilterSeed(searchStr) {
 // ═════════════════════════════════════════════════════════════════════════════
 export default function CustomerInvoicesPage() {
   const { user } = useAuth();
-  const rawNavigate = useNavigate();
+  const navigate = useNavigate();
   const location = useLocation();
   const { token } = useParams();
   const isHubUser = !!user?.hub_id;
-  // Hub Portal renders this page as a plain tab (no nested routing), and its
-  // own admin-only routes are off-limits to hub users (App.jsx's RequireAdmin
-  // bounces them straight back to /hub). So every navigate() call here — this
-  // page's own detail view or cross-links to Estimates/Purchase Invoices/
-  // Customers — has to be a no-op for hub users; the detail view still opens
-  // via local state either way.
-  const navigate = isHubUser ? () => {} : rawNavigate;
+  // This page is mounted twice: at /customer-invoices for staff and at
+  // /hub/customer-invoices inside the hub portal. P resolves every
+  // destination — including this page's own URL — for whichever is rendering.
+  const P = useAppPaths();
+
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -1685,6 +2340,7 @@ export default function CustomerInvoicesPage() {
   );
   const [showHubDropdown, setShowHubDropdown] = useState(false);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [filterPopRef, filterPopFlip] = useFlipPopup(showMoreFilters);
   const [statusFilter, setStatusFilter] = useState(seed?.statusFilter ?? ls.statusFilter ?? '');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState(ls.vehicleTypeFilter ?? '');
   // Invoice-date range — both optional; either can be set alone (open-ended).
@@ -1749,25 +2405,24 @@ export default function CustomerInvoicesPage() {
     closedRef.current = false;
     resolvedTokenRef.current = inv.public_token;
     setSelectedId(inv.id);
-    navigate(`/customer-invoices/${inv.public_token}`);
+    navigate(`${P.customerInvoices}/${inv.public_token}`);
   }
 
   function closeInvoice() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
-    // Cleared directly rather than left to the `[token]` effect — inside the
-    // Hub Portal `token` never exists (plain tab, not a routed
-    // /customer-invoices/:token) and navigate() is a no-op for hub users, so
-    // that effect would never fire on close.
+    // Cleared directly rather than left to the `[token]` effect. Belt-and-
+    // braces now that the hub portal is routed too, but a record reached via
+    // location.state has no token param to change.
     setSelectedId(null);
-    navigate('/customer-invoices');
+    navigate(P.customerInvoices);
   }
 
   function handleInvoiceLoaded(inv) {
     if (closedRef.current) return;
     if (!inv?.public_token || resolvedTokenRef.current === inv.public_token) return;
     resolvedTokenRef.current = inv.public_token;
-    navigate(`/customer-invoices/${inv.public_token}`, { replace: true });
+    navigate(`${P.customerInvoices}/${inv.public_token}`, { replace: true });
   }
 
   // Resolve an inbound /customer-invoices/:token into a selectedId.
@@ -2083,7 +2738,7 @@ export default function CustomerInvoicesPage() {
               {showMoreFilters && (
                 <>
                   <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreFilters(false)} />
-                  <div className="lb-pop">
+                  <div ref={filterPopRef} className={`lb-pop${filterPopFlip ? ' lb-pop--flip' : ''}`}>
                     <div>
                       <label className="lb-pop-label" htmlFor="lb-veh">Vehicle type</label>
                       <select
@@ -2160,7 +2815,10 @@ export default function CustomerInvoicesPage() {
               <span className="lb-count">
                 {total} invoice{total !== 1 ? 's' : ''}
               </span>
-              <button type="button" className="lb-control" onClick={handleExport} title="Export Excel">
+              {/* The tooltip said "Export Excel" while the file that landed was
+                  a .csv — it names the file you get, not the app you open it
+                  in, because "Excel" set people up to expect an .xlsx. */}
+              <button type="button" className="lb-control" onClick={handleExport} title="Download the filtered list as CSV">
                 <Download size={15} /> Export
               </button>
               <button type="button" className="lb-control" onClick={() => setShowVehHistory(true)}>
@@ -2237,12 +2895,17 @@ export default function CustomerInvoicesPage() {
                             </div>
                           </td>
                           <td>
+                            {/* Gated, not just remapped: the hub portal has no
+                                Customers screen, so P.customers is null and an
+                                ungated click would navigate to "null/<token>".
+                                The name stays visible; only the link comes off. */}
                             <div
-                              className="ci-cust-link"
-                              onClick={(e) => {
+                              className={P.customers ? 'ci-cust-link' : undefined}
+                              style={P.customers ? undefined : { display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                              onClick={P.customers ? (e) => {
                                 e.stopPropagation();
-                                navigate(inv.customer_token ? `/customers/${inv.customer_token}` : '/customers', inv.customer_token ? undefined : { state: { openMobile: inv.mobile } });
-                              }}
+                                navigate(inv.customer_token ? `${P.customers}/${inv.customer_token}` : P.customers, inv.customer_token ? undefined : { state: { openMobile: inv.mobile } });
+                              } : undefined}
                             >
                               <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2272,7 +2935,7 @@ export default function CustomerInvoicesPage() {
                                   </div>
                                 )}
                               </div>
-                              <span className="ci-cust-arrow">→</span>
+                              {P.customers && <span className="ci-cust-arrow">→</span>}
                             </div>
                           </td>
                           <td style={{ fontSize: 13 }}>

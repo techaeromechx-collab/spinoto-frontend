@@ -1,15 +1,17 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 // search state is local to AppShell — no API change
 import { useAuth } from '../auth/AuthContext.jsx';
 import { NOTIF_POLL_MS } from '../config/polling.js';
 import { useUpload } from '../context/UploadContext.jsx';
 import { usePushNotifications } from '../hooks/usePushNotifications.js';
+import { useAppPaths } from '../lib/appPaths.js';
 import {
   LayoutDashboard,
   MapPin,
   Car,
   Wrench,
+  Store,
   Users,
   UserCog,
   Users2,
@@ -36,16 +38,20 @@ import {
   TrendingUp,
   Copy,
   UserPlus,
+  UserMinus,
   Trophy,
   Activity,
   User,
   Settings,
   Lock,
+  MoreVertical,
   PanelLeftClose,
   PanelLeftOpen,
   Network,
   Calendar,
+  CalendarPlus,
   FileText,
+  FilePlus,
   Package,
   ReceiptText,
   Receipt,
@@ -54,6 +60,7 @@ import {
   Zap,
   Percent,
   ShieldCheck,
+  CreditCard,
 } from 'lucide-react';
 
 // ── Notification type → { icon, bg, color, label } ────────────────────────
@@ -66,6 +73,9 @@ const NOTIF_META = {
   lead_escalation:    { Icon: TrendingUp,    bg: '#f3e8ff', color: '#9333ea', label: 'Escalated'    },
   duplicate_lead:     { Icon: Copy,          bg: '#dbeafe', color: '#2563eb', label: 'Duplicate'    },
   lead_assigned:      { Icon: UserPlus,      bg: '#dcfce7', color: '#16a34a', label: 'Assigned'     },
+  // Routing took a lead OFF this person once the customer's answer named a
+  // category somebody else handles. Amber, not green: it is not work arriving.
+  lead_reassigned:    { Icon: UserMinus,     bg: '#ffedd5', color: '#ea580c', label: 'Moved On'     },
   lead_converted:     { Icon: Trophy,        bg: '#dcfce7', color: '#16a34a', label: 'Converted'    },
   no_activity:        { Icon: Activity,      bg: '#ffedd5', color: '#ea580c', label: 'No Lead Activity'  },
   follow_up_scheduled:{ Icon: Clock,         bg: '#dbeafe', color: '#2563eb', label: 'Follow-up'    },
@@ -78,8 +88,9 @@ const NOTIF_META = {
 function getNotifMeta(type) {
   return NOTIF_META[type] || { Icon: Bell, bg: '#dbeafe', color: '#2563eb', label: '' };
 }
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import NewLeadModal from './NewLeadModal.jsx';
+import WhatsAppInbox from './WhatsAppInbox.jsx';
 import { api } from '../api/client.js';
 import { useTopbarSearch, clearPageSearch } from '../lib/pageSearchStore.js';
 import { useCrumbLabel } from '../lib/pageCrumbStore.js';
@@ -90,29 +101,118 @@ import '../styles/AppShell.css';
 // visibility from their own `permissions` field.
 // Fixed section order for the grouped sidebar — a section header only
 // renders if at least one of its items survives permission filtering.
-const NAV_SECTIONS = ['OVERVIEW', 'WORKFLOW', 'SALES', 'ACCOUNTING', 'CUSTOMERS', 'SYSTEM'];
+/**
+ * Sidebar sections.
+ *
+ * These used to be plain uppercase captions — decoration above a list. They are
+ * now collapsible groups, so the sidebar rests at ~6 rows instead of 13 links
+ * and you open the ones you want. Any number can stand open at once — see
+ * openSections below for why that is no longer restricted.
+ *
+ *   key         matches NAV_ITEMS[].section
+ *   label       shown on the header row. Sentence case, not the old ALL CAPS:
+ *               a caption can be shouty, a button people click should not be.
+ *   collapsible false → the items render flat with no header at all. OVERVIEW
+ *               holds only Dashboard, and a dropdown you open to reveal a
+ *               single link is worse than the link.
+ */
+const NAV_SECTIONS = [
+  { key: 'OVERVIEW',    label: null,          collapsible: false },
+  { key: 'MASTER DATA', label: 'Master Data', collapsible: true  },
+  { key: 'WORKFLOW',    label: 'Workflow',    collapsible: true  },
+  { key: 'SALES',       label: 'Sales',       collapsible: true  },
+  { key: 'ACCOUNTING',  label: 'Accounting',  collapsible: true  },
+  { key: 'CUSTOMERS',   label: 'Customers',   collapsible: true  },
+  { key: 'SYSTEM',      label: 'System',      collapsible: true  },
+  /* Reports sits below the card, flat, the way Dashboard sits above it. It is
+     a destination people go to directly and often, and burying it a click deep
+     inside System — beside Bulk Upload, which is touched once a quarter — costs
+     that click every time to save one row. It takes the same
+     `collapsible: false` path OVERVIEW already uses; no new render branch. */
+  { key: 'TOOLS',       label: null,          collapsible: false },
+];
+
+// Remembering which group was open is worth a line of storage: without it,
+// every navigation collapses the group you were just working in.
+const NAV_OPEN_KEY = 'spinoto.sidebar.openSection';
+
+/**
+ * Open/close motion for a nav group.
+ *
+ * Height and opacity are given SEPARATE transitions rather than one shared
+ * `duration`, which is what made the old version feel abrupt: fading and
+ * collapsing on the same curve smears the labels across a box that is moving
+ * under them.
+ *
+ *   opening — height leads on a decelerating curve; opacity is delayed a frame
+ *             or two so the links appear into space that already exists.
+ *   closing — opacity LEADS and finishes in half the time. The text is gone
+ *             before the box starts moving, so nothing is seen to squash.
+ *
+ * `height: 'auto'` is measured by framer-motion, so this survives a group
+ * gaining or losing links to permission filtering — no max-height guess that
+ * silently clips the ninth item.
+ *
+ * The per-link stagger is CSS (`navItemIn` in AppShell.css) rather than
+ * staggerChildren: that would need every NavLink wrapped in a motion element,
+ * and a wrapper div per row is real DOM on every render to buy an effect a
+ * keyframe already gives for free.
+ */
+const NAV_MOTION = {
+  collapsed: {
+    height: 0,
+    opacity: 0,
+    transition: {
+      height:  { duration: 0.22, ease: [0.4, 0, 1, 1] },
+      opacity: { duration: 0.1 },
+    },
+  },
+  open: {
+    height: 'auto',
+    opacity: 1,
+    transition: {
+      height:  { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
+      opacity: { duration: 0.2, delay: 0.05 },
+    },
+  },
+};
+
+/* prefers-reduced-motion. The CSS block at the bottom of AppShell.css only ever
+   covered the chevron — the height animation is driven by JS and CSS cannot
+   reach it, so the setting was quietly ignored on the part of this that
+   actually moves. Same end states, no tween. */
+const NAV_MOTION_NONE = {
+  collapsed: { height: 0,      opacity: 0, transition: { duration: 0 } },
+  open:      { height: 'auto', opacity: 1, transition: { duration: 0 } },
+};
 
 const NAV_ITEMS = [
   // ── Overview ──────────────────────────────────────────────────────────────
   { label: 'Dashboard',    to: '/',           permissions: [],                            icon: LayoutDashboard, section: 'OVERVIEW' },
 
+  // ── Master Data ───────────────────────────────────────────────────────────
+  // These were `children` of a "Master Data" item nested inside WORKFLOW. With
+  // sections themselves collapsible that would have been a dropdown inside a
+  // dropdown — two clicks to reach a page. They are now an ordinary section, so
+  // the whole nested-item code path is gone.
+  //
+  // The old parent also carried its own permission list, which had to be kept
+  // in union with its children's or the group vanished for someone who could
+  // see a page inside it. A section is shown when at least one of its items
+  // survives the filter, so there is nothing left to keep in sync.
+  { label: 'Locations',            to: '/master/locations',     permissions: ['MANAGE_MASTER_DATA'],                                          icon: MapPin,     section: 'MASTER DATA' },
+  { label: 'Vehicles',             to: '/master/vehicles',      permissions: ['VIEW_VEHICLE','CREATE_VEHICLE','UPDATE_VEHICLE','MANAGE_MASTER_DATA'], icon: Car,   section: 'MASTER DATA' },
+  { label: 'Services & Pricing',   to: '/master/services',      permissions: ['VIEW_SERVICE','VIEW_PRICING_RULE','MANAGE_MASTER_DATA','MANAGE_PRICING'], icon: Wrench, section: 'MASTER DATA' },
+  { label: 'Lead Status',          to: '/master/lead-statuses', permissions: ['MANAGE_MASTER_DATA'],                                          icon: Tag,        section: 'MASTER DATA' },
+  { label: 'Departments',          to: '/master/departments',   permissions: ['MANAGE_MASTER_DATA'],                                          icon: Building2,  section: 'MASTER DATA' },
+  { label: 'Parts',                to: '/master/parts',         permissions: ['MANAGE_PARTS','CREATE_PART','EDIT_PART','DELETE_PART','MANAGE_MASTER_DATA'], icon: Package, section: 'MASTER DATA' },
+  { label: 'Discounts',            to: '/master/discounts',     permissions: ['MANAGE_DISCOUNTS','CREATE_DISCOUNT','EDIT_DISCOUNT','DELETE_DISCOUNT','MANAGE_MASTER_DATA'], icon: Percent, section: 'MASTER DATA' },
+  { label: 'Warranty & Guarantee', to: '/master/warranties',    permissions: ['MANAGE_WARRANTIES','CREATE_WARRANTY','EDIT_WARRANTY','DELETE_WARRANTY','MANAGE_MASTER_DATA'], icon: ShieldCheck, section: 'MASTER DATA' },
+
   // ── Workflow ──────────────────────────────────────────────────────────────
-  {
-    label: 'Master Data',
-    permissions: ['MANAGE_MASTER_DATA','VIEW_VEHICLE','VIEW_SERVICE','VIEW_PRICING_RULE','MANAGE_PARTS','MANAGE_DISCOUNTS','CREATE_PART','EDIT_PART','CREATE_DISCOUNT','EDIT_DISCOUNT','CREATE_SERVICE','UPDATE_SERVICE','CREATE_VEHICLE','UPDATE_VEHICLE'],
-    icon: Database,
-    section: 'WORKFLOW',
-    children: [
-      { label: 'Locations',          to: '/master/locations',     permissions: ['MANAGE_MASTER_DATA'],                                          icon: MapPin    },
-      { label: 'Vehicles',           to: '/master/vehicles',      permissions: ['VIEW_VEHICLE','CREATE_VEHICLE','UPDATE_VEHICLE','MANAGE_MASTER_DATA'], icon: Car       },
-      { label: 'Services & Pricing', to: '/master/services',      permissions: ['VIEW_SERVICE','VIEW_PRICING_RULE','MANAGE_MASTER_DATA','MANAGE_PRICING'], icon: Wrench    },
-      { label: 'Lead Status',        to: '/master/lead-statuses', permissions: ['MANAGE_MASTER_DATA'],                                          icon: Tag       },
-      { label: 'Departments',        to: '/master/departments',   permissions: ['MANAGE_MASTER_DATA'],                                          icon: Building2 },
-      { label: 'Parts',              to: '/master/parts',         permissions: ['MANAGE_PARTS','CREATE_PART','EDIT_PART','DELETE_PART','MANAGE_MASTER_DATA'], icon: Package   },
-      { label: 'Discounts',          to: '/master/discounts',     permissions: ['MANAGE_DISCOUNTS','CREATE_DISCOUNT','EDIT_DISCOUNT','DELETE_DISCOUNT','MANAGE_MASTER_DATA'], icon: Percent   },
-      { label: 'Warranty & Guarantee', to: '/master/warranties',  permissions: ['MANAGE_WARRANTIES','CREATE_WARRANTY','EDIT_WARRANTY','DELETE_WARRANTY','MANAGE_MASTER_DATA'], icon: ShieldCheck },
-    ],
-  },
+  // Above HUBs: a Workshop is the stage before one, and the nav should read in
+  // the order the work happens.
+  { label: 'Workshops',    to: '/workshops',    permissions: ['VIEW_WORKSHOP','CREATE_WORKSHOP','EDIT_WORKSHOP','MANAGE_HUBS'], icon: Store, section: 'WORKFLOW' },
   { label: 'HUBs',         to: '/hubs',         permissions: ['VIEW_HUB','MANAGE_HUBS','CREATE_HUB','EDIT_HUB'], icon: Network, section: 'WORKFLOW' },
   { label: 'Leads',        to: '/leads',        permissions: ['VIEW_LEAD','VIEW_TEAM_LEADS','VIEW_OWN_LEADS','CREATE_LEAD'], icon: Users, section: 'WORKFLOW' },
   { label: 'Appointments', to: '/appointments', permissions: ['VIEW_APPOINTMENT','VIEW_LEAD','CREATE_APPOINTMENT'], icon: Calendar, section: 'WORKFLOW' },
@@ -124,6 +224,13 @@ const NAV_ITEMS = [
   // ── Accounting ────────────────────────────────────────────────────────────
   { label: 'Purchase Invoices', to: '/purchase-invoices', permissions: ['VIEW_PURCHASE_INVOICE','CREATE_PURCHASE_INVOICE','APPROVE_PURCHASE_INVOICE'], icon: ReceiptText, section: 'ACCOUNTING' },
   { label: 'Hub Payouts',       to: '/payouts',           permissions: ['VIEW_PURCHASE_INVOICE','VIEW_HUB','MANAGE_HUBS'],       icon: Wallet, section: 'ACCOUNTING' },
+  // Money IN, beside the two screens for money out.
+  //
+  // Gated on VIEW_PAYMENTS alone, not the usual any-of list. COLLECT_PAYMENT is
+  // an action taken from an invoice a person is already looking at; being
+  // trusted to take one payment is not the same as being shown the ledger of
+  // every payment the company has ever received.
+  { label: 'Payments',          to: '/payments',          permissions: ['VIEW_PAYMENTS'],                                        icon: CreditCard, section: 'ACCOUNTING' },
 
   // ── Customers ─────────────────────────────────────────────────────────────
   { label: 'Customers',         to: '/customers',         permissions: ['VIEW_CUSTOMER','VIEW_LEAD','CREATE_LEAD'],              icon: Users2, section: 'CUSTOMERS' },
@@ -131,7 +238,6 @@ const NAV_ITEMS = [
 
   // ── System ────────────────────────────────────────────────────────────────
   { label: 'Bulk Upload', to: '/bulk-upload', permissions: ['BULK_UPLOAD'],             icon: UploadCloud, section: 'SYSTEM' },
-  { label: 'Reports',     to: '/reports',     permissions: ['VIEW_REPORTS'],            icon: BarChart3, section: 'SYSTEM' },
   // 'Users'/'My Team' and 'Super Admins' used to be separate top-level items
   // pointing at /users and /super-admins — both pages now live as tabs
   // inside the consolidated Settings module (those two routes just redirect
@@ -139,7 +245,27 @@ const NAV_ITEMS = [
   // visibility (Manage Users / Super Admins / etc.) is gated inside
   // SettingsPage.jsx itself, same as /profile's tabs always were.
   { label: 'Settings',     to: '/settings',     permissions: [],                                                        icon: Settings, section: 'SYSTEM'  },
+
+  // ── Tools (flat, below the card) ──────────────────────────────────────────
+  { label: 'Reports',     to: '/reports',     permissions: ['VIEW_REPORTS'],            icon: BarChart3, section: 'TOOLS' },
 ];
+
+/**
+ * The section a URL belongs to, or null.
+ *
+ * Longest match wins: '/master/services' must resolve to Master Data, and a
+ * plain `startsWith` against '/' would hand every route to Dashboard's section.
+ */
+function sectionOfPath(pathname) {
+  let best = null, bestLen = -1;
+  for (const it of NAV_ITEMS) {
+    if (!it.to || it.to === '/') continue;
+    if ((pathname === it.to || pathname.startsWith(it.to + '/')) && it.to.length > bestLen) {
+      best = it.section; bestLen = it.to.length;
+    }
+  }
+  return best;
+}
 
 export default function AppShell({ children }) {
   const { user, logout, can } = useAuth();
@@ -147,7 +273,60 @@ export default function AppShell({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { activeEntries } = useUpload();
-  const [masterOpen, setMasterOpen] = useState(location.pathname.startsWith('/master'));
+  /**
+   * Which sidebar groups are expanded. Any number of them.
+   *
+   * This was one-at-a-time — opening Sales closed Accounting — on the reasoning
+   * that keeping the list short was the whole point of having groups. That
+   * reasoning was propping up a bug rather than a design: the nav could not
+   * scroll (see the flex-shrink note on .nav-card in AppShell.css), so a single
+   * eight-item group already overflowed and anything past it was silently
+   * clipped. Closing the others was the only thing making that survivable.
+   *
+   * With scrolling fixed there is no reason to shut a group the person did not
+   * ask to shut, and plenty of work spans two — pricing a job means Master Data
+   * and Sales.
+   *
+   * An empty array is a real value (everything closed), so the initial read
+   * cannot use `stored || fallback`: that would reopen groups the user
+   * deliberately shut. Persisted as a '|'-joined string, which also reads a
+   * pre-existing single-key value correctly — 'SALES'.split('|') is ['SALES'] —
+   * so nobody's saved state resets on deploy. Section keys contain spaces but
+   * never a pipe.
+   */
+  const [openSections, setOpenSections] = useState(() => {
+    try {
+      const stored = localStorage.getItem(NAV_OPEN_KEY);
+      if (stored !== null) return stored === '' ? [] : stored.split('|');
+    } catch { /* private mode / storage disabled — fall through */ }
+    const here = sectionOfPath(location.pathname);
+    return here ? [here] : [];
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(NAV_OPEN_KEY, openSections.join('|')); } catch { /* ignore */ }
+  }, [openSections]);
+
+  /**
+   * Follow the route INTO a group, but do not fight the user inside one.
+   *
+   * Keyed on the section rather than the pathname: reacting to every navigation
+   * would re-open a group the moment you closed it, because moving from
+   * /estimates to /customer-invoices is still "in Sales". Tracking the section
+   * means we only act when you actually cross into a different one.
+   *
+   * Adds rather than replaces now that groups are independent — arriving in
+   * Sales must not close the Master Data group you opened to get here.
+   */
+  const activeSection = sectionOfPath(location.pathname);
+  const navSectionMotion = useReducedMotion() ? NAV_MOTION_NONE : NAV_MOTION;
+  const lastSectionRef = useRef(activeSection);
+  useEffect(() => {
+    if (activeSection && activeSection !== lastSectionRef.current) {
+      setOpenSections(cur => cur.includes(activeSection) ? cur : [...cur, activeSection]);
+    }
+    lastSectionRef.current = activeSection;
+  }, [activeSection]);
 
   // Settings gets a full-page takeover — its own sidebar (with a Back to
   // Dashboard link, built inside SettingsPage.jsx) replaces the main nav
@@ -182,6 +361,26 @@ export default function AppShell({ children }) {
   useEffect(() => {
     function onOut(e) {
       if (userDropRef.current && !userDropRef.current.contains(e.target)) setUserDropOpen(false);
+    }
+    document.addEventListener('mousedown', onOut);
+    return () => document.removeEventListener('mousedown', onOut);
+  }, []);
+
+  /* ── Sidebar profile card ────────────────────────────────────────────────
+     Everyone gets it, at the top of the sidebar. Super admins get the SAME
+     card in a compact variant: the avatar and text turn into one horizontal
+     row instead of a centred stack, which costs about half the height.
+
+     Same markup either way — only a modifier class differs — so the two cannot
+     drift apart as one of them gets edited. The old card pinned at the bottom
+     of the sidebar is gone; keeping it for super admins would have put the
+     same avatar at both ends. */
+  const isSuperAdmin = !!user?.is_super_admin;
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef(null);
+  useEffect(() => {
+    function onOut(e) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) setProfileMenuOpen(false);
     }
     document.addEventListener('mousedown', onOut);
     return () => document.removeEventListener('mousedown', onOut);
@@ -383,6 +582,24 @@ export default function AppShell({ children }) {
     navigate('/login');
   };
 
+  /**
+   * Where "view profile" lands. Lifted out of the bottom card's onClick now
+   * that two things call it — the new top card and its menu.
+   *
+   * Super admin is checked FIRST and lands on Overview. It cannot fall through
+   * to the MANAGE_USERS branch: can() returns true for super admins, but
+   * ProfilePage builds its Admin tab from
+   * `isAdmin = !is_super_admin && perm.has('MANAGE_USERS')` — so a super admin
+   * sent to ?tab=admin gets a tab bar with nothing selected and a body
+   * rendered under a heading that isn't there.
+   */
+  const goProfile = () => {
+    if (user?.is_super_admin) navigate('/profile?tab=overview');
+    else if (can('MANAGE_USERS')) navigate('/profile?tab=admin');
+    else if (can('VIEW_TEAM_LEADS')) navigate('/profile?tab=team');
+    else navigate('/profile?tab=overview');
+  };
+
   // Close mobile menu on navigation
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -395,22 +612,63 @@ export default function AppShell({ children }) {
     if (it.excludePermissions?.length && can(...it.excludePermissions)) return false;
     return it.permissions?.length ? can(...it.permissions) : !!user;
   };
-  const filteredNav = NAV_ITEMS
-    .map((item) => {
-      if (!item.children) return itemVisible(item) ? item : null;
-      const children = item.children.filter(itemVisible);
-      return children.length ? { ...item, children } : null;
-    })
-    .filter(Boolean);
+  // Flat: no nav item has children now that Master Data is a section. The
+  // nested branch was removed rather than left in place — dead code that still
+  // looks supported invites someone to add a nested item the renderer below
+  // would silently drop.
+  const filteredNav = NAV_ITEMS.filter(itemVisible);
 
   // Group the permission-filtered nav into fixed sections, dropping any
   // section that has no visible items.
   const groupedNav = NAV_SECTIONS
     .map((section) => ({
       section,
-      items: filteredNav.filter((item) => item.section === section),
+      items: filteredNav.filter((item) => item.section === section.key),
     }))
     .filter((g) => g.items.length);
+
+  /**
+   * Split the sections into blocks so the collapsible groups can share one
+   * rounded card while the flat sections (Dashboard above it, Reports below)
+   * sit directly on the sidebar.
+   *
+   * Batched by consecutive RUN rather than by a hardcoded index: a section that
+   * vanishes to permission filtering — a user without MANAGE_MASTER_DATA never
+   * sees Master Data — must shrink the card, not split it in two. Reordering
+   * NAV_SECTIONS needs no change here either.
+   *
+   * The 72px rail renders every section flat (see the effectiveCollapsed branch
+   * below), so it produces one uncarded block and no card is drawn at all.
+   */
+  const navBlocks = [];
+  for (const entry of groupedNav) {
+    const card = !effectiveCollapsed && entry.section.collapsible;
+    const last = navBlocks[navBlocks.length - 1];
+    if (last && last.card === card) last.sections.push(entry);
+    else navBlocks.push({ card, sections: [entry] });
+  }
+
+  /* Quick-action visibility. Permission AND destination: a hub login holding
+     CREATE_LEAD would otherwise get a button opening a modal that posts to a
+     leads screen its shell does not have. */
+  const P = useAppPaths();
+  // ── Can this person read WhatsApp at all? ──────────────────────────────
+  //
+  // Checked HERE rather than inside the control, so a user without it never
+  // renders it and never calls its endpoints. That is not tidiness: an advisor
+  // on the WhatsApp rota but without the permission was firing a 403 on every
+  // poll, on every socket nudge and on every lead they opened — a console full
+  // of red that pointed at the badge when the answer was a checkbox on their
+  // user record.
+  //
+  // Same codes the whatsapp routes use (canRead in routes/whatsapp.routes.js).
+  // If these two ever disagree the symptom is either a dead icon or an
+  // invisible feature, so they are worth keeping side by side in a search.
+  const canWhatsApp = can('SEND_WHATSAPP', 'VIEW_WHATSAPP_LOGS');
+
+  const canQuickLead = !!P.leads && can('CREATE_LEAD');
+  const canQuickAppt = !!P.appointments && can('CREATE_APPOINTMENT');
+  const canQuickEst  = !!P.estimates && can('CREATE_ESTIMATE');
 
   const userBadge = user?.is_super_admin ? 'super admin' : 'user';
 
@@ -432,109 +690,241 @@ export default function AppShell({ children }) {
             </button>
           )}
         </div>
-        <nav>
-          {groupedNav.map((group) => (
-            <div key={group.section} className="nav-section">
-              {!effectiveCollapsed && <div className="nav-section-label">{group.section}</div>}
-              {group.items.map((item) => {
-                if (item.children) {
-                  return (
-                    <div key={item.label} className="nav-group">
-                      <button
-                        className={`nav-group-header ${masterOpen ? 'open' : ''} ${location.pathname.startsWith('/master') ? 'active-parent' : ''}`}
-                        onClick={() => setMasterOpen(!masterOpen)}
-                      >
-                        <div className="label-wrap">
-                          <item.icon size={18} strokeWidth={2} />
-                          {!effectiveCollapsed && item.label}
-                        </div>
-                        {!effectiveCollapsed && (masterOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
-                      </button>
-                      <AnimatePresence>
-                        {masterOpen && !effectiveCollapsed && (
-                          <motion.div
-                            className="nav-group-children"
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.2 }}
-                          >
-                            {item.children.map(child => (
-                              <NavLink key={child.to} to={child.to} className={({ isActive }) => isActive ? 'active' : ''}>
-                                <child.icon size={16} strokeWidth={2} />
-                                {child.label}
-                              </NavLink>
-                            ))}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                }
-                return (
+
+        {/* ── Scroll region ────────────────────────────────────────────────
+            The profile card, the quick actions and the navigation scroll as one
+            body. Only the brand stays pinned, because its bottom border is
+            aligned to the topbar's and a divider that slides out of line with
+            the one beside it is worse than no divider.
+
+            The scroll lives here rather than on <nav> — where it was — so that
+            reaching the last nav group does not mean scrolling a short strip
+            underneath a profile card that never moves. Every child needs
+            flex-shrink: 0 or it gets squeezed instead of overflowing; see the
+            note on .nav-card in AppShell.css for what that failure looks
+            like. */}
+        <div className="sidebar-scroll">
+          {/* ── Profile card ─────────────────────────────────────────────────
+              Compact horizontal variant for super admins, full centred stack for
+              everyone else. See isSuperAdmin above.
+
+              On the 72px rail both degrade to the avatar alone. The menu is not
+              merely hidden there — a popover anchored to a 72px column would
+              hang over the content area, and everything in it is reachable from
+              the topbar's own user dropdown anyway. */}
+          {(effectiveCollapsed ? (
+            <button
+              type="button"
+              className="sb-profile-mini"
+              onClick={goProfile}
+              title={user?.name || 'View profile'}
+              aria-label="View profile"
+            >
+              {user?.name?.charAt(0).toUpperCase()}
+            </button>
+          ) : (
+            <div className={`sb-profile${isSuperAdmin ? ' sb-profile--compact' : ''}`} ref={profileMenuRef}>
+              <button
+                type="button"
+                className="sb-profile-kebab"
+                onClick={() => setProfileMenuOpen(o => !o)}
+                aria-haspopup="menu"
+                aria-expanded={profileMenuOpen}
+                aria-label="Account menu"
+                title="Account"
+              >
+                <MoreVertical size={16} />
+              </button>
+
+              {/* A button, not a div with onClick: this is the card's primary
+                  action and it has to be reachable by keyboard and announced as
+                  activatable. The kebab above is a sibling rather than a child
+                  for the same reason — a button inside a button is invalid and
+                  the inner one stops receiving clicks in some browsers. */}
+              <button type="button" className="sb-profile-body" onClick={goProfile} title="View profile">
+                <span className="sb-profile-avatar">{user?.name?.charAt(0).toUpperCase()}</span>
+                {/* Name and email are wrapped rather than being direct children
+                    of the body. The compact variant lays the body out as a row,
+                    and without this wrapper the two lines would sit side by side
+                    beside the avatar instead of stacking. */}
+                <span className="sb-profile-text">
+                  <span className="sb-profile-name">{user?.name}</span>
+                  <span className="sb-profile-email">{user?.email}</span>
+                </span>
+              </button>
+
+              {profileMenuOpen && (
+                <div className="sb-profile-menu" role="menu">
+                  <button type="button" role="menuitem" className="sb-profile-menu-item"
+                    onClick={() => { setProfileMenuOpen(false); goProfile(); }}>
+                    <User size={14} /> View profile
+                  </button>
+                  {/* Settings → Account, matching the topbar's user dropdown.
+                      This shell also owns a standalone change-password modal
+                      (`pwOpen`), but password and notification preferences were
+                      consolidated onto that settings tab — sending people to the
+                      modal here would be a second, older way to do the same
+                      thing. */}
+                  <button type="button" role="menuitem" className="sb-profile-menu-item"
+                    onClick={() => { setProfileMenuOpen(false); navigate('/settings?tab=account'); }}>
+                    <Lock size={14} /> Security &amp; Password
+                  </button>
+                  <button type="button" role="menuitem" className="sb-profile-menu-item sb-profile-menu-item--danger"
+                    onClick={() => { setProfileMenuOpen(false); handleLogout(); }}>
+                    <LogOut size={14} /> Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* ── Quick actions ────────────────────────────────────────────────
+              The two things people create from anywhere in this application are
+              a lead and an appointment. Both previously required navigating to
+              the right list page first and finding its own New button; these put
+              them one click from every screen.
+
+              Icon-only rather than a labelled "New" button with a menu: a menu
+              would add a click in front of BOTH actions to save a row the
+              sidebar has to spare. `title` and `aria-label` carry the name for
+              the tooltip and for a screen reader respectively — a bare icon with
+              neither is unusable without sight and unguessable with it.
+
+              Each button is gated on two things: the permission, and the
+              destination existing in this shell at all (P.leads is null in the
+              hub portal — see lib/appPaths.js). A button that 403s, or one that
+              navigates to "null", is worse than no button. */}
+          {(canQuickLead || canQuickAppt || canQuickEst) && !effectiveCollapsed && (
+            <div className="sidebar-quick">
+              {canQuickLead && (
+                <button
+                  type="button"
+                  className="sidebar-quick-btn"
+                  onClick={() => setLeadModalOpen(true)}
+                  title="New Lead"
+                  aria-label="New Lead"
+                >
+                  <UserPlus size={18} strokeWidth={2.2} />
+                </button>
+              )}
+              {canQuickAppt && (
+                <button
+                  type="button"
+                  className="sidebar-quick-btn"
+                  /* The create-appointment modal is owned by AppointmentsPage,
+                     not by this shell, so this cannot just flip a state flag the
+                     way the lead button does. It navigates and hands the page a
+                     one-shot router-state flag — see the `openCreate` effect
+                     there, which sits beside the identical `prefillCustomer` one
+                     that already existed for the customer-profile route. */
+                  onClick={() => navigate(P.appointments, { state: { openCreate: true } })}
+                  title="New Appointment"
+                  aria-label="New Appointment"
+                >
+                  <CalendarPlus size={18} strokeWidth={2.2} />
+                </button>
+              )}
+              {canQuickEst && (
+                <button
+                  type="button"
+                  className="sidebar-quick-btn"
+                  /* Opens StartEstimateChoice — the "booked appointment or
+                     walk-in?" chooser EstimatesPage owns. A query param rather
+                     than the router state the appointment button uses, because
+                     that is the idiom EstimatesPage already applies to its
+                     create-flows (see createForAppointmentIdParam there): no
+                     record exists yet, so there is no id or token to key state
+                     off, and the page strips the param once it has read it. */
+                  onClick={() => navigate(`${P.estimates}?new=1`)}
+                  title="New Estimate"
+                  aria-label="New Estimate"
+                >
+                  <FilePlus size={18} strokeWidth={2.2} />
+                </button>
+              )}
+            </div>
+          )}
+
+          <nav>
+            {navBlocks.map((block, blockIndex) => {
+              const rendered = block.sections.map(({ section, items }) => {
+                const link = (item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
                     className={({ isActive }) => isActive ? 'active' : ''}
                     end={item.to === '/'}
+                    title={effectiveCollapsed ? item.label : undefined}
                   >
                     <item.icon size={18} strokeWidth={2} />
                     {!effectiveCollapsed && item.label}
                   </NavLink>
                 );
-              })}
-            </div>
-          ))}
-        </nav>
 
-        {/* ── Sidebar profile card ── */}
-        <div
-          className="sidebar-profile"
-          onClick={() => {
-            // Always the profile. A super admin used to be sent to
-            // /settings?tab=business instead — a leftover from when company
-            // details and the role creator lived on a profile tab and moved
-            // into the Settings module. The card says "View profile" and shows
-            // the signed-in person's name and avatar, so landing on company
-            // settings was simply the wrong destination.
-            //
-            // Settings is still reachable from the nav item above.
-            //
-            // Super admin is checked FIRST and lands on Overview. It cannot
-            // fall through to the MANAGE_USERS branch: can() returns true for
-            // super admins, but ProfilePage builds its Admin tab from
-            // `isAdmin = !is_super_admin && perm.has('MANAGE_USERS')` — so a
-            // super admin sent to ?tab=admin gets a tab bar with nothing
-            // selected and a body rendered under a heading that isn't there.
-            if (user?.is_super_admin) navigate('/profile?tab=overview');
-            else if (can('MANAGE_USERS')) navigate('/profile?tab=admin');
-            else if (can('VIEW_TEAM_LEADS')) navigate('/profile?tab=team');
-            else navigate('/profile?tab=overview');
-          }}
-          title="View profile"
-        >
-          <div className="sidebar-profile-avatar">
-            {user?.name?.charAt(0).toUpperCase()}
-          </div>
-          {!effectiveCollapsed && (
-            <div className="sidebar-profile-info">
-              <div className="sidebar-profile-name">{user?.name}</div>
-              <div className="sidebar-profile-hint">
-                {/* "Super Admin Panel" described where this card used to go —
-                    the settings module. It goes to the profile now, so the
-                    subtitle names the role like it does for everyone else. */}
-                {user?.is_super_admin ? 'Super Admin'
-                  : user?.role_name ? user.role_name
-                  : 'View my profile'}
-              </div>
-            </div>
-          )}
-          {!effectiveCollapsed && (
-            <button className="sidebar-profile-logout" onClick={(e) => { e.stopPropagation(); handleLogout(); }} title="Logout">
-              <LogOut size={15} />
-            </button>
-          )}
+                /* Two cases render as a plain list with no header:
+                   - a section marked collapsible:false (OVERVIEW — one item)
+                   - the 72px collapsed rail, where there is no room for a label,
+                     so a header would be a chevron floating above some icons and
+                     an expandable group would have nothing to expand into. */
+                if (effectiveCollapsed || !section.collapsible) {
+                  return (
+                    <div key={section.key} className="nav-section">
+                      {items.map(link)}
+                    </div>
+                  );
+                }
+
+                const open = openSections.includes(section.key);
+                return (
+                  <div key={section.key} className={`nav-section nav-section--group${open ? ' open' : ''}`}>
+                    <button
+                      type="button"
+                      className={`nav-section-header${open ? ' open' : ''}${activeSection === section.key ? ' active-parent' : ''}`}
+                      onClick={() => setOpenSections((cur) => cur.includes(section.key)
+                        ? cur.filter(k => k !== section.key)
+                        : [...cur, section.key])}
+                      /* Real button + aria-expanded: a screen reader has to be able
+                         to tell that this row hides a list, and that it is shut. */
+                      aria-expanded={open}
+                    >
+                      <span className="nav-section-name">{section.label}</span>
+                      {/* One icon rotated by CSS rather than swapping ChevronDown
+                          for ChevronRight — swapping remounts the node mid-flight
+                          and the rotation never animates. */}
+                      <ChevronDown size={15} className="nav-section-chevron" />
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {open && (
+                        <motion.div
+                          className="nav-section-items"
+                          initial="collapsed"
+                          animate="open"
+                          exit="collapsed"
+                          variants={navSectionMotion}
+                        >
+                          {items.map(link)}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              });
+
+              /* One card per run of collapsible groups; flat runs pass straight
+                 through. The key is the block index, not a section key — a block
+                 holds several sections and its identity is its position. */
+              return block.card
+                ? <div key={`nav-card-${blockIndex}`} className="nav-card">{rendered}</div>
+                : <Fragment key={`nav-flat-${blockIndex}`}>{rendered}</Fragment>;
+            })}
+          </nav>
         </div>
+
+        {/* The profile card that used to sit here is gone — every role now gets
+            one at the TOP of the sidebar (see the sb-profile block above). Its
+            .sidebar-profile* rules are left in AppShell.css unused, the same way
+            .sidebar-action-btn already was. */}
 
         {/* ── Change password modal ── */}
         {pwOpen && (
@@ -658,6 +1048,17 @@ export default function AppShell({ children }) {
             <button className="theme-toggle" onClick={toggleTheme} title="Toggle Theme">
               {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
             </button>
+
+            {/* ── WhatsApp ────────────────────────────────────────────────
+                Left of the bell and visually its own thing: green, WhatsApp
+                mark, its own count. Not a second bell.
+
+                It is separate because of the one thing the bell cannot say —
+                WhatsApp only accepts a free-text reply within 24 hours of the
+                customer's last message, so these are the only alerts in the
+                system that EXPIRE. A list sorted by age has nowhere to put
+                "40 minutes left". */}
+            {canWhatsApp && <WhatsAppInbox />}
 
             {/* ── Notification Bell ── */}
             <div className="notif-wrap" ref={notifRef}>

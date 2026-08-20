@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { api, getToken, setToken } from '../api/client.js';
 import socket from '../lib/socket.js';
+import { clearAllListState } from '../lib/listStatePersist.js';
 
 const AuthContext = createContext(null);
 
@@ -61,6 +62,10 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
+    // Saved list filters live in sessionStorage, which survives a logout in the
+    // same tab. Without this, the next person to sign in here inherits the
+    // previous user's view — including their hub selection.
+    clearAllListState();
   }, []);
 
   /**

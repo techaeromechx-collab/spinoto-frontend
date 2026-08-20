@@ -27,9 +27,18 @@ out/
 *.sw?
 .DS_Store
 
+# Tauri — Rust build output (several GB) and tauri-build's generated schemas.
+# src-tauri/.gitignore covers these too; repeated here so a clone that only
+# reads this file still gets it right.
+src-tauri/target/
+src-tauri/gen/
+
 # Local env files
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Scratch files staged for manual deletion (device_bash cannot rm)
+_to_delete/

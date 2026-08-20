@@ -9,6 +9,7 @@
 // Uses an authenticated fetch rather than window.open(url) because the
 // endpoint requires a Bearer token, which a plain navigation can't send.
 import { API_URL, getToken } from '../api/client.js';
+import { isDesktop } from '../utils/isDesktop.js';
 
 const PATHS = {
   estimate: 'estimates',
@@ -40,6 +41,53 @@ function filenameFromResponse(res) {
 }
 
 /**
+ * A filename Windows will actually accept.
+ *
+ * The browser never needed this — `<a download>` sanitises for you. Writing to
+ * a real filesystem does not. Windows rejects \ / : * ? " < > | outright, and
+ * the server's name is built from customer and vehicle data, so a registration
+ * like "GJ-01/AB 1234" is not hypothetical.
+ */
+function safeFileName(name) {
+  return (name || 'document.pdf')
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+}
+
+/**
+ * Open a PDF the way a DESKTOP app should: save it, then hand it to Windows.
+ *
+ * The browser path below opens a blob URL in a new tab. A Tauri webview has no
+ * tabs — `window.open` returns null — so without this every Print/View button
+ * in the CRM would show "Pop-up blocked", which is both wrong and unactionable
+ * on a desktop app.
+ *
+ * Writing to $TEMP and calling openPath is better than a tab, not just a
+ * substitute for one: the file opens in whatever the user already prints from
+ * (Edge, Adobe, Foxit), with that program's real print dialog and printer
+ * selection.
+ *
+ * The imports are dynamic on purpose. These specifiers must never be pulled
+ * into the WEB bundle — Vite splits them into a chunk the browser build never
+ * requests, so crm.spinoto.ai ships exactly what it shipped before.
+ */
+async function openPdfNatively(blob, fileName) {
+  const { writeFile, BaseDirectory } = await import('@tauri-apps/plugin-fs');
+  const { openPath }                 = await import('@tauri-apps/plugin-opener');
+  const { tempDir, join }            = await import('@tauri-apps/api/path');
+
+  const name = safeFileName(fileName);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+
+  // baseDir keeps the write inside the capability's $TEMP scope
+  // (src-tauri/capabilities/default.json). Anywhere else is denied by design.
+  await writeFile(name, bytes, { baseDir: BaseDirectory.Temp });
+  await openPath(await join(await tempDir(), name));
+}
+
+/**
  * @param {'estimate'|'customer_invoice'|'purchase_invoice'} docType
  * @param {number|string} id
  * @param {{ theme?: string, share?: boolean, download?: boolean }} [opts]
@@ -56,7 +104,27 @@ export async function openDocumentPdf(docType, id, opts = {}) {
   if (opts.share) qs.set('share', '1');
   const q = qs.toString();
 
-  const res = await fetch(`${API_URL}/api/${path}/${id}/pdf${q ? `?${q}` : ''}`, {
+  return openPdfPath(`/api/${path}/${id}/pdf${q ? `?${q}` : ''}`, opts, `${docType}-${id}.pdf`);
+}
+
+/**
+ * The same, for any authenticated endpoint that returns a PDF.
+ *
+ * The advance receipt and refund vouchers do not live under one of the three
+ * document paths above — they are addressed by payment id, not document id. So
+ * the URL is passed in rather than composed from a type.
+ *
+ * Everything that makes the function above worth having is here: the Bearer
+ * header a plain window.open() cannot send, the %PDF- sniff that turns a
+ * silently-broken blob into a message saying so, the pop-up check, and the
+ * server's filename on the download path.
+ *
+ * @param {string} apiPath  path after the API origin, starting with '/'
+ * @param {{download?: boolean}} [opts]
+ * @param {string} [fallbackName]  used only if the server sends no filename
+ */
+export async function openPdfPath(apiPath, opts = {}, fallbackName = 'document.pdf') {
+  const res = await fetch(`${API_URL}${apiPath}`, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
 
@@ -79,6 +147,17 @@ export async function openDocumentPdf(docType, id, opts = {}) {
   if (magic !== '%PDF-') {
     throw new Error('The server returned something that is not a PDF. Check the backend log for a rendering error.');
   }
+  // ── Desktop ──────────────────────────────────────────────────────────────
+  // Handled before the blob URL is created, because neither branch below works
+  // in a webview: there is no tab to open one in, and the OS wants a real file.
+  // Both "view" and "download" collapse to the same thing here — the PDF lands
+  // in $TEMP under the server's name and opens in the system viewer, which is
+  // what a user means by both words on a desktop app.
+  if (isDesktop()) {
+    await openPdfNatively(blob, filenameFromResponse(res) || fallbackName);
+    return;
+  }
+
   const url = URL.createObjectURL(blob);
 
   // ⚠ A blob URL has no filename — it's `blob:http://host/<uuid>` and that uuid
@@ -91,7 +170,7 @@ export async function openDocumentPdf(docType, id, opts = {}) {
   // The download path is different: an <a download="..."> names the file
   // explicitly, so that one does get the server's name.
   if (opts.download) {
-    const name = filenameFromResponse(res) || `${docType}-${id}.pdf`;
+    const name = filenameFromResponse(res) || fallbackName;
     const a = document.createElement('a');
     a.href = url;
     a.download = name;
@@ -124,4 +203,26 @@ export async function openDocumentPdf(docType, id, opts = {}) {
  */
 export function downloadDocumentPdf(docType, id, opts = {}) {
   return openDocumentPdf(docType, id, { ...opts, download: true });
+}
+
+/**
+ * The advance RECEIPT voucher for a ledger payment.
+ *
+ * 404 means the payment has no voucher number — money that was never captured,
+ * i.e. a payment link nobody paid. There is no document for that, and the
+ * message says so rather than reporting a missing file.
+ */
+export function openAdvanceVoucher(paymentId, opts = {}) {
+  return openPdfPath(`/api/payments/advance/${paymentId}/voucher`, opts, `advance-${paymentId}.pdf`);
+}
+
+/**
+ * The REFUND voucher for a refund.
+ *
+ * 404 until the refund is processed: a gateway refund has no number while the
+ * money is still in flight, because a tax document saying it has gone back
+ * would not be true yet.
+ */
+export function openRefundVoucher(refundId, opts = {}) {
+  return openPdfPath(`/api/payments/refund/${refundId}/voucher`, opts, `refund-${refundId}.pdf`);
 }

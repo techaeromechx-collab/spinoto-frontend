@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { openDocumentPdf, downloadDocumentPdf } from '../lib/documentPdf.js';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { useAppPaths } from '../lib/appPaths.js';
 import { api } from '../api/client.js';
 import PaginationBar from '../components/PaginationBar.jsx';
 import SplitPane, { RecordCard } from '../components/SplitPane.jsx';
@@ -12,11 +13,15 @@ import { getRoundingFunction } from '../lib/math.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
+import { useFlipPopup } from '../hooks/useFlipPopup.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
 import { usePageCrumb } from '../lib/pageCrumbStore.js';
 import {
   ReceiptText, RefreshCw, X, Eye, XCircle, SlidersHorizontal, ArrowDown,
   AlertCircle, CheckCircle2, Clock, Trash2, ChevronLeft, Printer, Download, FileText, MoreVertical, ChevronDown,
+  // Replaces the Print/Download icon in place while the server renders the PDF,
+  // now that the buttons have no label to carry "Generating…".
+  Loader2,
 } from 'lucide-react';
 import '../styles/listLayout.css';
 import '../styles/PurchaseInvoicesPage.css';
@@ -132,7 +137,11 @@ function HubPaymentForm({ invoiceId, balance, onSuccess }) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(n) {
   if (n == null) return '—';
-  return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+  // maximumFractionDigits matters as much as the minimum. Rates are stored at
+  // NUMERIC(10,4), so without a cap toLocaleString printed the raw precision —
+  // ₹422.881 next to a 2dp tax amount in the same row, and line totals that
+  // did not visibly sum to the stated grand total.
+  return '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // Overdue is a CALENDAR comparison. `new Date(dateOnly) < new Date()` compares
@@ -175,8 +184,14 @@ function amountToWords(amount) {
     if (n < 10000000) return words(Math.floor(n / 100000)) + 'Lakh ' + words(n % 100000);
     return words(Math.floor(n / 10000000)) + 'Crore ' + words(n % 10000000);
   }
-  const num = Math.round(Math.abs(amount || 0));
-  const paise = Math.round((Math.abs(amount || 0) - num) * 100);
+  // floor, NOT round. With Math.round, ₹2,245.50 gave num = 2246 and then
+  // paise = (2245.50 - 2246) * 100 = -50, which fails the `paise > 0` test
+  // below — so the paise vanished AND the rupee figure was overstated:
+  // "Two Thousand Two Hundred Forty Six Rupees Only" printed against a figure
+  // of ₹2,245.50. On a GST document the words must match the figure exactly.
+  const abs = Math.abs(amount || 0);
+  const num = Math.floor(abs);
+  const paise = Math.round((abs - num) * 100);
   let result = (words(num) || 'Zero ').trim() + ' Rupees';
   if (paise > 0) result += ' and ' + words(paise).trim() + ' Paise';
   return result + ' Only';
@@ -260,16 +275,37 @@ function InfoRow({ label, value }) {
  * Module level and used twice — by the split-pane rail and by the LIST view
  * below 760px — so the two cannot describe the same invoice differently.
  */
-function piCard(inv) {
+/**
+ * The number printed on the document.
+ *
+ * Three rules, and they all used to be applied inconsistently:
+ *  - Once a hub's own series number exists (migration 121) that IS the number.
+ *    Invoices approved before the series started keep the derived form, because
+ *    hubs have already filed those numbers.
+ *  - The derived prefix follows the reader: a hub must never see "PI", which is
+ *    the company's word for the same document. The rail card showed PI-000079
+ *    while the detail beside it showed SI-000079 — same invoice, two names.
+ *  - Never the raw row id.
+ */
+function docNumber(inv, isHubUser) {
+  if (!inv) return '';
+  if (inv.invoice_number) return inv.invoice_number;
+  return `${isHubUser ? 'SI' : 'PI'}-${String(inv.id).padStart(6, '0')}`;
+}
+
+function piCard(inv, isHubUser = false) {
   const gt   = parseFloat(inv.grand_total ?? 0);
   const pd   = parseFloat(inv.amount_paid ?? 0);
   const bal  = Math.max(0, gt - pd);
   const meta = STATUS_META[inv.status] || { color: 'var(--text-muted)', label: inv.status || '—' };
   return {
     id: inv.id,
-    code: `PI-${String(inv.id).padStart(6, '0')}`,
+    code: docNumber(inv, isHubUser),
     date: fmtDate(inv.invoice_date || inv.created_at),
-    name: inv.hub_name || inv.customer_name || '—',
+    // In the hub portal every invoice belongs to the same hub, so repeating the
+    // hub name down the whole rail says nothing. The customer is what tells one
+    // row from another there.
+    name: (isHubUser ? (inv.customer_name || inv.hub_name) : (inv.hub_name || inv.customer_name)) || '—',
     sub: [inv.vehicle_number, [inv.make_name, inv.model_name].filter(Boolean).join(' ')]
            .filter(Boolean).join(' • '),
     status: meta.label,
@@ -286,12 +322,15 @@ function piCard(inv) {
 
 // ── Detail Drawer ─────────────────────────────────────────────────────────────
 function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser = false, onLoaded }) {
-  const rawNavigate = useNavigate();
-  // Hub Portal renders this drawer as a plain tab with no nested routing, and
-  // its admin-only routes (Estimates/Customers/Invoices) bounce hub users
-  // straight back to /hub (App.jsx's RequireAdmin). So navigate() has to be
-  // a no-op here for hub users — the drawer itself still opens fine locally.
-  const navigate = isHubUser ? () => {} : rawNavigate;
+  // Mirrors documentAdapter's `showMargin: cfg.margin_columns && viewerRole === 'admin'`.
+  // Derived from the session, never from a setting — the whole point is that no
+  // configuration change can turn it back on for a hub.
+  const showMargin = !isHubUser;
+  const navigate = useNavigate();
+  // Where each linked document lives for THIS user — /estimates for staff,
+  // /hub/estimates for a hub login. A null value means the hub portal has no
+  // such screen, and the link is hidden rather than pointed somewhere wrong.
+  const P = useAppPaths();
   const [inv, setInv] = useState(null);
   const [piPdfLoading, setPiPdfLoading] = useState(false);
   const [piPdfSaving, setPiPdfSaving] = useState(false);
@@ -475,38 +514,47 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
   });
   const gstSlabs = Object.values(gstSlabMap).sort((a, b) => b.pct - a.pct);
 
+  // ── One GST slab across every line, or several? ──────────────────────────
+  //
+  // When every taxable line shares a rate, the rate belongs in the COLUMN
+  // HEADER ("CGST 9%") and the cells hold rupees — which is what turns three
+  // tax columns into two. On a mixed-slab invoice there is no single header
+  // rate, so this is null and each row prints its own rate under the figure.
+  //
+  // Read from items, not from gstSlabs: a slab list of one could also mean one
+  // taxable line among several zero-rated ones, and that IS uniform.
+  const uniformHalfPct = (() => {
+    const rates = [...new Set(
+      items.map(i => parseFloat(i.gst_percent ?? 0)).filter(r => r > 0)
+    )];
+    if (rates.length !== 1) return null;
+    const half = rates[0] / 2;
+    return half.toFixed(half % 1 === 0 ? 0 : 1);
+  })();
+
   return (
     <div className="card est-detail-view">
 
-      {/* ── Print header — hidden on screen, shown when printing ── */}
+      {/* ── Print header — hidden on screen, shown when printing ──
+          The company letterhead that used to sit here (logo, company name,
+          address, phone, GSTIN) is gone deliberately. This document is the
+          HUB's sales invoice: the hub supplies the work and the company buys
+          it. Heading it with the buyer's letterhead is the backwards layout
+          the rest of this screen and the server PDF were corrected away from,
+          and on a hub's own tax invoice it names the wrong issuer.
+
+          Neither button reaches this markup any more — "Print / PDF" and
+          "Download" both go to the server PDF, which renders the parties
+          correctly — but Ctrl+P still prints the screen, so this keeps a
+          document identity line. The supplier and recipient blocks print from
+          the body below, where they are already right. */}
       <div className="est-print-header">
-        <div style={{ flex: 1 }}>
-          {/* Brand logo */}
-          <img src="/logo.svg" alt="Spinoto Logo" style={{ height: 44, marginBottom: 10, display: 'block' }} />
-          {company?.company_name ? (
-            <>
-              <div style={{ fontWeight: 800, fontSize: 15, color: '#111', marginBottom: 4 }}>
-                {company.company_name.toUpperCase()}
-              </div>
-              {company.address_line1 && <div style={{ fontSize: 12, color: '#555' }}>{company.address_line1}</div>}
-              {company.address_line2 && <div style={{ fontSize: 12, color: '#555' }}>{company.address_line2}</div>}
-              {(company.city || company.state || company.pincode) && (
-                <div style={{ fontSize: 12, color: '#555' }}>
-                  {[company.city, company.state, company.pincode].filter(Boolean).join(', ')}
-                </div>
-              )}
-              {company.phone && <div style={{ fontSize: 12, color: '#555' }}>Phone: {company.phone}</div>}
-              {company.gstin && <div style={{ fontSize: 12, color: '#555' }}>GSTIN: {company.gstin}</div>}
-            </>
-          ) : (
-            <div style={{ fontSize: 13, color: '#888', fontStyle: 'italic' }}>Company details not set</div>
-          )}
-        </div>
+        <div style={{ flex: 1 }} />
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <div style={{ fontWeight: 800, fontSize: 15, color: '#111' }}>
-            {isHubUser ? 'SELL INVOICE' : 'PURCHASE INVOICE'}
+            {isHubUser ? 'SALES INVOICE' : 'PURCHASE INVOICE'}
           </div>
-          {inv && <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>{isHubUser ? 'SI' : 'PI'}-{String(inv.id).padStart(6, '0')}</div>}
+          {inv && <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>{docNumber(inv, isHubUser)}</div>}
           {inv && <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>{fmtDate(inv.invoice_date || inv.created_at)}</div>}
         </div>
       </div>
@@ -516,16 +564,28 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <ReceiptText size={18} style={{ color: 'var(--primary)' }} />
           <span style={{ fontWeight: 700, fontSize: 16 }}>
-            {isHubUser ? 'Sell Invoice' : 'Purchase Invoice'} {inv ? `#${inv.id}` : ''}
+            {/* The document's own number, not the database row id. A hub
+                quoting "#79" to its accountant is quoting something that
+                appears nowhere on the invoice.
+
+                The "Purchase Invoice" / "Sales Invoice" prefix is gone: you are
+                on the purchase invoices screen, and the number says the rest —
+                the derived form is already PI-000012 / SI-000012, and a hub
+                that has its own series shows that series, which is the number
+                it actually filed.
+
+                The status pill is gone from here too. It is NOT lost — the info
+                band below carries a Status row already, so this was the same
+                fact printed twice, once in the chrome and once in the
+                document. */}
+            {inv ? docNumber(inv, isHubUser) : (isHubUser ? 'Sales Invoice' : 'Purchase Invoice')}
           </span>
-          {inv && <StatusBadge status={inv.status} />}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {/* Server-rendered themed PDF. The admin/hub view is decided
               server-side from the session, so a hub's copy never shows the
               customer rate or commission. */}
           <button
-            className="btn btn-ghost"
             disabled={piPdfLoading}
             onClick={async () => {
               if (!inv) return;
@@ -538,15 +598,21 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 setPiPdfLoading(false);
               }
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-            title="Open the themed PDF"
+            className="btn btn-ghost pi-hdr-icon"
+            title={piPdfLoading ? 'Generating the PDF…' : 'Print / PDF'}
+            aria-label="Print or open the PDF"
           >
-            <Printer size={15} /> {piPdfLoading ? 'Generating…' : 'Print / PDF'}
+            {/* The label carried the progress state — "Generating…" — so with
+                the label gone the spinner has to replace the icon IN PLACE.
+                A disabled button that looks identical to an idle one is a
+                button people press twice. */}
+            {piPdfLoading
+              ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+              : <Printer size={16} />}
           </button>
           {/* Separate from Print because only a download can carry the proper
               filename — Print opens a blob URL, which has no name. */}
           <button
-            className="btn btn-ghost"
             disabled={piPdfSaving}
             onClick={async () => {
               if (!inv) return;
@@ -559,22 +625,29 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 setPiPdfSaving(false);
               }
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-            title="Download the PDF as PI-000000_VEHICLE_Model.pdf"
+            className="btn btn-ghost pi-hdr-icon"
+            title={piPdfSaving ? 'Saving…' : 'Download the PDF as PI-000000_VEHICLE_Model.pdf'}
+            aria-label="Download the PDF"
           >
-            <Download size={15} /> {piPdfSaving ? 'Saving…' : 'Download'}
+            {piPdfSaving
+              ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+              : <Download size={16} />}
           </button>
-          {/* Kebab menu */}
-          {inv && inv.status === 'approved' && parseFloat(inv.amount_paid ?? 0) === 0 && (
+          {/* Kebab menu — Edit Rates and Reject Approval.
+              Hidden from hubs: both call staff-only endpoints, so for a hub
+              they were buttons that could only ever fail, and "Edit Rates" on
+              your own issued tax invoice reads as a promise the system does not
+              keep. A hub does not edit its Sales Invoice at all. */}
+          {!isHubUser && inv && inv.status === 'approved' && parseFloat(inv.amount_paid ?? 0) === 0 && (
             <div style={{ position: 'relative' }}>
               {showKebab && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowKebab(false)} />
               )}
               <button
-                className="btn btn-ghost"
+                className="btn btn-ghost pi-hdr-icon"
                 onClick={() => setShowKebab(p => !p)}
-                style={{ padding: '6px 8px', display: 'flex', alignItems: 'center' }}
                 title="More actions"
+                aria-label="More actions"
               >
                 <MoreVertical size={16} />
               </button>
@@ -632,20 +705,65 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 
           {/* Info grid — two-column layout */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, background: 'var(--bg-soft)', borderRadius: 12, overflow: 'hidden' }}>
-            {/* Left: hub + customer */}
+            {/* Left: the two parties.
+                This is the hub's sales invoice — the hub supplies the work and
+                the company buys it — so it needs a supplier and a recipient,
+                each with a GSTIN, exactly as the PDF now renders them. It used
+                to be a flat "Hub Details" list (hub / customer / mobile) with
+                the company nowhere on the document, which read as though the
+                company were selling TO the hub.
+                The end customer stays, but as "Job for": context for which job
+                this covers, not a party to it. */}
             <div style={{ padding: '16px 20px', borderRight: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Hub Details</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {[
-                  { label: 'Hub', value: inv.hub_name },
-                  { label: 'Customer', value: inv.customer_name },
-                  { label: 'Mobile', value: inv.mobile },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ display: 'flex' }}>
-                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 88, flexShrink: 0 }}>{label}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{value || '—'}</span>
-                  </div>
-                ))}
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
+                {isHubUser ? 'From (You)' : 'Supplier'}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                {inv.hub_legal_name || inv.hub_name || '—'}
+              </div>
+              {inv.hub_address && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, whiteSpace: 'pre-line' }}>{inv.hub_address}</div>
+              )}
+              {/* Deliberately shown as an unmissable gap rather than hidden.
+                  A tax invoice without a supplier address is not valid, and a
+                  quietly-omitted line looks like the field does not exist. */}
+              {!inv.hub_address && (
+                <div style={{ fontSize: 11, color: '#b45309', marginTop: 3, fontStyle: 'italic' }}>
+                  Address not on file — add it in Hub settings
+                </div>
+              )}
+              {(inv.hub_gstin || inv.hub_gst) && (
+                <div style={{ fontSize: 12, color: 'var(--text)', marginTop: 3 }}>
+                  GSTIN {inv.hub_gstin || inv.hub_gst}
+                </div>
+              )}
+              {inv.hub_has_gst === false && (
+                <div style={{ fontSize: 11, color: '#b45309', marginTop: 3, fontWeight: 600 }}>
+                  Not registered under GST — Bill of Supply
+                </div>
+              )}
+
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '14px 0 6px' }}>
+                Bill To
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{company?.company_name || '—'}</div>
+              {/* pre-line, matching the supplier block above: the value is
+                  joined with newlines and without it the three lines run
+                  together into one. */}
+              {company?.address_line1 && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3, whiteSpace: 'pre-line' }}>
+                  {[company.address_line1, company.address_line2, [company.city, company.state, company.pincode].filter(Boolean).join(', ')].filter(Boolean).join('\n')}
+                </div>
+              )}
+              {company?.gstin && (
+                <div style={{ fontSize: 12, color: 'var(--text)', marginTop: 3 }}>GSTIN {company.gstin}</div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 14, fontSize: 12 }}>
+                <span style={{ color: '#9ca3af', fontWeight: 500 }}>Job for</span>
+                <span style={{ color: 'var(--text)', fontWeight: 600 }}>
+                  {inv.customer_name || '—'}{inv.mobile ? ` · ${inv.mobile}` : ''}
+                </span>
               </div>
             </div>
             {/* Right: vehicle + invoice meta */}
@@ -677,7 +795,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                   </div>
                 )}
                 {[
-                  { label: 'Invoice No.', value: `${isHubUser ? 'SI' : 'PI'}-${String(inv.id).padStart(6, '0')}` },
+                  { label: 'Invoice No.', value: docNumber(inv, isHubUser) },
                   { label: 'Date', value: fmtDate(inv.invoice_date || inv.created_at) },
                   { label: 'Status', node: <StatusBadge status={inv.status} /> },
                 ].map(({ label, value, node }) => (
@@ -694,8 +812,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Line Items</div>
-              {/* Rate mode badge — screen only, hidden on print */}
-              {inv?.rate_mode === 'tech_rate' ? (
+              {/* Rate mode badge — screen only, hidden on print, and admin only:
+                  "Take Rate Mode" names the commercial arrangement the hidden
+                  columns exist to keep off a hub's copy. */}
+              {showMargin && (inv?.rate_mode === 'tech_rate' ? (
                 <span className="pi-no-print" style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>
                   Take Rate Mode
                 </span>
@@ -703,30 +823,43 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 <span className="pi-no-print" style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#dbeafe', color: '#1e40af', border: '1px solid #bfdbfe' }}>
                   Commission Mode
                 </span>
-              )}
+              ))}
             </div>
             <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
-              <table className="pi-table pi-items-table" style={{ minWidth: inv?.rate_mode === 'tech_rate' ? 960 : 860 }}>
+              {/* showMargin: the three columns that reconstruct the company's
+                  cut — Cust. Rate, Take Rate %, Discount. The PDF has always
+                  hard-gated these on the session being an admin, but this
+                  on-screen drawer rendered them unconditionally, so a hub could
+                  read the exact take rate off its own invoice while the printed
+                  copy of the SAME invoice hid it. Gated on isHubUser, never on
+                  a config flag, matching documentAdapter's rule. */}
+              <table className="pi-table pi-items-table" style={{ minWidth: showMargin ? (inv?.rate_mode === 'tech_rate' ? 880 : 780) : 640 }}>
                 <thead>
                   <tr>
                     <th style={{ width: 36, textAlign: 'center' }}>Sr.</th>
                     <th style={{ minWidth: 160, maxWidth: 220 }}>Item</th>
                     <th style={{ textAlign: 'right' }}>Qty</th>
-                    <th style={{ textAlign: 'right' }}>Cust. Rate</th>
-                    <th style={{ textAlign: 'right' }}>
-                      {inv?.rate_mode === 'tech_rate' ? 'Take Rate %' : 'Commission %'}
-                    </th>
-                    <th style={{ textAlign: 'right', color: '#dc2626' }}>Discount</th>
+                    {showMargin && <th style={{ textAlign: 'right' }}>Cust. Rate</th>}
+                    {showMargin && (
+                      <th style={{ textAlign: 'right' }}>
+                        {inv?.rate_mode === 'tech_rate' ? 'Take Rate %' : 'Commission %'}
+                      </th>
+                    )}
+                    {showMargin && <th style={{ textAlign: 'right', color: '#dc2626' }}>Discount</th>}
                     <th style={{ textAlign: 'right' }}>{isHubUser ? 'Your Rate' : 'Hub Rate'}</th>
-                    <th style={{ textAlign: 'right' }}>CGST %</th>
-                    <th style={{ textAlign: 'right' }}>SGST %</th>
-                    <th style={{ textAlign: 'right' }}>Tax Amt</th>
+                    {/* Two tax columns, not three. CGST % and SGST % printed
+                        the SAME number in both, and neither was money — the
+                        rupee figure next to them covered both halves. Now each
+                        column carries its own half in rupees, with the rate in
+                        the header when every line shares one. */}
+                    <th style={{ textAlign: 'right' }}>CGST{uniformHalfPct ? ` ${uniformHalfPct}%` : ''}</th>
+                    <th style={{ textAlign: 'right' }}>SGST{uniformHalfPct ? ` ${uniformHalfPct}%` : ''}</th>
                     <th style={{ textAlign: 'right' }}>Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.length === 0 ? (
-                    <tr><td colSpan={11} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
+                    <tr><td colSpan={showMargin ? 10 : 7} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
                   ) : items.map((it, i) => {
                     const custRate = parseFloat(it.customer_rate ?? 0);
                     const hubRate = parseFloat(it.hub_rate ?? 0);
@@ -749,20 +882,37 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                           }}>{isService ? 'Service' : 'Part'}</span>
                         </td>
                         <td style={{ textAlign: 'right' }}>{qty}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: 12 }}>{fmt(custRate)}</td>
-                        <td style={{
-                          textAlign: 'right', fontSize: 12, fontWeight: 600,
-                          color: inv?.rate_mode === 'tech_rate' ? '#92400e' : '#1e40af'
-                        }}>
-                          {appliedRate > 0 ? `${appliedRate}%` : '—'}
-                        </td>
-                        <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 600, color: '#dc2626' }}>
-                          {discountAmt > 0 ? `− ${fmt(discountAmt / qty)}` : '—'}
-                        </td>
+                        {showMargin && <td style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: 12 }}>{fmt(custRate)}</td>}
+                        {showMargin && (
+                          <td style={{
+                            textAlign: 'right', fontSize: 12, fontWeight: 600,
+                            color: inv?.rate_mode === 'tech_rate' ? '#92400e' : '#1e40af'
+                          }}>
+                            {appliedRate > 0 ? `${appliedRate}%` : '—'}
+                          </td>
+                        )}
+                        {showMargin && (
+                          <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 600, color: '#dc2626' }}>
+                            {discountAmt > 0 ? `− ${fmt(discountAmt / qty)}` : '—'}
+                          </td>
+                        )}
                         <td style={{ textAlign: 'right', fontWeight: 600, color: '#166534' }}>{fmt(hubRate)}</td>
-                        <td style={{ textAlign: 'right', fontSize: 12 }}>{gstPct > 0 ? `${halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%` : '—'}</td>
-                        <td style={{ textAlign: 'right', fontSize: 12 }}>{gstPct > 0 ? `${halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%` : '—'}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--text-muted)' }}>{fmt(gstAmt)}</td>
+                        {/* Half the line's tax in each, because CGST and SGST
+                            are always an even split of it. The per-row rate
+                            shows only on a mixed-slab invoice — otherwise it is
+                            already in the column header. */}
+                        <td style={{ textAlign: 'right', fontSize: 12 }}>
+                          {gstPct > 0 ? fmt(gstAmt / 2) : '—'}
+                          {gstPct > 0 && !uniformHalfPct && (
+                            <span className="pi-doc-rate">{halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right', fontSize: 12 }}>
+                          {gstPct > 0 ? fmt(gstAmt / 2) : '—'}
+                          {gstPct > 0 && !uniformHalfPct && (
+                            <span className="pi-doc-rate">{halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%</span>
+                          )}
+                        </td>
                         <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(hubRate * qty + gstAmt)}</td>
                       </tr>
                     );
@@ -770,26 +920,29 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 </tbody>
               </table>
             </div>
-            <p className="pi-no-print" style={{ margin: '8px 0 0', fontSize: 12, fontStyle: 'italic', color: 'var(--text-muted)' }}>
-              {inv?.rate_mode === 'tech_rate'
-                ? `Discount = Customer Rate × Take Rate%  |  ${isHubUser ? 'Your Rate' : 'Hub Rate'} = Customer Rate − Discount  (services use Service Take Rate, parts use Parts Take Rate)`
-                : `Discount = Customer Rate × Commission%  |  ${isHubUser ? 'Your Rate' : 'Hub Rate'} = Customer Rate − Discount`}
-            </p>
+            {/* Hiding the columns but leaving this would be pointless — the
+                sentence states the formula the columns were showing. */}
+            {showMargin && (
+              <p className="pi-no-print" style={{ margin: '8px 0 0', fontSize: 12, fontStyle: 'italic', color: 'var(--text-muted)' }}>
+                {inv?.rate_mode === 'tech_rate'
+                  ? 'Discount = Customer Rate × Take Rate%  |  Hub Rate = Customer Rate − Discount  (services use Service Take Rate, parts use Parts Take Rate)'
+                  : 'Discount = Customer Rate × Commission%  |  Hub Rate = Customer Rate − Discount'}
+              </p>
+            )}
           </div>
 
           {/* ── Totals ── */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderTop: '1px solid var(--border)', paddingTop: 16, gap: 24, flexWrap: 'wrap' }}>
 
             {/* Amount in words — left */}
-            <div style={{
-              flex: '1 1 220px', maxWidth: 340,
-              background: '#f8fafc', borderRadius: 10,
-              padding: '12px 16px', borderLeft: '3px solid #16b994',
-            }}>
-              <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Amount in Words</div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontStyle: 'italic', lineHeight: 1.7 }}>
-                {amountToWords(grandTotal)}
-              </div>
+            {/* ── Amount in words ──
+                Was a card with a 3px green stripe down its side. That is a lot
+                of decoration for one sentence, and it was a third use of a
+                colour that should mean one thing — the green now belongs to the
+                table header and the Grand Total, and nothing else. */}
+            <div className="pi-doc-words">
+              <span className="pi-doc-cap">Amount in Words</span>
+              <em>{amountToWords(grandTotal)}</em>
             </div>
 
             {/* Summary — right */}
@@ -797,6 +950,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 
               {/* Customer value → take deduction → hub subtotal */}
               {(() => {
+                // Customer Value and the take-rate line are the totals-block
+                // equivalent of the hidden columns: either alone gives the
+                // margin away by subtraction.
+                if (!showMargin) return null;
                 const custValue = items.reduce((s, it) => s + (parseFloat(it.customer_rate ?? 0) * parseFloat(it.quantity ?? 1)), 0);
                 const totalTake = r2(custValue - subtotal);
                 if (totalTake <= 0.005) return null;
@@ -808,9 +965,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
                       <span style={{ color: '#dc2626' }}>
-                        {isHubUser
-                          ? `Discount (${inv?.rate_mode === 'tech_rate' ? 'take rate' : 'commission'})`
-                          : `Our Take (${inv?.rate_mode === 'tech_rate' ? 'take rate' : 'commission'})`}
+                        {`Our Take (${inv?.rate_mode === 'tech_rate' ? 'take rate' : 'commission'})`}
                       </span>
                       <span style={{ fontWeight: 600, color: '#dc2626', minWidth: 110, textAlign: 'right' }}>− {fmt(totalTake)}</span>
                     </div>
@@ -946,7 +1101,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
           <div className="pi-no-print" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {inv.estimate_id && (
               <button
-                onClick={() => navigate(inv.estimate_token ? `/estimates/${inv.estimate_token}` : '/estimates', inv.estimate_token ? undefined : { state: { openId: inv.estimate_id } })}
+                onClick={() => navigate(inv.estimate_token ? `${P.estimates}/${inv.estimate_token}` : P.estimates, inv.estimate_token ? undefined : { state: { openId: inv.estimate_id } })}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 7,
                   padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
@@ -960,7 +1115,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
             )}
             {inv.customer_invoice_id && (
               <button
-                onClick={() => navigate(inv.customer_invoice_token ? `/customer-invoices/${inv.customer_invoice_token}` : '/customer-invoices', inv.customer_invoice_token ? undefined : { state: { openId: inv.customer_invoice_id } })}
+                onClick={() => navigate(inv.customer_invoice_token ? `${P.customerInvoices}/${inv.customer_invoice_token}` : P.customerInvoices, inv.customer_invoice_token ? undefined : { state: { openId: inv.customer_invoice_id } })}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 7,
                   padding: '8px 14px', borderRadius: 8, cursor: 'pointer',
@@ -976,7 +1131,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 
           {/* Actions — screen only */}
           <div className="pi-no-print" style={{ paddingBottom: 8, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            {inv.status === 'pending_approval' && (
+            {/* Approval is Spinoto's step, not the hub's — the hub raises the
+                invoice, the company accepts it. Showing the button to the
+                supplier suggests they approve their own bill. */}
+            {!isHubUser && inv.status === 'pending_approval' && (
               <button
                 className="btn btn-amber"
                 onClick={openApproveModal}
@@ -984,6 +1142,12 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 <CheckCircle2 size={15} />
                 Approve Purchase Invoice
               </button>
+            )}
+            {isHubUser && inv.status === 'pending_approval' && (
+              <div style={{ color: '#b45309', fontWeight: 500, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Clock size={15} />
+                Awaiting approval from Spinoto
+              </div>
             )}
             {inv.status === 'approved' && (
               <>
@@ -1046,7 +1210,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                           ₹{Number(pay.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>
-                          {inv.payment_status !== 'paid' && (
+                          {/* The history stays visible to the hub — they need to
+                              see what they have been paid. Deleting a payment is
+                              Spinoto's record to change, not theirs. */}
+                          {!isHubUser && inv.payment_status !== 'paid' && (
                             <button
                               onClick={() => handleDeleteHubPayment(inv.id, pay.id)}
                               style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px', cursor: 'pointer', color: '#dc2626' }}
@@ -1064,8 +1231,12 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '0 0 16px' }}>No payments recorded yet.</p>
               )}
 
-              {/* Add Payment form — only if not fully paid */}
-              {inv.payment_status !== 'paid' && (
+              {/* Add Payment form — only if not fully paid, and never for a
+                  hub: money moves FROM Spinoto TO the hub, so the hub recording
+                  its own receipt would let the supplier mark its own bill paid.
+                  The endpoint is staff-only anyway; this stops the form from
+                  offering something that always 403s. */}
+              {!isHubUser && inv.payment_status !== 'paid' && (
                 <HubPaymentForm
                   invoiceId={inv.id}
                   balance={Number(inv.grand_total ?? grandTotal) - Number(inv.amount_paid ?? 0)}
@@ -1075,19 +1246,15 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
             </div>
           )}
 
-          {/* ── Invoice Footer ── */}
-          <div className="pi-invoice-footer" style={{
-            marginTop: 8, borderTop: '1px solid #e5e7eb', paddingTop: 16,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Thank you for your business.</div>
-            <div style={{ fontSize: 10, color: '#9ca3af' }}>This is a computer generated invoice and does not require a physical signature.</div>
-            {(company?.phone || company?.email) && (
-              <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
-                {[company.phone && `📞 ${company.phone}`, company.email && `✉ ${company.email}`].filter(Boolean).join('   ·   ')}
-              </div>
-            )}
-          </div>
+          {/* No footer here. "Thank you for your business", the
+              computer-generated-invoice line and the phone/email strip belong on
+              the DOCUMENT, not the screen — on screen they are three lines of
+              boilerplate under every invoice you look at.
+
+              They are not hidden with @media print: the PDF and the printed copy
+              are rendered server-side from backend/src/utils/documentConfig.js,
+              which carries its own copy. Deleting this one changes the screen
+              only, and there is no second copy here to drift out of sync. */}
 
         </div>
       )}
@@ -1328,16 +1495,15 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
 // ═════════════════════════════════════════════════════════════════════════════
 export default function PurchaseInvoicesPage() {
   const { user } = useAuth();
-  const rawNavigate = useNavigate();
+  const navigate = useNavigate();
   const location = useLocation();
   const { token } = useParams();
   const isHubUser = !!user?.hub_id;
-  // Hub Portal renders this page as a plain tab (no nested routing), and its
-  // own admin-only routes are off-limits to hub users (App.jsx's RequireAdmin
-  // bounces them straight back to /hub). So every navigate() call here — this
-  // page's own detail view or cross-links to Estimates/Customer Invoices —
-  // has to be a no-op for hub users; the detail view still opens via local state.
-  const navigate = isHubUser ? () => {} : rawNavigate;
+  // This page is mounted twice: at /purchase-invoices for staff and at
+  // /hub/sales-invoices inside the hub portal. P resolves every destination —
+  // including this page's own URL — for whichever one is rendering, so the
+  // detail view gets a real, refreshable address in both.
+  const P = useAppPaths();
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -1363,9 +1529,13 @@ export default function PurchaseInvoicesPage() {
   // page 3 returns two results and shows you an empty page 3 of them.
   // useCallback because usePageSearch compares this by identity.
   const onSearchChange = useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
-  const [hubFilter, setHubFilter] = useState(() => ls.hubFilter ?? (user?.hub_id ? [String(user.hub_id)] : []));
+  // user.hub_id wins over the persisted value — see the note in EstimatesPage.
+  const [hubFilter, setHubFilter] = useState(
+    () => (user?.hub_id ? [String(user.hub_id)] : (ls.hubFilter ?? []))
+  );
   const [showHubDropdown, setShowHubDropdown] = useState(false);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [filterPopRef, filterPopFlip] = useFlipPopup(showMoreFilters);
   const [statusFilter, setStatusFilter] = useState(ls.statusFilter ?? '');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState(ls.vehicleTypeFilter ?? '');
   const [hubs, setHubs] = useState([]);
@@ -1416,25 +1586,24 @@ export default function PurchaseInvoicesPage() {
     closedRef.current = false;
     resolvedTokenRef.current = inv.public_token;
     setSelectedId(inv.id);
-    navigate(`/purchase-invoices/${inv.public_token}`);
+    navigate(`${P.salesInvoices}/${inv.public_token}`);
   }
 
   function closeInvoice() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
-    // Clear directly rather than relying solely on the `[token]` effect —
-    // inside the Hub Portal, `token` never exists (plain tab, not a routed
-    // /purchase-invoices/:token) and navigate() is a no-op there for hub
-    // users, so that effect would never fire on close.
+    // Clear directly rather than relying solely on the `[token]` effect. It is
+    // belt-and-braces now that the hub portal is routed too, but a token URL
+    // reached via location.state still has no param to change.
     setSelectedId(null);
-    navigate('/purchase-invoices');
+    navigate(P.salesInvoices);
   }
 
   function handleInvoiceLoaded(inv) {
     if (closedRef.current) return;
     if (!inv?.public_token || resolvedTokenRef.current === inv.public_token) return;
     resolvedTokenRef.current = inv.public_token;
-    navigate(`/purchase-invoices/${inv.public_token}`, { replace: true });
+    navigate(`${P.salesInvoices}/${inv.public_token}`, { replace: true });
   }
 
   useEffect(() => {
@@ -1503,7 +1672,7 @@ export default function PurchaseInvoicesPage() {
   // Name the last breadcrumb. Without this it renders the raw public_token
   // from the URL — "zuOAVWTsZ1vqUw" instead of "PI-000048". Display only:
   // the URL keeps the token, so shared links and bookmarks are unaffected.
-  usePageCrumb(token, selectedId ? `PI-${String(selectedId).padStart(6, '0')}` : null);
+  usePageCrumb(token, selectedId ? `${isHubUser ? 'SI' : 'PI'}-${String(selectedId).padStart(6, '0')}` : null);
 
   const rail = useDetailRail({
     endpoint: '/api/purchase-invoices',
@@ -1528,14 +1697,14 @@ export default function PurchaseInvoicesPage() {
           rail={rail}
           selectedId={selectedId}
           onSelect={openInvoice}
-          noun={isHubUser ? 'sell invoice' : 'purchase invoice'}
+          noun={isHubUser ? 'sales invoice' : 'purchase invoice'}
           /* The rail's search box drives the PAGE's search state, not its own —
              two independent searches would disagree the moment you closed the
              detail and the table showed a different set. */
           search={searchInput}
           onSearch={onSearchChange}
           searchHint={tooShort ? `${minChars}+ characters` : ''}
-          mapCard={piCard}
+          mapCard={inv => piCard(inv, isHubUser)}
         >
           <DetailDrawer
             invoiceId={selectedId}
@@ -1656,7 +1825,7 @@ export default function PurchaseInvoicesPage() {
               {showMoreFilters && (
                 <>
                   <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreFilters(false)} />
-                  <div className="lb-pop">
+                  <div ref={filterPopRef} className={`lb-pop${filterPopFlip ? ' lb-pop--flip' : ''}`}>
                     <div>
                       <label className="lb-pop-label" htmlFor="lb-pi-veh">Vehicle type</label>
                       <select
@@ -1764,12 +1933,19 @@ export default function PurchaseInvoicesPage() {
                           )}
                         </td>
                         <td>
+                          {/* The customer NAME still shows for a hub — they
+                              need it to identify the job. Only the link is
+                              dropped: the hub portal has no Customers screen,
+                              so the class and the handler both come off and
+                              the cell is plain text rather than something that
+                              looks clickable and isn't. */}
                           <div
-                            className="pi-cust-link"
-                            onClick={(e) => {
+                            className={P.customers ? 'pi-cust-link' : undefined}
+                            style={P.customers ? undefined : { display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                            onClick={P.customers ? (e) => {
                               e.stopPropagation();
-                              navigate(inv.customer_token ? `/customers/${inv.customer_token}` : '/customers', inv.customer_token ? undefined : { state: { openMobile: inv.mobile } });
-                            }}
+                              navigate(inv.customer_token ? `${P.customers}/${inv.customer_token}` : P.customers, inv.customer_token ? undefined : { state: { openMobile: inv.mobile } });
+                            } : undefined}
                           >
                             <div>
                               <div style={{ fontWeight: 600, fontSize: 13 }} className="pi-cust-name">
@@ -1799,13 +1975,13 @@ export default function PurchaseInvoicesPage() {
                                 )}
                               </div>
                             </div>
-                            <span className="pi-cust-arrow">→</span>
+                            {P.customers && <span className="pi-cust-arrow">→</span>}
                           </div>
                         </td>
                         <td style={{ fontSize: 13 }}>{inv.hub_name || inv.hub?.name || '—'}</td>
                         <td>
                           <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--primary)' }}>
-                            {isHubUser ? 'SI' : 'PI'}-{String(inv.id).padStart(6, '0')}
+                            {docNumber(inv, isHubUser)}
                           </div>
                           {inv.customer_invoice_id && (
                             <div style={{ fontWeight: 700, fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>

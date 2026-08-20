@@ -3,12 +3,18 @@ import { createPortal } from 'react-dom';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
+import { useAppPaths } from '../lib/appPaths.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import PaginationBar from '../components/PaginationBar.jsx';
+import WhatsAppSendMenu from '../components/WhatsAppSendMenu.jsx';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch } from '../hooks/useDebouncedSearch.js';
+import { useFlipPopup } from '../hooks/useFlipPopup.js';
+import AppointmentCalendar from '../components/AppointmentCalendar.jsx';
+import { istToday, monthOf } from '../lib/istDate.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
+import { waTarget } from '../lib/phone.js';
 import '../styles/listLayout.css';
 import {
   Calendar, Search, Eye, X, AlertCircle, CheckCircle2,
@@ -16,6 +22,7 @@ import {
   User, Phone, MapPin, Wrench, IndianRupee, ChevronDown,
   FileText, MessageCircle, Plus, Pencil, Copy, Check, Trash2,
   SlidersHorizontal, ArrowDown,
+  List as ListIcon, CalendarDays,
 } from 'lucide-react';
 import '../styles/AppointmentsPage.css';
 
@@ -143,14 +150,12 @@ function ApptStatusSelect({
   showToast,
 }) {
   const canEdit = useCan('EDIT_APPOINTMENT');
-  const rawNavigate = useNavigate();
+  const navigate = useNavigate();
   const { user } = useAuth();
-  // Inside the Hub Portal (HubDashboardPage), this component is rendered
-  // outside the main app's route tree — /estimates, /customers etc. only
-  // exist under the admin-only branch of App.jsx, which hub-linked users are
-  // blocked from. Navigating there just bounces them back to /hub. So for
-  // hub users, neutralize navigate() entirely rather than let that happen.
-  const navigate = user?.hub_id ? () => {} : rawNavigate;
+  // Estimates exists in both shells (/estimates for staff, /hub/estimates for
+  // a hub login), so the prerequisite redirect below has to be built from the
+  // path map rather than hardcoded.
+  const P = useAppPaths();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
@@ -223,7 +228,7 @@ function ApptStatusSelect({
       // ── Estimate flow ──
       case 'estimate-created':
         if (!estExists)
-          return { ok: false, redirect: `/estimates?createForAppointmentId=${apptId}` };
+          return { ok: false, redirect: `${P.estimates}?createForAppointmentId=${apptId}` };
         break;
 
       case 'estimate-submitted':
@@ -492,10 +497,10 @@ function RescheduleModal({ appt, onConfirm, onCancel }) {
 // ── View Modal ────────────────────────────────────────────────────────────────
 function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onDeleted }) {
   useEscapeClose(onClose);
-  const rawNavigate = useNavigate();
+  const navigate = useNavigate();
   const { user } = useAuth();
   // See the note in ApptStatusSelect above — same reasoning applies here.
-  const navigate = user?.hub_id ? () => {} : rawNavigate;
+  const P = useAppPaths();
   const canEditAppt = useCan('EDIT_APPOINTMENT');
   const canCreateInv = useCan('CREATE_INVOICE');
   const canDeleteAppt = useCan('DELETE_APPOINTMENT');
@@ -620,10 +625,24 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onD
             {status && <StatusBadge name={status.name} color={status.color} bg={status.bg_color} />}
           </div>
           <div className="apptv-hdr-right">
-            <a href={`https://wa.me/91${(appt.whatsapp || appt.mobile || '').replace(/\D/g, '')}`}
-              target="_blank" rel="noreferrer" className="apptv-wa-btn" title="WhatsApp customer">
-              <MessageCircle size={13} />
-            </a>
+            {/* The hardcoded 91 double-prefixed any number already stored with
+                its country code (wa.me/919919876543210). waTarget normalises
+                first, and returns null for numbers WhatsApp cannot reach. */}
+            {waTarget(appt) && (
+              <a href={waTarget(appt)}
+                target="_blank" rel="noreferrer" className="apptv-wa-btn" title="WhatsApp customer">
+                <MessageCircle size={13} />
+              </a>
+            )}
+            {/* Beside the wa.me link, not replacing it — they are different
+                acts. That one opens YOUR WhatsApp with the customer's chat and
+                logs nothing; this one queues an approved template through the
+                business account and records what was sent, to whom and whether
+                it was delivered.
+
+                Which templates it offers is the server's answer: the ones
+                mapped to entity_type 'appointment' and enabled in Settings. */}
+            {appt?.id && <WhatsAppSendMenu entityType="appointment" entityId={appt.id} />}
             {canDeleteAppt && (
               <button
                 className="appt-icon-btn"
@@ -989,14 +1008,14 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onD
             {appt.estimate_id ? (
               <button
                 className="apptv-inv-btn"
-                onClick={() => { onClose(); navigate(appt.estimate_token ? `/estimates/${appt.estimate_token}` : '/estimates', appt.estimate_token ? undefined : { state: { openId: appt.estimate_id } }); }}
+                onClick={() => { onClose(); navigate(appt.estimate_token ? `${P.estimates}/${appt.estimate_token}` : P.estimates, appt.estimate_token ? undefined : { state: { openId: appt.estimate_id } }); }}
               >
                 <FileText size={13} /> View Estimate #{appt.estimate_id}
               </button>
             ) : (
               <button
                 className="apptv-inv-btn"
-                onClick={() => { onClose(); navigate(`/estimates?createForAppointmentId=${appt.id}`); }}
+                onClick={() => { onClose(); navigate(`${P.estimates}?createForAppointmentId=${appt.id}`); }}
               >
                 <FileText size={13} /> Create Estimate
               </button>
@@ -1790,6 +1809,16 @@ function EditAppointmentModal({ appt, hubs, onClose, onSaved }) {
 // of advancing to step 3 or POSTing to /api/appointments.
 export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, standaloneMode = false, onComplete, title = 'New Appointment', initialCustomer = null }) {
   useEscapeClose(onClose);
+  // Hub-portal logins take a different path through step 1 and 2. They may
+  // READ customer data (so a returning customer is recognised instead of being
+  // retyped, which is how a mistyped digit splits one customer into two), but
+  // they may not WRITE it: PUT /api/customers/:mobile is an upsert on mobile,
+  // so a hub saving "Raj" would rename a customer your staff recorded as
+  // "Rajesh Kumar" — everywhere, for everyone. Instead the name and vehicle
+  // travel on the estimate itself, which carries its own copy of both, and
+  // createEstimate registers the customer identity and the vehicle server-side.
+  const { user: authUser } = useAuth();
+  const isHubUser = Boolean(authUser?.hub_id);
   // ── Step tracker ──────────────────────────────────────────────────────────
   const [step, setStep] = useState(1); // 1 customer · 2 vehicle · 3 details
 
@@ -1871,7 +1900,13 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
     searchTimer.current = setTimeout(async () => {
       setCustLoading(true);
       try {
-        const r = await api(`/api/customers?search=${encodeURIComponent(v)}&limit=8`);
+        // Hubs use the lookup endpoint, which matches a COMPLETE mobile or
+        // registration number and never a name — so there is nothing to browse.
+        // Staff keep the existing partial search (it also returns the visit
+        // count the result row shows).
+        const r = isHubUser
+          ? await api(`/api/customers/lookup?q=${encodeURIComponent(v)}`)
+          : await api(`/api/customers?search=${encodeURIComponent(v)}&limit=8`);
         setCustResults(r.items || []);
       } catch { setCustResults([]); }
       finally { setCustLoading(false); }
@@ -1928,6 +1963,34 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
     // now typing in a number from memory. The PUT below is an unconditional
     // upsert (it's also the "edit existing profile" endpoint), so saving
     // blind here would silently rename that existing customer. Check first.
+    if (isHubUser) {
+      // Same duplicate check, through the endpoint a hub is allowed to call.
+      // A hit here is the common case, not an error: they typed a number that
+      // is already on file, so we show the name we hold and offer to use it
+      // (the "Use this customer" button below). That is what keeps one person
+      // from ending up with two names across two hubs' invoices.
+      try {
+        const hit = await api(`/api/customers/lookup?q=${encodeURIComponent(mobile)}`);
+        const found = (hit.items || [])[0];
+        if (found) {
+          setDuplicateCust(found);
+          setError(`This mobile is already on file as "${found.customer_name || 'an existing customer'}". Use that customer so their history stays together.`);
+          return;
+        }
+      } catch {
+        // Lookup unavailable — fall through and create locally. Worst case the
+        // name differs on this one estimate; nothing is corrupted, because the
+        // mobile number is what links the records.
+      }
+      // No profile write. The estimate carries customer_name/mobile/whatsapp,
+      // and createEstimate calls ensureCustomerIdentity for us.
+      const cust = { mobile, customer_name: name, whatsapp: wa || null };
+      setSelectedCust(cust);
+      await loadVehicles(cust.mobile);
+      setStep(2);
+      return;
+    }
+
     try {
       const existing = await api(`/api/customers/${encodeURIComponent(mobile)}`);
       if (existing?.item) {
@@ -2079,6 +2142,35 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
     if (!newVeh.model_id) { setError('Model is required'); return; }
     if (!newVehIs2W && !newVeh.segment_ids?.length) { setError('Segment is required'); return; }
     setError('');
+
+    // Built once and used by three paths: the hub path (no write endpoint),
+    // the 409 "already registered" path, and as the shape the API result is
+    // normalised into. Keeping them identical is what stops the estimate
+    // receiving a different vehicle object depending on how it got here.
+    const localVeh = () => ({
+      vehicle_number: newVeh.vehicle_number.trim().toUpperCase(),
+      vehicle_type_id: newVeh.vehicle_type_id || null,
+      vehicle_type_name: vTypes.find(t => String(t.id) === String(newVeh.vehicle_type_id))?.name,
+      make_id: newVeh.make_id || null,
+      make_name: makes.find(m => String(m.id) === String(newVeh.make_id))?.name,
+      model_id: newVeh.model_id || null,
+      model_name: selectedModelName || models.find(m => String(m.id) === String(newVeh.model_id))?.name,
+      body_type_id: newVeh.body_type_id || null,
+      segment_ids: newVeh.segment_ids,
+      cc_category_id: newVeh.cc_category_id || null,
+    });
+
+    if (isHubUser) {
+      // No POST — hubs have no vehicle-write endpoint. The plate rides on the
+      // estimate, and createEstimate inserts it into customer_vehicles with
+      // ON CONFLICT DO NOTHING, so the next visit prefills without a hub ever
+      // being able to overwrite a car your staff already recorded.
+      const vehObj = localVeh();
+      setSelectedVeh(vehObj);
+      proceedAfterVehicle(vehObj);
+      return;
+    }
+
     try {
       const r = await api(`/api/customers/${encodeURIComponent(selectedCust.mobile)}/vehicles`, {
         method: 'POST',
@@ -2102,18 +2194,7 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
     } catch (e) {
       // If vehicle already registered (409), still pick the vehicle data from the form
       if (e.message?.includes('already registered')) {
-        const vehObj = {
-          vehicle_number: newVeh.vehicle_number.trim().toUpperCase(),
-          vehicle_type_id: newVeh.vehicle_type_id || null,
-          vehicle_type_name: vTypes.find(t => String(t.id) === String(newVeh.vehicle_type_id))?.name,
-          make_id: newVeh.make_id || null,
-          make_name: makes.find(m => String(m.id) === String(newVeh.make_id))?.name,
-          model_id: newVeh.model_id || null,
-          model_name: selectedModelName || models.find(m => String(m.id) === String(newVeh.model_id))?.name,
-          body_type_id: newVeh.body_type_id || null,
-          segment_ids: newVeh.segment_ids,
-          cc_category_id: newVeh.cc_category_id || null,
-        };
+        const vehObj = localVeh();
         setSelectedVeh(vehObj);
         proceedAfterVehicle(vehObj);
       } else { setError(e.message); }
@@ -2310,14 +2391,16 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
               {!showAddCust ? (
                 <>
                   <div>
-                    <label className="ca-lbl">Search Customer (name or mobile)</label>
+                    <label className="ca-lbl">
+                      {isHubUser ? 'Find customer (mobile or vehicle number)' : 'Search Customer (name or mobile)'}
+                    </label>
                     <div style={{ position: 'relative' }}>
                       <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
                       <input
                         autoFocus
                         className="ca-input"
                         style={{ paddingLeft: 32 }}
-                        placeholder="Type name or mobile number…"
+                        placeholder={isHubUser ? 'Enter full mobile or vehicle number…' : 'Type name or mobile number…'}
                         value={custQuery}
                         onChange={e => { onCustQueryChange(e.target.value); setError(''); }}
                       />
@@ -2328,7 +2411,14 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
                   {custLoading && <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>Searching…</div>}
                   {!custLoading && custQuery.trim() && custResults.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>No customer found for "{custQuery}"</div>
+                      {/* A hub matches on a complete number only, so "nothing yet"
+                          and "genuinely not on file" look identical unless we say
+                          which one this is. */}
+                      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 10 }}>
+                        {isHubUser && custQuery.replace(/\D/g, '').length > 0 && custQuery.replace(/\D/g, '').length < 10
+                          ? 'Enter the complete 10-digit mobile number, or the full vehicle number.'
+                          : `No customer found for "${custQuery}"`}
+                      </div>
                       <button className="ca-btn-outline" onClick={() => { setNewCust({ name: custQuery, mobile: '', whatsapp: '', state_id: '', city_id: '', area_id: '' }); setWaSameAsMobile(false); setLocCities([]); setLocAreas([]); setShowAddCust(true); setError(''); setDuplicateCust(null); }}>
                         <Plus size={13} /> Add New Customer
                       </button>
@@ -2799,18 +2889,15 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AppointmentsPage() {
-  const rawNavigate = useNavigate();
+  const navigate = useNavigate();
   const location = useLocation();
   const { token } = useParams();
   const { user } = useAuth();
   const isHubUser = !!user?.hub_id;          // hub portal user
-  // Hub Portal renders this page as a plain tab (no nested routing), and its
-  // own admin-only routes are off-limits to hub users (App.jsx's RequireAdmin
-  // bounces them straight back to /hub). So every navigate() call in this
-  // file — opening this page's own detail view, or linking across to
-  // Estimates/Customers/Invoices — has to be a no-op for hub users; the
-  // detail view itself still opens fine via local state either way.
-  const navigate = isHubUser ? () => {} : rawNavigate;
+  // This page is mounted twice: at /appointments for staff and at
+  // /hub/appointments inside the hub portal. P resolves every destination —
+  // including this page's own URL — for whichever shell is rendering it.
+  const P = useAppPaths();
   const canEdit = useCan('EDIT_APPOINTMENT');
   // Fix #20: split into two separate permission checks — they gate unrelated actions
   // canCreate is kept for future "New Appointment" button; canCreateInv is used in ViewModal
@@ -2840,10 +2927,56 @@ export default function AppointmentsPage() {
   const [filterStatus, setFilterStatus] = useState(ls.filterStatus ?? '');
   // Hub users are locked to their own hub — pre-fill from user object.
   // Multi-select like the Estimates page's hub filter — array of hub-id strings.
-  const [filterHub, setFilterHub] = useState(() => ls.filterHub ?? (user?.hub_id ? [String(user.hub_id)] : []));
+  // user.hub_id wins over the persisted value — see the note in EstimatesPage.
+  const [filterHub, setFilterHub] = useState(
+    () => (user?.hub_id ? [String(user.hub_id)] : (ls.filterHub ?? []))
+  );
   const [showHubDropdown, setShowHubDropdown] = useState(false);
-  const [dateFrom, setDateFrom] = useState(ls.dateFrom ?? '');
-  const [dateTo, setDateTo] = useState(ls.dateTo ?? '');
+  // An explicit ?date_from=/?date_to= in the URL beats the remembered filter —
+  // same precedence as the hub filter above. Someone who clicked "View all" on
+  // the hub dashboard asked for THAT range; silently restoring last week's
+  // filter instead would show them a list that does not match the link they
+  // followed. Read once at mount, then owned by the inputs; the effect below
+  // re-syncs if a later link arrives while the page is already open.
+  // View mode and month live in the URL, not in state alone: a refresh, the
+  // Back button and a pasted link should all show the same thing. Same rule as
+  // the hub portal's tabs.
+  const viewParam  = new URLSearchParams(location.search).get('view');
+  const monthParam = new URLSearchParams(location.search).get('month');
+  const isCalendar = viewParam === 'calendar';
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(monthParam || '') ? monthParam : monthOf(istToday());
+
+  function setView(next) {
+    const q = new URLSearchParams(location.search);
+    if (next === 'calendar') { q.set('view', 'calendar'); if (!q.get('month')) q.set('month', month); }
+    else { q.delete('view'); q.delete('month'); }
+    navigate(`${P.appointments}?${q}`, { replace: true });
+  }
+  function setMonth(ym) {
+    const q = new URLSearchParams(location.search);
+    q.set('view', 'calendar'); q.set('month', ym);
+    navigate(`${P.appointments}?${q}`, { replace: true });
+  }
+  // "+N more" drops into the list filtered to that single day — one control
+  // doing one thing, and it reuses the filtering that already exists.
+  function pickDay(ymd) {
+    const q = new URLSearchParams();
+    q.set('date_from', ymd); q.set('date_to', ymd);
+    navigate(`${P.appointments}?${q}`);
+  }
+
+  const dateFromParam = new URLSearchParams(location.search).get('date_from');
+  const dateToParam   = new URLSearchParams(location.search).get('date_to');
+  const [dateFrom, setDateFrom] = useState(dateFromParam ?? ls.dateFrom ?? '');
+  const [dateTo, setDateTo] = useState(dateToParam ?? ls.dateTo ?? '');
+
+  useEffect(() => {
+    if (dateFromParam || dateToParam) {
+      setDateFrom(dateFromParam ?? '');
+      setDateTo(dateToParam ?? '');
+      setPage(1);   // a new range with the old page number lands on an empty page
+    }
+  }, [dateFromParam, dateToParam]);
   const [filterCreatedBy, setFilterCreatedBy] = useState(ls.filterCreatedBy ?? '');
   const [page, setPage] = useState(ls.page ?? 1);
   const [pageSize, setPageSize] = useState(ls.pageSize ?? 10);
@@ -2875,6 +3008,7 @@ export default function AppointmentsPage() {
   // in place; it now drives the funnel popover, and a popover open on arrival
   // covers the first rows of the table every time you land on the page.
   const [showFilters, setShowFilters] = useState(false);
+  const [filterPopRef, filterPopFlip] = useFlipPopup(showFilters);
   const [modal, setModal] = useState(null); // null | { mode: 'view', appt }
   const [createModal, setCreateModal] = useState(false);
   const [prefillCustomer, setPrefillCustomer] = useState(null); // customer to auto-select when opened from Customer Profile
@@ -2930,20 +3064,34 @@ export default function AppointmentsPage() {
     closedRef.current = false;
     resolvedTokenRef.current = a.public_token;
     setModal({ mode: 'view', appt: a });
-    navigate(`/appointments/${a.public_token}`);
+    navigate(`${P.appointments}/${a.public_token}`);
+  }
+
+  // The calendar carries a SLIM row — twelve columns, no mobile, no pickup, no
+  // status list. Handing that to the modal would render a half-empty view, so
+  // this deliberately does NOT pre-seed it: it clears the resolved-token guard
+  // and lets the `[token]` effect below fetch the full record, the same path a
+  // pasted URL takes.
+  function openApptByToken(a) {
+    closedRef.current = false;
+    if (a.public_token) {
+      resolvedTokenRef.current = null;
+      navigate(`${P.appointments}/${a.public_token}`);
+    } else {
+      // Pre-token rows still exist; the numeric-id entry point handles them.
+      navigate(P.appointments, { state: { openApptId: a.id } });
+    }
   }
 
   function closeAppt() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
-    // Clear the modal directly rather than relying solely on the
-    // `[token]` effect below reacting to the URL change — inside the Hub
-    // Portal, `token` never exists in the first place (the whole page is
-    // just a plain tab, not a routed /appointments/:token), and navigate()
-    // is a no-op there for hub users, so nothing would ever trigger that
-    // effect. This way Close/back works the same in both contexts.
+    // Clear the modal directly rather than relying solely on the `[token]`
+    // effect below reacting to the URL change. Belt-and-braces now that the
+    // hub portal is routed too, but an appointment reached by numeric id via
+    // location.state has no token param to change.
     setModal(null);
-    navigate('/appointments');
+    navigate(P.appointments);
   }
 
   // Open a specific appointment modal when navigated from Customer Profile
@@ -2961,7 +3109,7 @@ export default function AppointmentsPage() {
         setModal({ mode: 'view', appt: r.item });
         if (r.item.public_token) {
           resolvedTokenRef.current = r.item.public_token;
-          navigate(`/appointments/${r.item.public_token}`, { replace: true });
+          navigate(`${P.appointments}/${r.item.public_token}`, { replace: true });
         }
       })
       .catch(() => { });
@@ -2987,6 +3135,25 @@ export default function AppointmentsPage() {
     setPrefillCustomer(pc);
     setCreateModal(true);
   }, [location.state?.prefillCustomer]);
+
+  // Open "New Appointment" from the sidebar's quick-action button. That button
+  // is rendered by AppShell, which cannot reach this page's state, so it
+  // navigates here with a flag instead.
+  //
+  // Router state rather than the `open-lead-modal` window event AppShell uses
+  // for the lead button beside it: that pattern works there because AppShell
+  // owns NewLeadModal and it is mounted on every screen. This modal is owned by
+  // THIS page, so the button has to navigate first — and an event dispatched
+  // before this component mounts has no listener and is silently lost.
+  //
+  // Same one-shot `replaceState` clear as the effect above, for the same
+  // reason: without it, a browser Back into this history entry re-opens the
+  // modal over whatever the user came here to do.
+  useEffect(() => {
+    if (!location.state?.openCreate) return;
+    window.history.replaceState({}, '');
+    setCreateModal(true);
+  }, [location.state?.openCreate]);
 
   function showToast(msg, type = 'success') {
     setToast({ msg, type });
@@ -3128,7 +3295,7 @@ export default function AppointmentsPage() {
           {showFilters && (
             <>
               <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowFilters(false)} />
-              <div className="lb-pop">
+              <div ref={filterPopRef} className={`lb-pop${filterPopFlip ? ' lb-pop--flip' : ''}`}>
                 <div>
                   <label className="lb-pop-label" htmlFor="lb-appt-by">Created by</label>
                   <select
@@ -3184,7 +3351,26 @@ export default function AppointmentsPage() {
         </div>
 
         <div className="lb-toolbar-right">
-          <span className="lb-count">{total} appointment{total !== 1 ? 's' : ''}</span>
+          {/* List | Calendar. Only these two: Day and Week views need an hour
+              axis and overlap handling, and a control that is visibly there but
+              does nothing is worse than one that is not there yet. */}
+          <div className="lb-viewtoggle" role="group" aria-label="View">
+            <button
+              type="button"
+              className={`lb-viewbtn${!isCalendar ? ' lb-viewbtn--on' : ''}`}
+              onClick={() => setView('list')}
+            >
+              <ListIcon size={14} /> List
+            </button>
+            <button
+              type="button"
+              className={`lb-viewbtn${isCalendar ? ' lb-viewbtn--on' : ''}`}
+              onClick={() => setView('calendar')}
+            >
+              <CalendarDays size={14} /> Calendar
+            </button>
+          </div>
+          {!isCalendar && <span className="lb-count">{total} appointment{total !== 1 ? 's' : ''}</span>}
           {canCreate && !isHubUser && (
             <button type="button" className="lb-control lb-primary" onClick={() => setCreateModal(true)}>
               <Plus size={15} /> New Appointment
@@ -3193,6 +3379,23 @@ export default function AppointmentsPage() {
         </div>
       </div>
 
+      {isCalendar ? (
+        <AppointmentCalendar
+          month={month}
+          onMonth={setMonth}
+          statuses={statusList}
+          // The page's own filters, applied server-side exactly as the list
+          // applies them — switching view must not silently change the scope.
+          filters={{
+            hub_ids: filterHub.join(','),
+            status_id: filterStatus,
+            search,
+          }}
+          onOpen={openApptByToken}
+          onPickDay={pickDay}
+        />
+      ) : (
+      <>
       {/* Status tabs — mobile only (hidden on desktop via CSS) */}
       <div className="appt-tabs">
         <button
@@ -3283,12 +3486,18 @@ export default function AppointmentsPage() {
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{fmtDate(a.created_at)}</div>
                     </td>
                     <td>
+                      {/* Name and mobile stay visible for a hub — that is how
+                          they recognise the job. Only the link comes off: the
+                          hub portal has no Customers screen, so the class and
+                          handler are dropped rather than leaving a cell that
+                          looks clickable and isn't. */}
                       <div
-                        className="appt-cust-link"
-                        onClick={(e) => {
+                        className={P.customers ? 'appt-cust-link' : undefined}
+                        style={P.customers ? undefined : { display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                        onClick={P.customers ? (e) => {
                           e.stopPropagation();
-                          navigate(a.customer_token ? `/customers/${a.customer_token}` : '/customers', a.customer_token ? undefined : { state: { openMobile: a.mobile } });
-                        }}
+                          navigate(a.customer_token ? `${P.customers}/${a.customer_token}` : P.customers, a.customer_token ? undefined : { state: { openMobile: a.mobile } });
+                        } : undefined}
                       >
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 13 }} className="appt-cust-name">{a.customer_name || '—'}</div>
@@ -3306,7 +3515,7 @@ export default function AppointmentsPage() {
                             ) : null;
                           })()}
                         </div>
-                        <span className="appt-cust-arrow">→</span>
+                        {P.customers && <span className="appt-cust-arrow">→</span>}
                       </div>
                     </td>
                     <td>
@@ -3351,7 +3560,7 @@ export default function AppointmentsPage() {
                               style={{ color: '#4f46e5', cursor: 'pointer', textDecoration: 'underline' }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigate(a.estimate_token ? `/estimates/${a.estimate_token}` : '/estimates', a.estimate_token ? undefined : { state: { openId: a.estimate_id } });
+                                navigate(a.estimate_token ? `${P.estimates}/${a.estimate_token}` : P.estimates, a.estimate_token ? undefined : { state: { openId: a.estimate_id } });
                               }}
                             >
                               Estimate:
@@ -3365,7 +3574,7 @@ export default function AppointmentsPage() {
                               style={{ color: '#0f766e', cursor: 'pointer', textDecoration: 'underline' }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                navigate(a.invoice_token ? `/customer-invoices/${a.invoice_token}` : '/customer-invoices', a.invoice_token ? undefined : { state: { openId: a.invoice_id } });
+                                navigate(a.invoice_token ? `${P.customerInvoices}/${a.invoice_token}` : P.customerInvoices, a.invoice_token ? undefined : { state: { openId: a.invoice_id } });
                               }}
                             >
                               Invoice:
@@ -3496,6 +3705,8 @@ export default function AppointmentsPage() {
           noun="appointment"
         />
       </div>
+      </>
+      )}
 
       {createModal && (
         <CreateAppointmentModal

@@ -36,107 +36,235 @@
 .nav-section {
   display: flex;
   flex-direction: column;
+  /* See the note on .nav-card's flex-shrink — same reason, same consequence. */
+  flex-shrink: 0;
 }
 
-.nav-section-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  opacity: 0.65;
-  padding: 14px 12px 4px;
+/* ── Collapsible sidebar sections ───────────────────────────────────────────
+   The section captions used to be static uppercase text. They are now buttons,
+   so the sidebar rests at ~6 rows instead of 13 links. Any number of groups can
+   be open at once; the nav scrolls.
+
+   This block replaces the old caption rule and the whole nested-group set
+   (header / children / label-wrap), which existed only for the one nested
+   "Master Data" item. Master Data is a section of its own now, so nothing
+   renders those classes any more. */
+
+/* ── The nav card ───────────────────────────────────────────────────────────
+   Every consecutive run of collapsible groups renders inside one of these (see
+   navBlocks in AppShell.jsx). The flat sections — Dashboard above, Reports
+   below — stay outside it, sitting directly on the sidebar's tint. That
+   contrast is the whole device: the card says "these rows open", the bare rows
+   say "these rows go somewhere".
+
+   Rows are full-bleed to the card's edge rather than inset, so the dividers
+   run the full width the way they do on a settings list. That makes
+   `overflow: hidden` structural here and not tidiness — it is what curves the
+   first and last row's hover fill into the card's own corners. Without it the
+   top row paints a square corner over a round one.
+
+   No shadow. It carried one briefly, back when the sidebar had a tinted ground
+   for it to lift off; against a white sidebar the same shadow is a grey smear
+   with nothing to separate the card from. The 1px border does the whole job. */
+.nav-card {
+  background: var(--panel);
+  border: 1px solid var(--nav-card-border);
+  border-radius: var(--nav-card-radius);
+  overflow: hidden;
+
+  /* flex-shrink: 0 is NOT optional here, and its absence is subtle enough to
+     be worth the paragraph.
+
+     `.sidebar nav` is a flex column with `overflow-y: auto`. A flex item
+     defaults to flex-shrink: 1, so when the groups grew taller than the
+     sidebar this card was SQUEEZED rather than allowed to overflow — and
+     because it also has `overflow: hidden`, the squeezing was invisible: the
+     card simply cut its own contents off. Measured at a 700px viewport with
+     one eight-item group open: 669px of rows rendered inside a 127px box.
+
+     The nav never scrolled either, and that is the same cause rather than a
+     second bug. Nothing overflowed, because the card had absorbed the excess
+     by shrinking, so scrollHeight equalled clientHeight and there was nothing
+     for the scroll container to scroll. */
+  flex-shrink: 0;
 }
 
-.nav-section:first-child .nav-section-label {
-  padding-top: 6px;
+/* A hairline between groups, the way GarageBox separates its rows. Not on the
+   first: a line directly under the flat Dashboard link reads as a rule
+   belonging to Dashboard rather than a divider between two groups. */
+.nav-section--group {
+  border-top: 1px solid var(--nav-card-border);
 }
 
-.collapsed .nav-section-label {
-  display: none;
+.nav-section--group:first-child {
+  border-top: 0;
 }
 
-.collapsed .nav-section {
-  padding-top: 4px;
+/* Belt and braces: inside the card the first group is also the card's own top
+   edge. `:first-child` already covers it today, but a future block that opens
+   with something other than a group would put a rule flush against the curve. */
+.nav-card>.nav-section--group:first-child {
+  border-top: 0;
 }
 
-.nav-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.nav-group-header {
+.nav-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  /* Roomier than the old 11/12. These rows are the sidebar's resting state —
+     most of the time all you see is six of them — so they can afford the height
+     that makes the card read as a list of destinations rather than a dense
+     menu. */
+  padding: 14px 16px;
   border: 0;
   background: transparent;
-  color: var(--text-muted);
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-family: inherit;
-  overflow: hidden;
-}
-
-.collapsed .nav-group-header {
-  justify-content: center;
-  padding: 10px 0;
-}
-
-.nav-group-header:hover {
-  background: var(--bg-soft);
+  /* Sentence case at body size, not the old 10.5px uppercase caption: this is
+     something you click, and it should not look like a label. */
   color: var(--text);
-}
-
-.nav-group-header.active-parent {
-  color: var(--primary);
+  font-family: inherit;
+  font-size: 14.5px;
   font-weight: 600;
+  text-align: left;
+  /* No radius: the row is full-bleed and the CARD does the curving. A radius
+     here would round the fill away from the card's corner and leave a sliver
+     of panel showing through on hover. */
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
 
-.label-wrap {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.nav-section-header:hover {
+  background: var(--bg-soft);
 }
 
-.collapsed .label-wrap {
-  gap: 0;
+.nav-section-header.open {
+  background: var(--bg-soft);
 }
 
-.nav-group-children {
+/* The group holding the page you are on, whether open or shut — otherwise
+   collapsing a group hides every trace of where you are. Brand teal, matching
+   the active row inside it, so the two read as one highlighted path. */
+.nav-section-header.active-parent {
+  color: var(--primary);
+}
+
+.nav-section-header.active-parent .nav-section-chevron {
+  color: var(--primary);
+}
+
+/* Keyboard users get a visible ring; :focus-visible so a mouse click does not
+   leave one behind. */
+.nav-section-header:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.nav-section-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One chevron rotated, rather than swapping the icon for a different one:
+   swapping remounts the element and the transition never plays. */
+.nav-section-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.nav-section-header.open .nav-section-chevron {
+  transform: rotate(180deg);
+}
+
+/* overflow:hidden is load-bearing, not tidiness — open/close animates height,
+   and without it the links spill out of the collapsing box. */
+.nav-section-items {
   display: flex;
   flex-direction: column;
-  padding-left: 18px;
-  margin: 2px 0 6px;
-  border-left: 1px solid var(--border);
-  margin-left: 20px;
   overflow: hidden;
 }
 
-.nav-group-children a {
-  padding: 8px 12px;
-  font-size: 14px;
-  gap: 10px;
-  border-left: 3px solid transparent;
+/* No left rule and no deep indent. The icons already read as a second level,
+   and an 18px indent inside a 240px sidebar starts truncating labels.
+
+   Inside the card the links ARE inset horizontally, unlike the headers: the
+   active row is a rounded pill, and a pill flush against a full-bleed edge
+   would have its curve sliced off by the card's overflow. 8px is enough for
+   the radius to close. */
+.nav-section-items a {
+  padding-left: 12px;
 }
 
-.nav-group-children a.active {
-  border-left: 3px solid var(--primary);
-  padding-left: 9px;
-  background: #eff6ff;
-  color: var(--primary);
-  font-weight: 600;
+.nav-card .nav-section-items {
+  padding: 2px 8px 8px;
 }
 
-[data-theme="dark"] .nav-group-children a.active {
-  background: rgba(59, 130, 246, 0.12);
-  color: #60a5fa;
-  border-left-color: #60a5fa;
+/* Per-link stagger on open. CSS rather than framer's staggerChildren, which
+   would need a motion wrapper element around every NavLink — see NAV_MOTION in
+   AppShell.jsx. Only plays on open: AnimatePresence unmounts these immediately
+   on close, and the group's own fade covers that.
+
+   Capped at six delays because the longest group (Master Data) is eight links
+   and a stagger that keeps counting past ~150ms stops reading as one movement
+   and starts reading as a queue. Rows seven and up ride the last delay. */
+@keyframes navItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.nav-section-items a {
+  animation: navItemIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nav-section-items a:nth-child(1) {
+  animation-delay: 0.02s;
+}
+
+.nav-section-items a:nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.nav-section-items a:nth-child(3) {
+  animation-delay: 0.08s;
+}
+
+.nav-section-items a:nth-child(4) {
+  animation-delay: 0.11s;
+}
+
+.nav-section-items a:nth-child(5) {
+  animation-delay: 0.14s;
+}
+
+.nav-section-items a:nth-child(n+6) {
+  animation-delay: 0.16s;
+}
+
+/* The 72px rail renders every section flat, so a group's own divider must not
+   apply there — see the effectiveCollapsed branch in AppShell. */
+.collapsed .nav-section--group {
+  border-top: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-section-chevron {
+    transition: none;
+  }
+
+  /* The height tween is JS and is handled by NAV_MOTION_NONE in AppShell.jsx;
+     this is only the half CSS owns. */
+  .nav-section-items a {
+    animation: none;
+  }
 }
 
 .topbar-left {
@@ -294,6 +422,385 @@
 .theme-toggle:hover {
   background: var(--bg-soft);
   color: var(--text);
+}
+
+/* ── Sidebar profile card ───────────────────────────────────────────────────
+   Same panel language as .nav-card below it — white surface, soft border, one
+   radius family — so the sidebar reads as two cards on a ground rather than a
+   card and some unrelated widget.
+
+   `position: relative` is load-bearing: the kebab button and its menu are both
+   absolutely positioned against this box.
+
+   ── On the `sb-` prefix ──
+   These were briefly `.sp-card*`, which collided head-on with splitPane.css's
+   `.sp-card` — the master-detail rail's list row, used by every list page in
+   the application. Both rules matched this element and which one won came down
+   to import order: splitPane's `padding: 10px 12px` and its 13px
+   `.sp-card-name` were landing on the profile card, and a later reshuffle
+   could as easily have flipped it the other way and broken the rails instead.
+
+   `sp-` is SplitPane's namespace. `sb-` is the sidebar's, and nothing else in
+   the codebase uses it. Do not add an `.sp-*` class to this file — the
+   pre-existing `.sp-pw-*` password modal below is grandfathered, and is safe
+   only because splitPane claims no `-pw-` names. */
+.sb-profile {
+  position: relative;
+  flex-shrink: 0;
+  background: var(--panel);
+  border: 1px solid var(--nav-card-border);
+  border-radius: var(--nav-card-radius);
+  /* No shadow — same reasoning as .nav-card above. The two have to agree:
+     one bordered card and one floating card in the same column reads as a
+     mistake rather than as a hierarchy. */
+
+  /* NO negative top margin. There was one — `margin-top: -14px`, to claw back
+     part of .sidebar's 32px gap — and it was harmless only while this card was
+     a direct child of .sidebar. It is now the first child of .sidebar-scroll,
+     which is `overflow-y: auto`, and a negative top margin on the first child
+     of a scroll container pushes that strip above scrollTop 0: permanently
+     clipped, and not reachable by scrolling, because scrollTop cannot go
+     negative. The card lost its top 14px — border, corners and all.
+     The spacing it was compensating for is set on .sidebar's gap instead. */
+}
+
+.sb-profile-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  /* Right padding matches left despite the kebab sitting in that corner: the
+     name is centred in the card, and padding the text away from the button
+     would shift it off-centre by the button's width. The kebab is out of flow,
+     so it cannot collide with a centred single-line name. */
+  padding: 20px 16px 18px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: center;
+  cursor: pointer;
+  border-radius: var(--nav-card-radius);
+}
+
+.sb-profile-body:hover .sb-profile-avatar {
+  border-color: var(--primary);
+  transform: scale(1.03);
+}
+
+.sb-profile-body:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+/* A rounded SQUARE, not a circle — it is the one thing distinguishing this
+   card's avatar from the round one the topbar and the super-admin card use, and
+   at 56px a squircle reads as a profile tile rather than as a second bell. */
+.sb-profile-avatar {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  background: rgba(22, 185, 148, 0.12);
+  border: 2px solid rgba(22, 185, 148, 0.45);
+  color: var(--primary);
+  font-size: 20px;
+  font-weight: 700;
+  transition: border-color 0.18s, transform 0.18s;
+}
+
+.sb-profile-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 12px;
+}
+
+.sb-profile-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Emails are long and arbitrary. `overflow-wrap: anywhere` rather than an
+   ellipsis: a truncated address tells you nothing, while a wrapped one is
+   still readable and only costs a second line on the outliers. */
+.sb-profile-email {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* ── Compact variant (super admin) ──────────────────────────────────────────
+   Same card, same markup, one modifier: the centred stack becomes a single
+   horizontal row, which takes it from roughly 150px tall to roughly 70px.
+
+   Only the layout properties are overridden. Surface, border, radius, shadow,
+   menu and hover behaviour are all inherited from the rules above, so the two
+   variants cannot drift apart when one of them is edited. */
+/* A smaller radius than the full card's 18px. Radius has to fall with height
+   or it stops reading as a rounded rectangle and starts reading as a stretched
+   pill — the corners eat most of a 58px box and the straight edges that give
+   it its shape disappear. */
+.sb-profile--compact {
+  border-radius: 14px;
+}
+
+.sb-profile--compact .sb-profile-body {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  /* Asymmetric on purpose. The full card pads evenly because its text is
+     centred and the kebab floats clear above it; here the text runs left to
+     right into that corner, so the right side has to reserve the button's
+     width or a long name slides underneath it.
+
+     Everything in this variant is fighting for horizontal room. The sidebar is
+     240px, so this card is 211px, and after the avatar, the gap and this
+     reserve there are about 118px left for an email address. That is why the
+     paddings, the avatar and the type are all a step smaller here than in the
+     full card — each is worth several characters before the ellipsis. The
+     reserve is 34, not 36: the kebab is 26 wide sitting 6 from the edge, so 32
+     is the exact clearance and 34 leaves two pixels of gap. */
+  padding: 11px 34px 11px 11px;
+}
+
+.sb-profile--compact .sb-profile-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  font-size: 15px;
+}
+
+/* flex:1 + min-width:0 is what lets the text block actually claim the leftover
+   width AND be allowed to shrink below its content — without min-width:0 a
+   flex item refuses to go under its intrinsic size, the ellipsis never
+   triggers, and the email pushes the card wider than the sidebar. */
+.sb-profile--compact .sb-profile-text {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+  align-items: flex-start;
+}
+
+.sb-profile--compact .sb-profile-name {
+  font-size: 13.5px;
+}
+
+/* Single line with an ellipsis, unlike the full card's wrapping email. A
+   second line here would give back the height this variant exists to save. */
+.sb-profile--compact .sb-profile-email {
+  margin-top: 1px;
+  font-size: 11px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* Vertically centred against the row rather than parked in the corner of a
+   tall card. Tighter to the edge than the full card's 10px, because those
+   pixels go to the email. */
+.sb-profile--compact .sb-profile-kebab {
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+}
+
+.sb-profile--compact .sb-profile-menu {
+  top: calc(100% + 6px);
+}
+
+.sb-profile-kebab {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sb-profile-kebab:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.sb-profile-kebab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+/* Anchored to the card, not to the button, so it cannot be pushed off the
+   sidebar's right edge on a narrow rail. */
+.sb-profile-menu {
+  position: absolute;
+  top: 42px;
+  right: 10px;
+  left: 10px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px -8px rgba(15, 23, 42, 0.28);
+}
+
+.sb-profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.sb-profile-menu-item:hover {
+  background: var(--bg-soft);
+}
+
+.sb-profile-menu-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.sb-profile-menu-item--danger {
+  color: var(--danger, #dc2626);
+}
+
+.sb-profile-menu-item--danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+}
+
+/* The 72px rail: avatar only. */
+.sb-profile-mini {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  /* `0 auto`, not `-14px auto 0` — same trap as .sb-profile above: this is the
+     first child of the scroll container on the rail, and a negative top margin
+     there is clipped away with no way to scroll back to it. */
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(22, 185, 148, 0.12);
+  border: 2px solid rgba(22, 185, 148, 0.45);
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.18s;
+}
+
+.sb-profile-mini:hover {
+  border-color: var(--primary);
+}
+
+.sb-profile-mini:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-profile-body:hover .sb-profile-avatar {
+    transform: none;
+  }
+}
+
+/* ── Quick actions (New Lead / New Appointment) ─────────────────────────────
+   A row of icon buttons between the logo and the nav card.
+
+   Negative top margin against .sidebar's 32px flex gap. That gap is right
+   between the logo and a wall of navigation, but it is too much between the
+   logo and two small buttons that belong to it — they read as orphaned rather
+   than as a toolbar. The gap BELOW stays at the full 32px, which is what keeps
+   the buttons attached upward to the brand and separate from the nav. */
+.sidebar-quick {
+  display: flex;
+  gap: 10px;
+  margin-top: -16px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.sidebar-quick-btn {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  /* Not `all`: these buttons carry a shadow and a transform, and transitioning
+     `all` means any future property added here silently animates too. */
+  transition: background 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+
+.sidebar-quick-btn:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -2px rgba(22, 185, 148, 0.55);
+}
+
+.sidebar-quick-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px -1px rgba(22, 185, 148, 0.45);
+}
+
+.sidebar-quick-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-quick-btn {
+    transition: background 0.18s;
+  }
+
+  .sidebar-quick-btn:hover,
+  .sidebar-quick-btn:active {
+    transform: none;
+  }
 }
 
 .sidebar-action-btn {
@@ -644,8 +1151,6 @@
   gap: 9px;
   padding: 6px 10px 6px 8px;
   border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-soft);
   cursor: pointer;
   transition: all 0.15s;
   user-select: none;
@@ -1109,4 +1614,421 @@
   .content {
     padding-bottom: 68px !important;
   }
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   WhatsApp inbox — the second badge in the topbar
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Deliberately NOT styled as a second bell. Green mark, green count, and it
+   only takes on colour when there is something in it: a permanently green icon
+   next to a permanently grey one reads as decoration, and the whole point is
+   that a customer waiting looks different from a customer not waiting.
+
+   The reason it earns its own control rather than another notification type is
+   the 24-hour window. WhatsApp refuses a free-text reply more than 24 hours
+   after the customer last wrote, so these alerts EXPIRE — and a bell sorted by
+   age has nowhere to put "40 minutes left".
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wai-wrap { position: relative; }
+
+.wai-btn {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .2s;
+}
+.wai-btn:hover { background: var(--bg-soft); color: var(--text); }
+/* Colour only while something is unread. */
+.wai-btn--live { color: #16a34a; }
+.wai-btn--live:hover { background: #f0fdf4; color: #15803d; }
+
+.wai-badge {
+  position: absolute;
+  top: 3px; right: 3px;
+  background: #16a34a;           /* green, not the bell's red: this is work
+                                     waiting, not something going wrong */
+  color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  min-width: 16px; height: 16px;
+  border-radius: 999px;
+  padding: 0 4px;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--panel);
+}
+
+.wai-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 380px;                  /* wider than the bell's 340: every row
+                                     carries a message preview AND a window
+                                     timer, and wrapping either makes the list
+                                     unscannable */
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, .13);
+  z-index: 999;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────────
+   Sticky, because the list scrolls and "Clear all" that scrolls away is a
+   control you have to hunt for at exactly the moment you want it. */
+.wai-dd-header {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 12px 11px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.wai-dd-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 700; color: #16a34a;
+}
+/* The count belongs next to the word, not only on the icon behind the open
+   panel — while the dropdown is open, that badge is hidden by the dropdown. */
+.wai-dd-count {
+  background: #16a34a; color: #fff;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+  padding: 3px 7px; border-radius: 999px;
+}
+.wai-dd-actions { display: flex; align-items: center; gap: 2px; }
+.wai-dd-action {
+  display: flex; align-items: center; gap: 4px;
+  border: 0; background: transparent; cursor: pointer;
+  font: inherit; font-size: 11.5px; font-weight: 600;
+  color: var(--text-muted);
+  padding: 5px 8px; border-radius: 7px;
+  white-space: nowrap;
+}
+.wai-dd-action:hover { background: var(--bg-soft); color: var(--text); }
+.wai-dd-action:disabled { opacity: .5; cursor: default; }
+/* Amber on hover only. A destructive-looking control sitting permanently red
+   in a header gets read as an error message. */
+.wai-dd-action--danger:hover { background: #fffbeb; color: #b45309; }
+
+/* ── List ──────────────────────────────────────────────────────────────── */
+.wai-dd-list {
+  max-height: 60vh;              /* vh, not px: on a laptop this is ~6 rows and
+                                    on a desktop ~12, instead of a fixed height
+                                    that wastes half a large screen */
+  overflow-y: auto;
+  overscroll-behavior: contain;  /* stops the page scrolling underneath once
+                                    the list hits its end */
+}
+.wai-dd-list::-webkit-scrollbar { width: 8px; }
+.wai-dd-list::-webkit-scrollbar-thumb {
+  background: var(--border); border-radius: 99px;
+  border: 2px solid var(--panel);
+}
+
+.wai-dd-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 34px 20px 36px;
+  color: var(--text-muted); text-align: center;
+}
+.wai-dd-empty svg { color: #cbd5e1; margin-bottom: 3px; }
+.wai-dd-empty strong { font-size: 13px; color: var(--text); font-weight: 700; }
+.wai-dd-empty span { font-size: 11.5px; line-height: 1.5; max-width: 240px; }
+
+/* ── A row ─────────────────────────────────────────────────────────────── */
+.wai-row {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 12px 11px 13px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .12s;
+}
+.wai-row:last-child { border-bottom: 0; }
+.wai-row:hover { background: var(--bg-soft); }
+.wai-row:focus-visible { outline: 2px solid #16a34a; outline-offset: -2px; }
+
+/* Unread is a tinted row AND a left edge. The tint alone disappears on a
+   laptop screen at an angle; the edge survives it. */
+.wai-row--unread { background: #f6fef9; box-shadow: inset 3px 0 0 #16a34a; }
+.wai-row--unread:hover { background: #ecfdf3; }
+
+/* ── Avatar ────────────────────────────────────────────────────────────────
+   This replaced a 7px dot. Not decoration: a column of names in one weight is
+   read a row at a time, a column with an anchor per row is scanned. */
+.wai-av {
+  flex: 0 0 32px; width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .02em;
+  background: var(--bg-soft); color: var(--text-muted);
+  margin-top: 1px;
+}
+.wai-av--unread { background: #dcfce7; color: #15803d; }
+
+.wai-row-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+
+.wai-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.wai-who {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wai-row--unread .wai-who { font-weight: 800; color: #14532d; }
+.wai-when {
+  flex-shrink: 0; font-size: 10.5px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;   /* so the column does not jitter as
+                                            "9m" becomes "10m" */
+  /* Room for the clear button, which sits over this corner on hover. Reserved
+     always, not only on hover: a timestamp that shuffles left as the mouse
+     arrives makes the whole list twitch. */
+  padding-right: 22px;
+}
+
+.wai-msg {
+  font-size: 11.5px; color: var(--text-muted); line-height: 1.45;
+  /* Two lines, then clipped. One line loses the half of a message that says
+     what they actually want; three turns the list into a page. */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wai-you { font-weight: 700; color: #64748b; }
+
+.wai-row-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 4px;
+}
+
+/* ── The window countdown ──────────────────────────────────────────────────
+   Three tones, and the middle one is the whole reason this is here.
+
+   The first version made every row shout in a green pill whether there were
+   twenty hours left or twenty minutes, so the pill stopped meaning anything.
+   Now: calm text while there is time, an amber pill under two hours, and grey
+   once it has closed. Only the row that needs a decision looks like one. */
+.wai-win {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600;
+  color: var(--text-muted);
+}
+.wai-win--urgent {
+  font-weight: 800; color: #b45309;
+  background: #fffbeb; padding: 2px 7px; border-radius: 999px;
+}
+.wai-win--shut { color: #94a3b8; }
+
+.wai-owner {
+  font-size: 10px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wai-owner--none { font-weight: 700; color: #b45309; }
+
+/* ── Clear, per row ────────────────────────────────────────────────────────
+   Hidden until hover or keyboard focus. A column of permanent ✕ marks makes a
+   list look like a form to be filled in, when the row's own job is to be
+   clicked. Focus-within keeps it reachable without a mouse. */
+.wai-clear {
+  position: absolute; top: 7px; right: 7px;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-muted);
+  cursor: pointer; opacity: 0;
+  transition: opacity .12s, background .12s, color .12s;
+}
+.wai-row:hover .wai-clear,
+.wai-row:focus-within .wai-clear { opacity: 1; }
+.wai-clear:hover { background: #fee2e2; color: #dc2626; }
+.wai-clear:focus-visible { opacity: 1; outline: 2px solid #16a34a; outline-offset: 1px; }
+
+/* ── Footer ────────────────────────────────────────────────────────────────
+   One sentence, because "Clear all" beside a customer's name looks like it
+   deletes the conversation, and somebody has to be told once that it does not
+   before they will press it. */
+.wai-dd-foot {
+  padding: 9px 14px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+  font-size: 10.5px; line-height: 1.45; color: var(--text-muted);
+}
+
+@media (max-width: 480px) {
+  /* Anchored to the viewport instead of the button: a 380px panel hanging off
+     an icon near the right edge would sit half off-screen. */
+  .wai-dropdown { position: fixed; left: 8px; right: 8px; width: auto; top: 58px; }
+  .wai-dd-list { max-height: 65vh; }
+  /* No hover on a touch screen, so the clear control has to be permanent. */
+  .wai-clear { opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WhatsApp — the sticky cards, bottom-right
+   ═══════════════════════════════════════════════════════════════════════════
+
+   These exist because the OPERATING SYSTEM owns how long its own notification
+   lives, and will not be told. Windows shows a toast for ~5s and files it away;
+   macOS keeps it or does not depending on a setting the user picked years ago.
+   The Web Notification API has requireInteraction:true for exactly this and it
+   is Chrome-desktop only — ignored on macOS, by Firefox, and by the WebView2
+   shim in the .exe.
+
+   So "wait for me" cannot be asked of the OS. It can be done here.
+
+   No animation on exit and no timer anywhere in this block: a card that fades
+   on its own is the thing these replace.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wat-toasts {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1200;                 /* above the app, below a modal backdrop —
+                                     a card floating over a dialog somebody is
+                                     filling in is worse than one that waits */
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  align-items: flex-end;
+  pointer-events: none;          /* the gaps between cards must not swallow
+                                     clicks meant for the page underneath */
+}
+.wat-toasts > * { pointer-events: auto; }
+
+.wat-toast {
+  width: 320px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid #16a34a;
+  border-radius: 12px;
+  padding: 11px 12px 10px 13px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .16);
+  animation: wat-in .18s ease-out;
+}
+/* In only. Nothing animates out, because every exit here is something the user
+   just clicked and they should see it go at once. */
+@keyframes wat-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.wat-toast-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 5px;
+}
+.wat-toast-kind {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .02em;
+  text-transform: uppercase; color: #16a34a;
+}
+.wat-toast-x {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; margin: -4px -4px -4px 0;
+  border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.wat-toast-x:hover { background: var(--bg-soft); color: var(--text); }
+
+.wat-toast-who {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wat-toast-msg {
+  margin-top: 1px;
+  font-size: 12px; line-height: 1.45; color: var(--text-muted);
+  /* Two lines. One loses the half of the message that says what they want. */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wat-toast-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-top: 9px;
+}
+.wat-toast-win {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+}
+.wat-toast-win--urgent {
+  font-weight: 800; color: #b45309;
+  background: #fffbeb; padding: 2px 7px; border-radius: 999px;
+}
+.wat-toast-win--shut { color: #94a3b8; }
+
+.wat-toast-open {
+  border: 0; border-radius: 8px;
+  background: #16a34a; color: #fff;
+  font: inherit; font-size: 12px; font-weight: 700;
+  padding: 6px 15px; cursor: pointer;
+}
+.wat-toast-open:hover { background: #15803d; }
+
+/* The overflow strip. Three cards is already a lot of screen; eight would be a
+   wall. Nothing is dropped — this counts the rest and opens the full list. */
+.wat-toast-more {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--panel); color: var(--text-muted);
+  font: inherit; font-size: 11.5px; font-weight: 700;
+  padding: 6px 13px; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .10);
+}
+.wat-toast-more:hover { color: var(--text); border-color: #cbd5e1; }
+
+@media (max-width: 480px) {
+  /* Full width, and above the thumb rather than under it. */
+  .wat-toasts { left: 10px; right: 10px; bottom: 10px; align-items: stretch; }
+  .wat-toast  { width: auto; }
+}
+
+/* ── An auto-dismissing card ────────────────────────────────────────────────
+   Amber edge instead of green, and it is not decoration: a card that will
+   leave by itself and one that will not must not look identical, or the first
+   time one vanishes it reads as a glitch. Green = yours, waiting. Amber = for
+   your information. */
+.wat-toast--auto {
+  border-left-color: #f59e0b;
+  overflow: hidden;              /* clips the draining bar to the rounded
+                                     corners; without it the bar squares off
+                                     the bottom-left of the card */
+  position: relative;
+}
+.wat-toast--auto .wat-toast-kind { color: #b45309; }
+
+/* Who it belongs to, on cards that are not yours. Omitted on your own, where
+   it would be your own name on every card. */
+.wat-toast-foot-r { display: inline-flex; align-items: center; gap: 9px; }
+.wat-toast-owner {
+  font-size: 10.5px; font-weight: 600; color: var(--text-muted);
+  max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* The draining line — the only thing that says this card will leave on its
+   own. transform, not width: width animates layout on every frame, transform
+   is composited, and this runs for eight seconds in the corner of a page
+   somebody is working on. */
+.wat-toast-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: #f59e0b;
+  transform-origin: left center;
+  animation-name: wat-drain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes wat-drain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The bar is information, so it stays — but it stops being motion. It shows
+     the full width and the timer still runs; the card simply goes when it
+     goes, which is what somebody who asked for less motion wants. */
+  .wat-toast-bar { animation: none; }
+  .wat-toast { animation: none; }
 }

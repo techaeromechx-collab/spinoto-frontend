@@ -3,6 +3,7 @@ import { openDocumentPdf, downloadDocumentPdf } from '../lib/documentPdf.js';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
+import { useAppPaths } from '../lib/appPaths.js';
 import InvoiceDateDialog from '../components/InvoiceDateDialog.jsx';
 import PaginationBar from '../components/PaginationBar.jsx';
 import SplitPane, { RecordCard } from '../components/SplitPane.jsx';
@@ -13,13 +14,21 @@ import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
+import { useFlipPopup } from '../hooks/useFlipPopup.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
 import { usePageCrumb } from '../lib/pageCrumbStore.js';
 import { CreateAppointmentModal } from './AppointmentsPage.jsx';
+import AdvancePaymentModal from '../components/AdvancePaymentModal.jsx';
+import WhatsAppSendMenu from '../components/WhatsAppSendMenu.jsx';
 import {
   FileText, Plus, Search, RefreshCw, X, ChevronRight,
   CheckCircle2, XCircle, Clock, AlertCircle, Eye, Minus, ReceiptText, Printer, Download, Check, MoreVertical, ChevronDown, Building2,
   User, Car, Pencil, SlidersHorizontal, ArrowDown,
+  CalendarDays, UserPlus, Wallet,
+  // Icon labels on the document header replace a 100px text column per row —
+  // which is what buys the width for the summary to sit beside Bill To and
+  // Vehicle rather than underneath them. See est-doc-il in the stylesheet.
+  Phone, MapPin, Tag, Layers, Landmark, Calendar, Gauge, Loader2,
 } from 'lucide-react';
 import '../styles/listLayout.css';
 import '../styles/EstimatesPage.css';
@@ -55,8 +64,8 @@ function promiseLabel(text, months, days, km) {
   if (text) return text;
   const parts = [];
   if (months) parts.push(`${months} Month${months > 1 ? 's' : ''}`);
-  if (days)   parts.push(`${days} Day${days > 1 ? 's' : ''}`);
-  if (km)     parts.push(`${Number(km).toLocaleString('en-IN')} KM`);
+  if (days) parts.push(`${days} Day${days > 1 ? 's' : ''}`);
+  if (km) parts.push(`${Number(km).toLocaleString('en-IN')} KM`);
   if (parts.length === 0) return null;
   return parts.length > 1 ? `${parts.join(' / ')} (whichever is earlier)` : parts[0];
 }
@@ -642,19 +651,19 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
           whatsapp: editEstimate?.whatsapp || '',
         },
         vehicle: {
-          vehicle_number:   editEstimate?.vehicle_number || '',
-          vehicle_type_id:  editEstimate?.vehicle_type_id || null,
+          vehicle_number: editEstimate?.vehicle_number || '',
+          vehicle_type_id: editEstimate?.vehicle_type_id || null,
           vehicle_type_name: editEstimate?.vehicle_type_name || '',
-          make_id:          editEstimate?.make_id || null,
-          make_name:        editEstimate?.make_name || '',
-          model_id:         editEstimate?.model_id || null,
-          model_name:       editEstimate?.model_name || '',
-          body_type_id:     editEstimate?.body_type_id || null,
-          body_type_name:   editEstimate?.body_type_name || '',
-          cc_category_id:   editEstimate?.cc_category_id || null,
+          make_id: editEstimate?.make_id || null,
+          make_name: editEstimate?.make_name || '',
+          model_id: editEstimate?.model_id || null,
+          model_name: editEstimate?.model_name || '',
+          body_type_id: editEstimate?.body_type_id || null,
+          body_type_name: editEstimate?.body_type_name || '',
+          cc_category_id: editEstimate?.cc_category_id || null,
           cc_category_name: editEstimate?.cc_category_name || '',
-          segment_ids:      Array.isArray(editEstimate?.segment_ids) ? editEstimate.segment_ids : [],
-          segment_names:    editEstimate?.segment_names || '',
+          segment_ids: Array.isArray(editEstimate?.segment_ids) ? editEstimate.segment_ids : [],
+          segment_names: editEstimate?.segment_names || '',
         },
       };
     }
@@ -722,14 +731,14 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
         discount_value: parseFloat(it.discount_value) || 0,
         discount_source: it.discount_source || null,
         warranty_months: it.warranty_months ?? null,
-        warranty_days:   it.warranty_days   ?? null,
-        warranty_km:     it.warranty_km     ?? null,
-        warranty_text:   it.warranty_text   || null,
+        warranty_days: it.warranty_days ?? null,
+        warranty_km: it.warranty_km ?? null,
+        warranty_text: it.warranty_text || null,
         warranty_source: it.warranty_source || null,
         guarantee_months: it.guarantee_months ?? null,
-        guarantee_days:   it.guarantee_days   ?? null,
-        guarantee_km:     it.guarantee_km     ?? null,
-        guarantee_text:   it.guarantee_text   || null,
+        guarantee_days: it.guarantee_days ?? null,
+        guarantee_km: it.guarantee_km ?? null,
+        guarantee_text: it.guarantee_text || null,
         guarantee_source: it.guarantee_source || null,
       };
     })
@@ -1108,25 +1117,25 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     };
     try {
       const params = new URLSearchParams();
-      if (serviceId)     params.set('service_id',      serviceId);
-      if (partId)        params.set('part_id',         partId);
-      if (categoryId)    params.set('category_id',     categoryId);
+      if (serviceId) params.set('service_id', serviceId);
+      if (partId) params.set('part_id', partId);
+      if (categoryId) params.set('category_id', categoryId);
       if (vehicleTypeId) params.set('vehicle_type_id', vehicleTypeId);
       if ([...params].length === 0) return empty;
       const r = await api(`/api/warranty-master/lookup?${params}`);
       if (!r.matched) return empty;
-      const w = r.warranty  || null; // best warranty match, if any
+      const w = r.warranty || null; // best warranty match, if any
       const g = r.guarantee || null; // best guarantee match, if any
       return {
         warranty_months: w?.duration_months ?? null,
-        warranty_days:   w?.duration_days   ?? null,
-        warranty_km:     w?.duration_km     ?? null,
-        warranty_text:   w?.custom_text     || null,
+        warranty_days: w?.duration_days ?? null,
+        warranty_km: w?.duration_km ?? null,
+        warranty_text: w?.custom_text || null,
         warranty_source: w ? 'master' : null,
         guarantee_months: g?.duration_months ?? null,
-        guarantee_days:   g?.duration_days   ?? null,
-        guarantee_km:     g?.duration_km     ?? null,
-        guarantee_text:   g?.custom_text     || null,
+        guarantee_days: g?.duration_days ?? null,
+        guarantee_km: g?.duration_km ?? null,
+        guarantee_text: g?.custom_text || null,
         guarantee_source: g ? 'master' : null,
       };
     } catch {
@@ -1259,7 +1268,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     if (!form.hub_id) { setError('Please select a hub.'); return; }
     if (isB2b) {
       if (!b2bCompanyName.trim()) { setError('Please enter the company name for the B2B invoice.'); return; }
-      if (!b2bAddress.trim())     { setError('Please enter the billing address for the B2B invoice.'); return; }
+      if (!b2bAddress.trim()) { setError('Please enter the billing address for the B2B invoice.'); return; }
       if (!b2bGstNumber.trim()) { setError('Please enter a GST number.'); return; }
     }
     if (!isEdit && mode === 'appointment') {
@@ -1303,14 +1312,14 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
             discount_amount: forceZero ? 0 : discountAmount,
             discount_source: forceZero ? null : (it.discount_source || null),
             warranty_months: it.warranty_months ?? null,
-            warranty_days:   it.warranty_days   ?? null,
-            warranty_km:     it.warranty_km     ?? null,
-            warranty_text:   it.warranty_text   || null,
+            warranty_days: it.warranty_days ?? null,
+            warranty_km: it.warranty_km ?? null,
+            warranty_text: it.warranty_text || null,
             warranty_source: it.warranty_source || null,
             guarantee_months: it.guarantee_months ?? null,
-            guarantee_days:   it.guarantee_days   ?? null,
-            guarantee_km:     it.guarantee_km     ?? null,
-            guarantee_text:   it.guarantee_text   || null,
+            guarantee_days: it.guarantee_days ?? null,
+            guarantee_km: it.guarantee_km ?? null,
+            guarantee_text: it.guarantee_text || null,
             guarantee_source: it.guarantee_source || null,
           };
         }),
@@ -1324,16 +1333,16 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
           payload.appointment_id = Number(form.appointment_id);
         } else {
           const { customer, vehicle } = standaloneCtx || {};
-          payload.customer_name   = customer?.customer_name?.trim() || null;
-          payload.mobile          = customer?.mobile || null;
-          payload.whatsapp        = customer?.whatsapp || null;
-          payload.vehicle_number  = vehicle?.vehicle_number || null;
+          payload.customer_name = customer?.customer_name?.trim() || null;
+          payload.mobile = customer?.mobile || null;
+          payload.whatsapp = customer?.whatsapp || null;
+          payload.vehicle_number = vehicle?.vehicle_number || null;
           payload.vehicle_type_id = vehicle?.vehicle_type_id || null;
-          payload.make_id         = vehicle?.make_id || null;
-          payload.model_id        = vehicle?.model_id || null;
-          payload.body_type_id    = vehicle?.body_type_id || null;
-          payload.segment_ids     = Array.isArray(vehicle?.segment_ids) ? vehicle.segment_ids : [];
-          payload.cc_category_id  = vehicle?.cc_category_id || null;
+          payload.make_id = vehicle?.make_id || null;
+          payload.model_id = vehicle?.model_id || null;
+          payload.body_type_id = vehicle?.body_type_id || null;
+          payload.segment_ids = Array.isArray(vehicle?.segment_ids) ? vehicle.segment_ids : [];
+          payload.cc_category_id = vehicle?.cc_category_id || null;
         }
       }
 
@@ -1368,7 +1377,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
           message: err.data.error,
           flags: {
             ...extraFlags,
-            ...(err.data.code === 'PI_EXISTS'        ? { confirm_regenerate_pi: true }       : {}),
+            ...(err.data.code === 'PI_EXISTS' ? { confirm_regenerate_pi: true } : {}),
             ...(err.data.code === 'REDO_COST_BEARER' ? { confirm_cost_bearer_company: true } : {}),
           },
         });
@@ -1685,7 +1694,13 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                   <span style={{ fontWeight: 700, fontSize: 13 }}>B2B Invoice (GST Registered Customer)</span>
                 </label>
 
-                {isEdit && editEstimate?.mobile && (
+                {/* Staff only. This pulls from customer_profiles, which a hub
+                    login cannot read — leaving the button visible would give
+                    them a control whose only outcome is an error message. The
+                    three silent B2B prefill attempts elsewhere already swallow
+                    their 403 and simply don't prefill, which is the right
+                    degradation; this one is user-initiated, so it has to go. */}
+                {isEdit && editEstimate?.mobile && !isHubUser && (
                   <button
                     type="button"
                     onClick={refreshB2bFromProfile}
@@ -2252,10 +2267,19 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 // ═════════════════════════════════════════════════════════════════════════════
 // Invoice Sync Warning Modal
 // ─────────────────────────────────────────────────────────────────────────────
-function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, onCancel, onConfirm }) {
-  const blockedByPi = hasPi && piPaid;
-  const blockedByCi = hasCi && ciPaid;
+// canSync=false is the hub case: a hub can edit its estimate but has no edit
+// access to the invoices raised from it — the Sales Invoice is an issued tax
+// document and the Customer Invoice is the company's. Both sync endpoints are
+// staff-only server-side, so without this the hub would press "Update Invoices"
+// and collect two permission errors.
+function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, canSync = true, onCancel, onConfirm }) {
+  const blockedByPi = hasPi && (piPaid || !canSync);
+  const blockedByCi = hasCi && (ciPaid || !canSync);
   const allBlocked = (!hasPi || blockedByPi) && (!hasCi || blockedByCi);
+  // "already paid" is the wrong reason to show a hub, so the two cases are
+  // named separately rather than sharing one string.
+  const piReason = piPaid ? 'already paid, cannot update' : 'only Spinoto can update this';
+  const ciReason = ciPaid ? 'already paid, cannot update' : 'only Spinoto can update this';
   useEscapeClose(onCancel, !syncBusy);
 
   return (
@@ -2269,13 +2293,15 @@ function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, onCan
         </div>
         <div style={{ padding: '16px 20px', fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
           <p style={{ margin: '0 0 12px' }}>
-            This estimate has existing invoices. Updating them will recalculate all line items and totals.
+            {canSync
+              ? 'This estimate has existing invoices. Updating them will recalculate all line items and totals.'
+              : 'This estimate has already been invoiced. Your changes are saved on the estimate, but the invoices cannot be changed from here.'}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
             {hasPi && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: blockedByPi ? '#fef2f2' : '#f0fdf4', border: `1px solid ${blockedByPi ? '#fca5a5' : '#86efac'}` }}>
                 {blockedByPi
-                  ? <><XCircle size={15} style={{ color: '#dc2626', flexShrink: 0 }} /><span style={{ color: '#991b1b', fontWeight: 600 }}>Purchase Invoice — already paid, cannot update</span></>
+                  ? <><XCircle size={15} style={{ color: '#dc2626', flexShrink: 0 }} /><span style={{ color: '#991b1b', fontWeight: 600 }}>{canSync ? 'Purchase Invoice' : 'Sales Invoice'} — {piReason}</span></>
                   : <><CheckCircle2 size={15} style={{ color: '#16a34a', flexShrink: 0 }} /><span>Purchase Invoice — will be recalculated</span></>
                 }
               </div>
@@ -2283,7 +2309,7 @@ function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, onCan
             {hasCi && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: blockedByCi ? '#fef2f2' : '#f0fdf4', border: `1px solid ${blockedByCi ? '#fca5a5' : '#86efac'}` }}>
                 {blockedByCi
-                  ? <><XCircle size={15} style={{ color: '#dc2626', flexShrink: 0 }} /><span style={{ color: '#991b1b', fontWeight: 600 }}>Customer Invoice — already paid, cannot update</span></>
+                  ? <><XCircle size={15} style={{ color: '#dc2626', flexShrink: 0 }} /><span style={{ color: '#991b1b', fontWeight: 600 }}>Customer Invoice — {ciReason}</span></>
                   : <><CheckCircle2 size={15} style={{ color: '#16a34a', flexShrink: 0 }} /><span>Customer Invoice — will be recalculated</span></>
                 }
               </div>
@@ -2291,7 +2317,9 @@ function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, onCan
           </div>
           {allBlocked && (
             <p style={{ margin: 0, color: '#b45309', fontWeight: 600, background: '#fffbeb', padding: '8px 12px', borderRadius: 8 }}>
-              All invoices are paid — no updates possible.
+              {canSync
+                ? 'All invoices are paid — no updates possible.'
+                : 'Ask Spinoto to update the invoices to match.'}
             </p>
           )}
         </div>
@@ -2414,7 +2442,7 @@ function estCard(est) {
     date: fmtEstDate(estDate(est)),
     name: est.is_b2b ? (est.b2b_company_name || est.customer_name) : est.customer_name,
     sub: [est.vehicle_number, [est.make_name, est.model_name].filter(Boolean).join(' ')]
-           .filter(Boolean).join(' • '),
+      .filter(Boolean).join(' • '),
     status: meta.label,
     statusColor: meta.color,
     badges: est.is_b2b ? [{ label: 'B2B', title: 'B2B estimate' }] : [],
@@ -2429,12 +2457,11 @@ function estCard(est) {
 }
 
 function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = false, onLoaded }) {
-  const rawNavigate = useNavigate();
-  // Hub Portal renders this drawer as a plain tab with no nested routing, and
-  // its admin-only routes (Estimates/Customers/Invoices) bounce hub users
-  // straight back to /hub (App.jsx's RequireAdmin). So navigate() has to be
-  // a no-op here for hub users — the drawer itself still opens fine locally.
-  const navigate = isHubUser ? () => {} : rawNavigate;
+  const navigate = useNavigate();
+  // Where each linked document lives for THIS user — /purchase-invoices for
+  // staff, /hub/sales-invoices for a hub login. null means the hub portal has
+  // no such screen and the link is hidden instead of pointed somewhere wrong.
+  const P = useAppPaths();
   const { user: authUser } = useAuth();
   const isSuperAdmin = !!authUser?.is_super_admin;
   const [estimate, setEstimate] = react.useState(null);
@@ -2443,13 +2470,35 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   const [generatingInvoice, setGeneratingInvoice] = react.useState(false);
   // The estimate's date anchors the whole job chain, so it has its own
   // permission rather than riding on general edit rights.
-  const canBackdateEst  = useCan('BACKDATE_ESTIMATE', 'OVERRIDE_INVOICE_DATE_LIMITS');
+  const canBackdateEst = useCan('BACKDATE_ESTIMATE', 'OVERRIDE_INVOICE_DATE_LIMITS');
   const canOverrideDate = useCan('OVERRIDE_INVOICE_DATE_LIMITS');
+  // Taking an advance is COLLECT_PAYMENT — the same right as taking any other
+  // payment for a job, exercised earlier in it. Hub logins are excluded here as
+  // well as in the handler: they have no payments screen at all.
+  const canAdvance = useCan('COLLECT_PAYMENT') && !authUser?.hub_id;
+  const [showAdvance, setShowAdvance] = react.useState(false);
   const [dateDialog, setDateDialog] = react.useState(false);
   // The server refuses these too; this just avoids offering a button that
   // would always be rejected. Mirrors dateEditable on the invoice page.
   const estDateEditable = estimate && !['cancelled', 'rejected'].includes(estimate.status);
   const [generatingPI, setGeneratingPI] = react.useState(false);
+
+  // ── Send the estimate on WhatsApp ───────────────────────────────────────
+  //
+  // The button, the template menu, the preview and the editable destination all
+  // live in <WhatsAppSendMenu>. They were inline here when the estimate had one
+  // template; migration 147 added a second (estimate_approve, "you approved"
+  // alongside estimate_approval, "please approve"), and a second copy of the
+  // same 150 lines on Appointments and Leads is how three pages drift.
+  //
+  // Which templates appear is the server's answer, not this page's: it returns
+  // the ones mapped to entity_type 'estimate'. A third estimate template added
+  // in Settings shows up here with no edit.
+  //
+  // Hub logins are excluded — the message goes out as Spinoto, from Spinoto's
+  // number. That is a decision about this page, so it is made here rather than
+  // inside the control.
+  const canSendWa = !isHubUser && !authUser?.hub_id;
 
   // Company settings for print header
   const [company, setCompany] = react.useState(null);
@@ -2552,7 +2601,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
     try {
       const res = await api('/api/purchase-invoices/generate', { method: 'POST', body: { estimate_id: estimateId } });
       await load(); // refresh estimate so purchase_invoice_id appears
-      navigate(res.item.public_token ? `/purchase-invoices/${res.item.public_token}` : '/purchase-invoices', res.item.public_token ? undefined : { state: { openId: res.item.id } });
+      navigate(res.item.public_token ? `${P.salesInvoices}/${res.item.public_token}` : P.salesInvoices, res.item.public_token ? undefined : { state: { openId: res.item.id } });
     } catch (err) {
       if (err.status === 409) {
         showToast('A purchase invoice already exists for this estimate.', 'error');
@@ -2569,7 +2618,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
     try {
       const res = await api('/api/customer-invoices/from-estimate', { method: 'POST', body: { estimate_id: estimateId } });
       await load(); // refresh estimate so customer_invoice_id appears
-      navigate(res.item.public_token ? `/customer-invoices/${res.item.public_token}` : '/customer-invoices', res.item.public_token ? undefined : { state: { openId: res.item.id } });
+      navigate(res.item.public_token ? `${P.customerInvoices}/${res.item.public_token}` : P.customerInvoices, res.item.public_token ? undefined : { state: { openId: res.item.id } });
     } catch (err) {
       if (err.status === 409) {
         showToast('Customer invoice already exists for this estimate.', 'error');
@@ -2651,6 +2700,25 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   const roundingAdj = r2(grandTotal - subtotalEx - totalGst + txDiscountAmount);
   // Sort slabs descending by rate (18% first, then 12%, 5%, etc.)
   const gstSlabs = Object.values(gstSlabMap).sort((a, b) => b.pct - a.pct);
+
+  // ── One GST slab across every line, or several? ──────────────────────────
+  //
+  // When every taxable line shares a rate, the rate belongs in the COLUMN
+  // HEADER ("CGST 9%") and the cells hold rupees — which is what turns three
+  // tax columns into two. On a mixed-slab estimate there is no single header
+  // rate, so this is null and each row prints its own rate under the figure.
+  //
+  // gstSlabs already groups by pct, so its length answers the question — but
+  // read from items directly, because a slab list of one could also mean one
+  // taxable line among several zero-rated ones, and that IS uniform.
+  const uniformHalfPct = (() => {
+    const rates = [...new Set(
+      items.map(i => parseFloat(i.gst_percent ?? 0)).filter(r => r > 0)
+    )];
+    if (rates.length !== 1) return null;
+    const half = rates[0] / 2;
+    return half.toFixed(half % 1 === 0 ? 0 : 1);
+  })();
   const hasDiscountInDetail = totalDiscount > 0;
 
   const approvedCount = items.filter(i => i.customer_approved === true).length;
@@ -2710,8 +2778,19 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
         <div className="est-detail-header est-screen-only">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <FileText size={18} style={{ color: 'var(--primary)' }} />
-            <span style={{ fontWeight: 700, fontSize: 16 }}>Estimate #{estimate.id}</span>
-            <StatusBadge status={status} />
+            {/* The document number, and nothing else.
+                "Estimate #12" said the same thing twice — you are on the
+                estimate screen — and #12 is not the number printed on the
+                document, which is EST-000012. One string that matches paper.
+
+                The status pill is gone from here: it is already in the info
+                band below, beside the figures it describes, and a second copy
+                in the chrome made the bar compete with the estimate. Warranty
+                Redo STAYS — it is not a status, it is a fact about which job
+                this estimate belongs to, and it appears nowhere else. */}
+            <span style={{ fontWeight: 700, fontSize: 16 }}>
+              EST-{String(estimate.id).padStart(6, '0')}
+            </span>
             {estimate.warranty_claim_id && (
               <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap' }}>
                 🛡 Warranty Redo
@@ -2719,33 +2798,15 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {estimate.is_b2b && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={includeB2bPrint}
-                  onChange={e => setIncludeB2bPrint(e.target.checked)}
-                  style={{ width: 13, height: 13 }}
-                />
-                Include B2B details in print
-              </label>
-            )}
-            {estimate.notes && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={includeNotesPrint}
-                  onChange={e => setIncludeNotesPrint(e.target.checked)}
-                  style={{ width: 13, height: 13 }}
-                />
-                Include notes in print
-              </label>
-            )}
+            {/* The two "include in print" checkboxes used to sit here, inline,
+                with their full sentences — two labelled controls competing with
+                the actions in a bar whose job is the actions. They are in the
+                kebab now: one click from Print, which is the only reason to
+                touch them. */}
             {/* Server-rendered themed PDF — same template system as customer
                 and purchase invoices, so the estimate now honours the
                 configured theme, logo and accent colour. */}
             <button
-              className="btn btn-ghost"
               disabled={estPdfLoading}
               onClick={async () => {
                 if (!estimate) return;
@@ -2758,16 +2819,18 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                   setEstPdfLoading(false);
                 }
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-              title="Open the themed PDF"
+              className="btn btn-ghost est-hdr-icon"
+              title={estPdfLoading ? 'Generating the PDF…' : 'Print / PDF'}
+              aria-label="Print or open the PDF"
             >
-              <Printer size={15} /> {estPdfLoading ? 'Generating…' : 'Print'}
+              {estPdfLoading
+                ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                : <Printer size={16} />}
             </button>
 
             {/* Separate from Print because only a download can carry the proper
                 filename — Print opens a blob URL, which has no name. */}
             <button
-              className="btn btn-ghost"
               disabled={estPdfSaving}
               onClick={async () => {
                 if (!estimate) return;
@@ -2780,19 +2843,39 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                   setEstPdfSaving(false);
                 }
               }}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 13 }}
-              title="Download the PDF as EST-000000_VEHICLE_Model.pdf"
+              className="btn btn-ghost est-hdr-icon"
+              title={estPdfSaving ? 'Saving…' : 'Download the PDF as EST-000000_VEHICLE_Model.pdf'}
+              aria-label="Download the PDF"
             >
-              <Download size={15} /> {estPdfSaving ? 'Saving…' : 'Download'}
+              {estPdfSaving
+                ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                : <Download size={16} />}
             </button>
+
+            {/* Sends the customer the public estimate LINK, not the PDF as an
+                attachment — that is what the approved estimate_approval
+                template carries, and the link opens the same document with no
+                login.
+
+                Beside Print and Download rather than in the action row below:
+                this is "give the customer their estimate", the same family of
+                act as printing it. The action row is decisions — approve,
+                request revision, generate the invoice. */}
+            {canSendWa && estimate && (
+              <WhatsAppSendMenu
+                entityType="estimate"
+                entityId={estimate.id}
+                showToast={showToast}
+              />
+            )}
 
             {/* Kebab menu */}
             <div style={{ position: 'relative' }}>
               <button
-                className="btn btn-ghost"
+                className="btn btn-ghost est-hdr-icon"
                 onClick={() => setShowKebab(v => !v)}
-                style={{ padding: '6px 8px', display: 'flex', alignItems: 'center' }}
                 title="More options"
+                aria-label="More options"
               >
                 <MoreVertical size={16} />
               </button>
@@ -2807,8 +2890,47 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                     position: 'absolute', right: 0, top: '100%', marginTop: 4,
                     background: 'var(--bg)', border: '1px solid var(--border)',
                     borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-                    zIndex: 100, minWidth: 160, overflow: 'hidden',
+                    zIndex: 100, minWidth: 210, overflow: 'hidden',
                   }}>
+                    {/* Print options, first — they change what the Print button
+                        two along from here produces, and that is the only
+                        reason anyone opens this menu mid-task.
+
+                        Rendered as <label>, not <button>: the whole row toggles
+                        the checkbox natively, and the menu deliberately does
+                        NOT close on click, because both toggles are often set
+                        together before printing once. */}
+                    {(estimate.is_b2b || estimate.notes) && (
+                      <div style={{ borderBottom: '1px solid var(--border)' }}>
+                        <div style={{
+                          padding: '8px 14px 4px', fontSize: 9.5, fontWeight: 800,
+                          letterSpacing: '.07em', textTransform: 'uppercase',
+                          color: 'var(--text-muted)',
+                        }}>
+                          Include in print
+                        </div>
+                        {estimate.is_b2b && (
+                          <label className="est-kebab-toggle">
+                            <input
+                              type="checkbox"
+                              checked={includeB2bPrint}
+                              onChange={e => setIncludeB2bPrint(e.target.checked)}
+                            />
+                            B2B details
+                          </label>
+                        )}
+                        {estimate.notes && (
+                          <label className="est-kebab-toggle">
+                            <input
+                              type="checkbox"
+                              checked={includeNotesPrint}
+                              onChange={e => setIncludeNotesPrint(e.target.checked)}
+                            />
+                            Notes
+                          </label>
+                        )}
+                      </div>
+                    )}
                     <button
                       style={{
                         display: 'flex', alignItems: 'center', gap: 8,
@@ -2858,102 +2980,157 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           </div>
         </div>
 
-        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 20 }}>
 
           {/* ── Info Section — two-column bill-to / estimate-meta ── */}
-          <div className="est-info-grid">
-            {/* Left column: customer / vehicle */}
-            <div style={{ padding: '16px 20px', borderRight: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Bill To</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {/* ── Document header band ──
+              Three columns: who it is for, what it is for, what it comes to.
+
+              The 100px text label that used to head every row is an icon now.
+              Each row keeps its words in title + aria-label, and the label is
+              in the DOM as a visually-hidden span that PRINT brings back — an
+              icon does not print as meaning, and a printed estimate reading
+              "▢ Raj Patel / ▢ 9712301573" is not a document.
+
+              Dropping that column is what buys the width for Summary to sit
+              HERE rather than below the line items, where it was one more thing
+              between the items and the actions. */}
+          <div className="est-doc-meta">
+
+            <div className="est-doc-col">
+              <div className="est-doc-cap">Bill To</div>
+              <div className="est-doc-rows">
                 {[
                   ...(estimate.is_b2b ? [
-                    { label: 'Company Name', value: estimate.b2b_company_name, b2b: true },
-                    { label: 'GST No', value: estimate.b2b_gst_number, b2b: true },
+                    { label: 'Company Name', Icon: Building2, value: estimate.b2b_company_name, b2b: true },
+                    { label: 'GST No', Icon: Tag, value: estimate.b2b_gst_number, b2b: true, mono: true },
                   ] : []),
-                  { label: 'Customer', value: estimate.customer_name },
-                  { label: 'Mobile', value: estimate.mobile },
+                  { label: 'Customer', Icon: User, value: estimate.customer_name },
+                  { label: 'Mobile', Icon: Phone, value: estimate.mobile, mono: true },
                   ...(estimate.is_b2b ? [
-                    { label: 'Address', value: estimate.b2b_address, b2b: true },
+                    { label: 'Address', Icon: MapPin, value: estimate.b2b_address, b2b: true, wrap: true },
                   ] : []),
                   {
                     label: 'Hub',
+                    Icon: Landmark,
                     value: (
                       <>
                         <span className="est-no-print">{estimate.hub_full_name || estimate.hub_name}</span>
                         <span className="est-print-show">{estimate.hub_name}</span>
                       </>
-                    )
+                    ),
                   },
-                ].map(({ label, value, b2b }) => (
-                  <div key={label} className={b2b && !includeB2bPrint ? 'est-no-print' : ''} style={{ display: 'flex' }}>
-                    <span className="est-info-label">{label}</span>
-                    <span className="est-info-value">{value || '—'}</span>
+                ].map(({ label, Icon, value, b2b, wrap, mono }) => (
+                  <div key={label}
+                    className={`est-doc-il${wrap ? ' est-doc-il--wrap' : ''}${b2b && !includeB2bPrint ? ' est-no-print' : ''}`}
+                    title={label} aria-label={label}>
+                    <Icon size={14} aria-hidden="true" />
+                    <span className="est-doc-il-lbl">{label}</span>
+                    <span className={mono ? 'est-doc-il-v est-doc-mono' : 'est-doc-il-v'}>{value || '\u2014'}</span>
                   </div>
                 ))}
               </div>
             </div>
-            {/* Right column: vehicle details + estimate meta */}
-            <div style={{ padding: '16px 20px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Vehicle & Estimate</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {/* Vehicle number */}
-                <div style={{ display: 'flex' }}>
-                  <span className="est-info-label">Reg. No.</span>
-                  <span className="est-info-value">{estimate.vehicle_number || '—'}</span>
+
+            <div className="est-doc-col">
+              <div className="est-doc-cap">Vehicle &amp; Estimate</div>
+              <div className="est-doc-rows">
+                {[
+                  { label: 'Reg. No.', Icon: Car, value: estimate.vehicle_number, mono: true },
+                  ...((estimate.make_name || estimate.model_name) ? [
+                    { label: 'Make / Model', Icon: Layers, value: [estimate.make_name, estimate.model_name].filter(Boolean).join(' ') },
+                  ] : []),
+                  ...(estimate.body_type_name ? [
+                    { label: 'Body Type', Icon: Layers, value: `${estimate.body_type_name}${estimate.segment_names ? ` (${estimate.segment_names})` : ''}` },
+                  ] : []),
+                  ...(estimate.cc_category_name ? [
+                    { label: 'CC Category', Icon: Gauge, value: `${estimate.cc_category_name}${estimate.engine_cc ? ` (${estimate.engine_cc} cc)` : ''}` },
+                  ] : []),
+                  { label: 'Est. No.', Icon: FileText, value: `EST-${String(estimate.id).padStart(6, '0')}`, mono: true },
+                  {
+                    label: 'Date',
+                    Icon: Calendar,
+                    /* A node, not a string: the date carries a Backdated badge
+                       and a Change button, both screen-only. */
+                    value: (
+                      <>
+                        {fmtEstDate(estDate(estimate))}
+                        {estimate.original_estimate_date && (
+                          <span className="inv-backdated-badge est-no-print"
+                            title={`Originally ${fmtEstDate(estimate.original_estimate_date)}` +
+                              (estimate.backdate_reason ? ` \u2014 ${estimate.backdate_reason}` : '')}>
+                            Backdated
+                          </span>
+                        )}
+                        {canBackdateEst && estDateEditable && (
+                          <button type="button" className="est-no-print est-doc-inline-act"
+                            onClick={() => setDateDialog(true)}>
+                            Change
+                          </button>
+                        )}
+                      </>
+                    ),
+                  },
+                  { label: 'Created by', Icon: UserPlus, value: estimate.created_by_name, screenOnly: true },
+                ].map(({ label, Icon, value, mono, screenOnly }) => (
+                  <div key={label}
+                    className={`est-doc-il${screenOnly ? ' est-no-print' : ''}`}
+                    title={label} aria-label={label}>
+                    <Icon size={14} aria-hidden="true" />
+                    <span className="est-doc-il-lbl">{label}</span>
+                    <span className={mono ? 'est-doc-il-v est-doc-mono' : 'est-doc-il-v'}>{value || '\u2014'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Summary ──
+                Was a 250px block below the line items. Up here it answers the
+                question the estimate exists to answer without a scroll, and the
+                line items run straight into the amount in words. */}
+            <div className="est-doc-col est-doc-col--sum">
+              <div className="est-doc-cap">Summary</div>
+              <div className="est-doc-sum">
+
+                <div className="est-doc-sumrow">
+                  <span>Subtotal (ex-GST)</span><b>{fmt(subtotalEx)}</b>
                 </div>
-                {/* Make + Model */}
-                {(estimate.make_name || estimate.model_name) && (
-                  <div style={{ display: 'flex' }}>
-                    <span className="est-info-label">Make / Model</span>
-                    <span className="est-info-value">{[estimate.make_name, estimate.model_name].filter(Boolean).join(' ')}</span>
+
+                {hasDiscountInDetail && (
+                  <div className="est-doc-sumrow est-doc-sumrow--disc">
+                    <span>Total Discount</span><b>{'\u2212'}{fmt(totalDiscount)}</b>
                   </div>
                 )}
-                {/* 4W: Body Type */}
-                {estimate.body_type_name && (
-                  <div style={{ display: 'flex' }}>
-                    <span className="est-info-label">Body Type</span>
-                    <span className="est-info-value">{estimate.body_type_name}{estimate.segment_names ? ` (${estimate.segment_names})` : ''}</span>
+
+                {txDiscountAmount > 0 && (
+                  <div className="est-doc-sumrow est-doc-sumrow--disc">
+                    <span>Discount{detailTxDiscountType === 'percent' ? ` (${detailTxDiscountValue}%)` : ' (Flat)'}</span>
+                    <b>{'\u2212'}{fmt(txDiscountAmount)}</b>
                   </div>
                 )}
-                {/* 2W: CC Category */}
-                {estimate.cc_category_name && (
-                  <div style={{ display: 'flex' }}>
-                    <span className="est-info-label">CC Category</span>
-                    <span className="est-info-value">{estimate.cc_category_name}{estimate.engine_cc ? ` (${estimate.engine_cc} cc)` : ''}</span>
+
+                {gstSlabs.map(slab => {
+                  const halfLabel = (slab.pct / 2).toFixed(slab.pct % 2 === 0 ? 0 : 1);
+                  return (
+                    <div key={slab.pct} className="est-doc-taxpair">
+                      <div className="est-doc-taxrow"><span>CGST ({halfLabel}%)</span><span>{fmt(slab.cgst)}</span></div>
+                      <div className="est-doc-taxrow"><span>SGST ({halfLabel}%)</span><span>{fmt(slab.sgst)}</span></div>
+                    </div>
+                  );
+                })}
+
+                {roundingAdj !== 0 && (
+                  <div className="est-doc-taxrow">
+                    <span>Rounding</span><span>{roundingAdj > 0 ? '+' : ''}{fmt(roundingAdj)}</span>
                   </div>
                 )}
-                {/* Estimate meta */}
-                <div style={{ display: 'flex' }}>
-                  <span className="est-info-label">Est. No.</span>
-                  <span className="est-info-value">{`EST-${String(estimate.id).padStart(6, '0')}`}</span>
+
+                <div className="est-doc-sumrule" />
+
+                <div className="est-doc-total">
+                  <span>Grand Total</span><b>{fmt(grandTotal)}</b>
                 </div>
-                <div style={{ display: 'flex' }}>
-                  <span className="est-info-label">Date</span>
-                  <span className="est-info-value" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {fmtEstDate(estDate(estimate))}
-                    {estimate.original_estimate_date && (
-                      <span className="inv-backdated-badge est-no-print"
-                        title={`Originally ${fmtEstDate(estimate.original_estimate_date)}` +
-                               (estimate.backdate_reason ? ` — ${estimate.backdate_reason}` : '')}>
-                        Backdated
-                      </span>
-                    )}
-                    {canBackdateEst && estDateEditable && (
-                      <button type="button" className="est-no-print"
-                        onClick={() => setDateDialog(true)}
-                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                                 fontSize: 11.5, fontWeight: 600, color: 'var(--primary, #2563eb)' }}>
-                        Change
-                      </button>
-                    )}
-                  </span>
-                </div>
-                {/* Created by — screen only, not in PDF */}
-                <div className="est-no-print" style={{ display: 'flex' }}>
-                  <span className="est-info-label">Created by</span>
-                  <span className="est-info-value">{estimate.created_by_name || '—'}</span>
-                </div>
+
               </div>
             </div>
           </div>
@@ -2965,7 +3142,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px', fontSize: 13 }}>No items yet.</div>
             ) : (
               <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflowX: 'auto' }}>
-                <table className="est-items-table" style={{ minWidth: hasDiscountInDetail ? 1040 : 920 }}>
+                <table className="est-items-table" style={{ minWidth: hasDiscountInDetail ? 960 : 840 }}>
                   <thead>
                     <tr>
                       <th style={{ width: 36, textAlign: 'center' }}>Sr.</th>
@@ -2975,9 +3152,13 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                       <th style={{ textAlign: 'right' }}>Rate</th>
                       {hasDiscountInDetail && <th style={{ textAlign: 'center' }}>Discount</th>}
                       <th style={{ textAlign: 'right' }}>Taxable</th>
-                      <th style={{ textAlign: 'right' }}>CGST %</th>
-                      <th style={{ textAlign: 'right' }}>SGST %</th>
-                      <th style={{ textAlign: 'right' }}>Tax Amount</th>
+                      {/* Two tax columns, not three. CGST % / SGST % / Tax
+                          Amount asked the reader to multiply: the two percent
+                          columns were always identical and the rupee figure
+                          covered both. Rate in the header when every line
+                          shares one, per-row underneath when they do not. */}
+                      <th style={{ textAlign: 'right' }}>CGST{uniformHalfPct ? ` ${uniformHalfPct}%` : ''}</th>
+                      <th style={{ textAlign: 'right' }}>SGST{uniformHalfPct ? ` ${uniformHalfPct}%` : ''}</th>
                       <th style={{ textAlign: 'right' }}>Total</th>
                       <th className="est-no-print" style={{ textAlign: 'center' }}>Approved?</th>
                       {['fully_approved', 'partially_approved', 'work_in_progress', 'work_completed'].includes(status) && (
@@ -3033,9 +3214,22 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                             </td>
                           )}
                           <td style={{ textAlign: 'right', fontSize: 13 }}>{fmt(c.amount)}</td>
-                          <td style={{ textAlign: 'right', fontSize: 13 }}>{gstPct > 0 ? `${(gstPct / 2).toFixed(1)}%` : '—'}</td>
-                          <td style={{ textAlign: 'right', fontSize: 13 }}>{gstPct > 0 ? `${(gstPct / 2).toFixed(1)}%` : '—'}</td>
-                          <td style={{ textAlign: 'right', fontSize: 13, color: 'var(--text-muted)' }}>{fmt(c.gst_amount)}</td>
+                          {/* Half the line's tax in each, because CGST and SGST
+                              are always an even split of it. The per-row rate
+                              shows only on a mixed-slab estimate — otherwise it
+                              is already in the column header. */}
+                          <td style={{ textAlign: 'right', fontSize: 13 }}>
+                            {gstPct > 0 ? fmt(c.gst_amount / 2) : '—'}
+                            {gstPct > 0 && !uniformHalfPct && (
+                              <span className="est-doc-rate">{(gstPct / 2).toFixed(1)}%</span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: 13 }}>
+                            {gstPct > 0 ? fmt(c.gst_amount / 2) : '—'}
+                            {gstPct > 0 && !uniformHalfPct && (
+                              <span className="est-doc-rate">{(gstPct / 2).toFixed(1)}%</span>
+                            )}
+                          </td>
                           <td style={{ textAlign: 'right', fontSize: 13, fontWeight: 700 }}>{fmt(c.total)}</td>
                           <td className="est-no-print" style={{ textAlign: 'center' }}>
                             <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -3068,108 +3262,43 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           </div>
 
           {/* ── Totals ── */}
-          <div className="est-totals-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderTop: '1px solid var(--border)', paddingTop: 16, gap: 24, flexWrap: 'wrap' }}>
+          {/* ── Amount in words ──
+              The totals that used to sit to the right of this are in the header
+              band now. What is left is a caption and a sentence, so it is a
+              caption and a sentence — not a card with a coloured stripe down its
+              side, which is a lot of decoration for one line of text and a third
+              use of a colour that should mean one thing. */}
+          <div className="est-doc-words-block">
 
-            {/* Bottom-left corner: Amount in words, with Notes stacked below it */}
-            <div style={{ flex: '1 1 220px', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div className="est-amount-words" style={{
-                background: '#f8fafc', borderRadius: 10,
-                padding: '12px 16px', borderLeft: '3px solid #16b994',
+            <div className="est-doc-words-row">
+              <div className="est-doc-words">
+                <span className="est-doc-cap">Amount in Words</span>
+                <em>{amountToWords(grandTotal)}</em>
+              </div>
+            </div>
+
+            {estimate.notes && (
+              <div className={includeNotesPrint ? '' : 'est-no-print'} style={{
+                background: status === 'revision_requested' ? '#fff7ed' : 'var(--bg-soft)',
+                border: status === 'revision_requested' ? '1px solid #ffedd5' : 'none',
+                borderRadius: 8,
+                padding: '12px 14px',
+                fontSize: 13,
+                color: 'var(--text)'
               }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Amount in Words</div>
-                <div style={{ fontSize: 11, fontWeight: 500, color: '#374151', fontStyle: 'italic', lineHeight: 1.7 }}>
-                  {amountToWords(grandTotal)}
-                </div>
-              </div>
-
-              {estimate.notes && (
-                <div className={includeNotesPrint ? '' : 'est-no-print'} style={{
-                  background: status === 'revision_requested' ? '#fff7ed' : 'var(--bg-soft)',
-                  border: status === 'revision_requested' ? '1px solid #ffedd5' : 'none',
-                  borderRadius: 8,
-                  padding: '12px 14px',
-                  fontSize: 13,
-                  color: 'var(--text)'
+                <div style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: status === 'revision_requested' ? '#9a3412' : 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginBottom: 6
                 }}>
-                  <div style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: status === 'revision_requested' ? '#9a3412' : 'var(--text-muted)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    marginBottom: 6
-                  }}>
-                    {status === 'revision_requested' ? 'Revision Requested' : 'Notes'}
-                  </div>
-                  {estimate.notes}
+                  {status === 'revision_requested' ? 'Revision Requested' : 'Notes'}
                 </div>
-              )}
-            </div>
-
-            {/* Summary — right */}
-            <div style={{ flex: '0 0 auto', minWidth: 250, display: 'flex', flexDirection: 'column', gap: 0 }}>
-
-              {/* Subtotal */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6b7280', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
-                <span>Subtotal (ex-GST)</span>
-                <span style={{ fontWeight: 600, color: '#374151', minWidth: 100, textAlign: 'right' }}>{fmt(subtotalEx)}</span>
+                {estimate.notes}
               </div>
-
-              {/* Line-item discount row */}
-              {hasDiscountInDetail && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: '1px solid #f3f4f6', background: '#fffbeb', margin: '0 -2px', padding: '5px 2px' }}>
-                  <span style={{ color: '#b45309', fontWeight: 600 }}>Total Discount</span>
-                  <span style={{ fontWeight: 700, color: '#b45309', minWidth: 100, textAlign: 'right' }}>−{fmt(totalDiscount)}</span>
-                </div>
-              )}
-
-              {/* Transaction-level discount row */}
-              {txDiscountAmount > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: '1px solid #f3f4f6', background: '#fffbeb', margin: '0 -2px', padding: '5px 2px' }}>
-                  <span style={{ color: '#b45309', fontWeight: 600 }}>
-                    Discount{detailTxDiscountType === 'percent' ? ` (${detailTxDiscountValue}%)` : ' (Flat)'}
-                  </span>
-                  <span style={{ fontWeight: 700, color: '#b45309', minWidth: 100, textAlign: 'right' }}>−{fmt(txDiscountAmount)}</span>
-                </div>
-              )}
-
-              {/* Tax breakdown */}
-              {gstSlabs.length > 0 && (
-                <div style={{ padding: '6px 0', borderBottom: '1px solid #f3f4f6' }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Tax Breakdown</div>
-                  {gstSlabs.map(slab => {
-                    const halfLabel = (slab.pct / 2).toFixed(slab.pct % 2 === 0 ? 0 : 1);
-                    return (
-                      <div key={slab.pct} style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 2 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280' }}>
-                          <span>CGST ({halfLabel}%)</span>
-                          <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(slab.cgst)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280' }}>
-                          <span>SGST ({halfLabel}%)</span>
-                          <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(slab.sgst)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Rounding adjustment line — shown only when non-zero */}
-              {roundingAdj !== 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9ca3af', padding: '4px 0', borderBottom: '1px solid #f3f4f6' }}>
-                  <span>Rounding</span>
-                  <span style={{ minWidth: 100, textAlign: 'right' }}>{roundingAdj > 0 ? '+' : ''}{fmt(roundingAdj)}</span>
-                </div>
-              )}
-
-              {/* Grand Total */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, color: '#16b994', padding: '8px 0' }}>
-                <span>Grand Total</span>
-                <span style={{ minWidth: 100, textAlign: 'right' }}>{fmt(grandTotal)}</span>
-              </div>
-
-            </div>
+            )}
           </div>
 
           {/* Approval summary for terminal states — screen only */}
@@ -3265,7 +3394,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                   {estimate.purchase_invoice_id ? (
                     <button
                       className="btn btn-sm-outline"
-                      onClick={() => navigate(estimate.purchase_invoice_token ? `/purchase-invoices/${estimate.purchase_invoice_token}` : '/purchase-invoices', estimate.purchase_invoice_token ? undefined : { state: { openId: estimate.purchase_invoice_id } })}
+                      onClick={() => navigate(estimate.purchase_invoice_token ? `${P.salesInvoices}/${estimate.purchase_invoice_token}` : P.salesInvoices, estimate.purchase_invoice_token ? undefined : { state: { openId: estimate.purchase_invoice_id } })}
                     >
                       <ReceiptText size={13} />
                       View Spinoto Invoice #{estimate.purchase_invoice_id}
@@ -3285,7 +3414,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                   {estimate.customer_invoice_id ? (
                     <button
                       className="btn btn-sm-outline"
-                      onClick={() => navigate(estimate.customer_invoice_token ? `/customer-invoices/${estimate.customer_invoice_token}` : '/customer-invoices', estimate.customer_invoice_token ? undefined : { state: { openId: estimate.customer_invoice_id } })}
+                      onClick={() => navigate(estimate.customer_invoice_token ? `${P.customerInvoices}/${estimate.customer_invoice_token}` : P.customerInvoices, estimate.customer_invoice_token ? undefined : { state: { openId: estimate.customer_invoice_id } })}
                     >
                       <ReceiptText size={13} />
                       View Customer Invoice #{estimate.customer_invoice_id}
@@ -3299,6 +3428,30 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                     >
                       <ReceiptText size={13} />
                       {generatingInvoice ? 'Generating…' : 'Generate Customer Invoice'}
+                    </button>
+                  )}
+
+                  {/* Button 3: Advance payment.
+                      Shown only while the job has a total and NO invoice yet.
+                      After the invoice exists this is just Record Payment on
+                      the invoice, and offering both would be two ways to do one
+                      thing with different consequences.
+                      Hidden rather than disabled — a greyed-out button makes
+                      people ask why, and the answer ("raise the estimate
+                      first") is better said by it not being there. */}
+                  {!estimate.customer_invoice_id && Number(estimate.grand_total) > 0 && canAdvance && (
+                    <button
+                      className="btn btn-sm-outline"
+                      onClick={() => setShowAdvance(true)}
+                      title="Take money from the customer before the invoice is raised"
+                    >
+                      <Wallet size={13} />
+                      Advance Payment
+                      {Number(estimate.advanced_total) > 0 && (
+                        <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: 'var(--primary)' }}>
+                          · ₹{Number(estimate.advanced_total).toLocaleString('en-IN')} taken
+                        </span>
+                      )}
                     </button>
                   )}
                 </div>
@@ -3321,24 +3474,16 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             )}
           </div>
 
-          {/* ── Estimate Footer ── */}
-          <div className="est-invoice-footer" style={{
-            marginTop: 8,
-            borderTop: '1px solid #e5e7eb',
-            paddingTop: 14,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 4,
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Thank you for choosing us.</div>
-            <div style={{ fontSize: 10, color: '#9ca3af' }}>This is a computer generated estimate and is subject to change upon final inspection.</div>
-            {(company?.phone || company?.email) && (
-              <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
-                {[company.phone && `📞 ${company.phone}`, company.email && `✉ ${company.email}`].filter(Boolean).join('   ·   ')}
-              </div>
-            )}
-          </div>
+          {/* No footer here — it belongs on the DOCUMENT, not the screen.
+
+              The estimate's wording is NOT the invoice's: it thanks the customer
+              for choosing us and says the figure is subject to change upon final
+              inspection. That text now lives in the per-document config
+              (DEFAULT_DOCUMENTS.estimate.footer_note / .footer_disclaimer in
+              backend/src/utils/documentConfig.js) and prints from there, so
+              deleting this block changed the screen only. Without that move the
+              PDF would have fallen back to the shared global wording and the
+              estimate would have stopped saying the price can still move. */}
 
         </div>
 
@@ -3396,6 +3541,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
 
         {showSyncWarning && (
           <InvoiceSyncWarningModal
+            canSync={!isHubUser}
             hasPi={!!estimate.purchase_invoice_id}
             piPaid={estimate.purchase_invoice_status === 'paid'}
             hasCi={!!estimate.customer_invoice_id}
@@ -3434,6 +3580,25 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           />
         )}
 
+        {showAdvance && estimate && (
+          <AdvancePaymentModal
+            estimate={{
+              id: estimate.id,
+              customer_name: estimate.customer_name,
+              vehicle_number: estimate.vehicle_number,
+              grand_total: Number(estimate.grand_total || 0),
+              already_advanced: Number(estimate.advanced_total || 0),
+              collectable: Number(estimate.grand_total || 0) - Number(estimate.advanced_total || 0),
+            }}
+            showToast={showToast}
+            onClose={() => setShowAdvance(false)}
+            // Reload rather than patching locally: the advance changes what is
+            // still collectable, and a stale figure here would let the next
+            // advance be offered above the job total.
+            onSuccess={() => { load(); onUpdated?.(); }}
+          />
+        )}
+
         {dateDialog && estimate && (
           <InvoiceDateDialog
             documentType="estimate"
@@ -3467,18 +3632,81 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
 // ═════════════════════════════════════════════════════════════════════════════
 // Main Page
 // ═════════════════════════════════════════════════════════════════════════════
+/**
+ * The one question that decides which path a new estimate takes.
+ *
+ * Both paths already existed and both produce an estimate; the page just used
+ * to show them as two buttons ("New Customer" and "New Estimate") and expect
+ * the user to know which was which. This asks what the person at the desk
+ * actually knows — was this booked, or did they just turn up — instead of
+ * making them pick a data model.
+ *
+ * Uses the same shell classes as CreateAppointmentModal (appt-backdrop /
+ * ca-modal / ca-hdr / ca-body), which this page already imports
+ * AppointmentsPage.css for, so the two dialogs cannot drift apart visually.
+ */
+function StartEstimateChoice({ onClose, onPick }) {
+  useEscapeClose(onClose);
+  const OPTIONS = [
+    {
+      kind: 'appointment',
+      icon: CalendarDays,
+      title: 'From a booked appointment',
+      sub: 'Pick the appointment — customer, vehicle and services come with it',
+    },
+    {
+      kind: 'walkin',
+      icon: UserPlus,
+      title: 'Walk-in — no appointment',
+      sub: 'Find the customer by mobile or vehicle number, or add a new one',
+    },
+  ];
+  return (
+    <div className="appt-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ca-modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+        <div className="ca-hdr">
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>New Estimate</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              Is this for a booked appointment?
+            </div>
+          </div>
+          <button className="appt-icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="ca-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {OPTIONS.map(({ kind, icon: Icon, title, sub }) => (
+            <button
+              key={kind}
+              type="button"
+              className="ca-result-row"
+              style={{ textAlign: 'left', padding: '14px 16px' }}
+              onClick={() => onPick(kind)}
+            >
+              <div className="ca-result-avatar"><Icon size={16} /></div>
+              <div className="ca-result-info">
+                <div className="ca-result-name">{title}</div>
+                <div className="ca-result-sub">{sub}</div>
+              </div>
+              <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function EstimatesPage() {
   const { user } = useAuth();
-  const rawNavigate = useNavigate();
+  const navigate = useNavigate();
   const location = useLocation();
   const { token } = useParams();
   const isHubUser = !!user?.hub_id;
-  // Hub Portal renders this page as a plain tab (no nested routing), and its
-  // own admin-only routes are off-limits to hub users (App.jsx's RequireAdmin
-  // bounces them straight back to /hub). So every navigate() call here — this
-  // page's own detail view or cross-links to Customers/Invoices — has to be
-  // a no-op for hub users; the detail view itself still opens via local state.
-  const navigate = isHubUser ? () => {} : rawNavigate;
+  // This page is mounted twice: at /estimates for staff and at /hub/estimates
+  // inside the hub portal. P resolves every destination — including this
+  // page's own URL — for whichever shell is rendering it.
+  const P = useAppPaths();
 
   const [estimates, setEstimates] = react.useState([]);
   const [total, setTotal] = react.useState(0);
@@ -3509,7 +3737,13 @@ export default function EstimatesPage() {
   const onSearchChange = react.useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
   const [statusFilter, setStatusFilter] = react.useState(ls.statusFilter ?? '');
   const [vehicleTypeFilter, setVehicleTypeFilter] = react.useState(ls.vehicleTypeFilter ?? '');
-  const [hubFilter, setHubFilter] = react.useState(() => ls.hubFilter ?? (user?.hub_id ? [String(user.hub_id)] : []));
+  // A hub login is pinned to its own hub and cannot widen it, so user.hub_id
+  // must win over anything restored from sessionStorage — the saved value can
+  // be a previous (admin) session's selection in the same tab. Mirrors
+  // CustomerInvoicesPage, which had this precedence right.
+  const [hubFilter, setHubFilter] = react.useState(
+    () => (user?.hub_id ? [String(user.hub_id)] : (ls.hubFilter ?? []))
+  );
 
   // Below this width the table stops being readable and the list switches to
   // cards. Not CSS-only: rendering both and hiding one puts every row in the
@@ -3524,6 +3758,7 @@ export default function EstimatesPage() {
   useListScrollRestore('sp_estimates_list_v1', !loading);
   const [showHubDropdown, setShowHubDropdown] = react.useState(false);
   const [showMoreFilters, setShowMoreFilters] = react.useState(false);
+  const [filterPopRef, filterPopFlip] = useFlipPopup(showMoreFilters);
 
   // How many of the filters hidden behind the funnel are actually on.
   const hiddenFilterCount = vehicleTypeFilter ? 1 : 0;
@@ -3545,6 +3780,11 @@ export default function EstimatesPage() {
   // EstimateModal with the picked customer/vehicle as initialStandaloneContext.
   const [showCreateAppt, setShowCreateAppt] = react.useState(false);
   const [standaloneCreateCtx, setStandaloneCreateCtx] = react.useState(null);
+  // One "New Estimate" button now opens this instead of the page carrying two
+  // buttons that both ended in an estimate. "New Customer" was the worse of
+  // the two names: it created no customer, and nothing on screen told you
+  // which of the two you wanted.
+  const [showStartChoice, setShowStartChoice] = react.useState(false);
 
   // Claim the top bar's search box. Declared after selectedId/showCreate
   // because it reads them: the box is released while a single estimate or the
@@ -3575,25 +3815,24 @@ export default function EstimatesPage() {
     closedRef.current = true;
     resolvedTokenRef.current = null;
     // Clear directly rather than relying solely on the `[token]` effect
-    // below — inside the Hub Portal, `token` never exists (this page is
-    // just a plain tab, not a routed /estimates/:token) and navigate() is a
-    // no-op there for hub users, so that effect would never fire on close.
+    // below. Belt-and-braces now that the hub portal is routed too, but a
+    // record reached via location.state has no token param to change.
     setSelectedId(null);
-    navigate('/estimates');
-  }, [navigate]);
+    navigate(P.estimates);
+  }, [navigate, P.estimates]);
 
   function openEstimate(est) {
     closedRef.current = false;
     resolvedTokenRef.current = est.public_token;
     setSelectedId(est.id);
-    navigate(`/estimates/${est.public_token}`);
+    navigate(`${P.estimates}/${est.public_token}`);
   }
 
   function handleEstimateLoaded(est) {
     if (closedRef.current) return;
     if (!est?.public_token || resolvedTokenRef.current === est.public_token) return;
     resolvedTokenRef.current = est.public_token;
-    navigate(`/estimates/${est.public_token}`, { replace: true });
+    navigate(`${P.estimates}/${est.public_token}`, { replace: true });
   }
 
   react.useEffect(() => {
@@ -3702,12 +3941,23 @@ export default function EstimatesPage() {
        header carries a close button, which is the way out below 1100px where
        the rail is hidden. */
     <div className="estimates-page lb-page">
+      {showStartChoice && (
+        <StartEstimateChoice
+          onClose={() => setShowStartChoice(false)}
+          onPick={(kind) => {
+            setShowStartChoice(false);
+            if (kind === 'appointment') setShowCreate(true);
+            else setShowCreateAppt(true);
+          }}
+        />
+      )}
+
       {showCreateAppt && (
         <CreateAppointmentModal
           hubs={hubs}
           statusList={[]}
           standaloneMode
-          title="New Customer & Vehicle"
+          title="Customer & Vehicle"
           onClose={() => setShowCreateAppt(false)}
           onComplete={(ctx) => {
             setShowCreateAppt(false);
@@ -3851,7 +4101,7 @@ export default function EstimatesPage() {
               {showMoreFilters && (
                 <>
                   <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowMoreFilters(false)} />
-                  <div className="lb-pop">
+                  <div ref={filterPopRef} className={`lb-pop${filterPopFlip ? ' lb-pop--flip' : ''}`}>
                     <div>
                       <label className="lb-pop-label" htmlFor="lb-est-veh">Vehicle type</label>
                       <select
@@ -3895,15 +4145,7 @@ export default function EstimatesPage() {
 
             <div className="lb-toolbar-right">
               <span className="lb-count">{total} estimate{total !== 1 ? 's' : ''}</span>
-              <button
-                type="button"
-                className="lb-control"
-                onClick={() => setShowCreateAppt(true)}
-                title="Create a new customer + vehicle, then go straight into the estimate — no appointment is created"
-              >
-                <Plus size={15} /> New Customer
-              </button>
-              <button type="button" className="lb-control lb-primary" onClick={() => setShowCreate(true)}>
+              <button type="button" className="lb-control lb-primary" onClick={() => setShowStartChoice(true)}>
                 <Plus size={15} /> New Estimate
               </button>
             </div>
@@ -3974,12 +4216,18 @@ export default function EstimatesPage() {
                           )}
                         </td>
                         <td>
+                          {/* Name stays visible for a hub — it identifies the
+                              job. Only the link comes off: the hub portal has
+                              no Customers screen, so the class and handler are
+                              dropped rather than leaving something that looks
+                              clickable and isn't. */}
                           <div
-                            className="est-cust-link"
-                            onClick={(e) => {
+                            className={P.customers ? 'est-cust-link' : undefined}
+                            style={P.customers ? undefined : { display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                            onClick={P.customers ? (e) => {
                               e.stopPropagation();
-                              navigate(est.customer_token ? `/customers/${est.customer_token}` : '/customers', est.customer_token ? undefined : { state: { openMobile: est.mobile } });
-                            }}
+                              navigate(est.customer_token ? `${P.customers}/${est.customer_token}` : P.customers, est.customer_token ? undefined : { state: { openMobile: est.mobile } });
+                            } : undefined}
                           >
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -4017,7 +4265,7 @@ export default function EstimatesPage() {
                                 )}
                               </div>
                             </div>
-                            <span className="est-cust-arrow">→</span>
+                            {P.customers && <span className="est-cust-arrow">→</span>}
                           </div>
                         </td>
                         <td style={{ fontSize: 13 }}>{est.hub_full_name || est.hub_name || <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
@@ -4034,7 +4282,7 @@ export default function EstimatesPage() {
                                   style={{ color: '#4f46e5', cursor: 'pointer', textDecoration: 'underline' }}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    navigate(est.purchase_invoice_token ? `/purchase-invoices/${est.purchase_invoice_token}` : '/purchase-invoices', est.purchase_invoice_token ? undefined : { state: { openId: est.purchase_invoice_id } });
+                                    navigate(est.purchase_invoice_token ? `${P.salesInvoices}/${est.purchase_invoice_token}` : P.salesInvoices, est.purchase_invoice_token ? undefined : { state: { openId: est.purchase_invoice_id } });
                                   }}
                                 >
                                   Purchase:
@@ -4048,7 +4296,7 @@ export default function EstimatesPage() {
                                   style={{ color: '#0f766e', cursor: 'pointer', textDecoration: 'underline' }}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    navigate(est.customer_invoice_token ? `/customer-invoices/${est.customer_invoice_token}` : '/customer-invoices', est.customer_invoice_token ? undefined : { state: { openId: est.customer_invoice_id } });
+                                    navigate(est.customer_invoice_token ? `${P.customerInvoices}/${est.customer_invoice_token}` : P.customerInvoices, est.customer_invoice_token ? undefined : { state: { openId: est.customer_invoice_id } });
                                   }}
                                 >
                                   Customer:
@@ -4091,7 +4339,7 @@ export default function EstimatesPage() {
           editEstimate={null}
           initialAppointmentId={createApptId || ''}
           initialStandaloneContext={standaloneCreateCtx}
-          onClose={() => { setShowCreate(false); setCreateApptId(null); setStandaloneCreateCtx(null); if (createForAppointmentIdParam) navigate('/estimates', { replace: true }); }}
+          onClose={() => { setShowCreate(false); setCreateApptId(null); setStandaloneCreateCtx(null); if (createForAppointmentIdParam) navigate(P.estimates, { replace: true }); }}
           onSaved={(item) => { onCreated(item); setStandaloneCreateCtx(null); }}
           isHubUser={isHubUser}
           userHubId={user?.hub_id ? String(user.hub_id) : ''}

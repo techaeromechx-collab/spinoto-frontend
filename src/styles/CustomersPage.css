@@ -170,6 +170,34 @@
 
   /* History cards */
   .cust-tab-content { padding:14px 16px; display:flex; flex-direction:column; gap:12px; }
+
+  /* ── WhatsApp tab ──────────────────────────────────────────────────────────
+     A DEFINITE height, not auto. .wat is a flex column whose message list
+     scrolls, and a list can only scroll inside a box whose size is known —
+     given room to grow it renders every message at full length and shoves the
+     composer off the bottom of the screen instead. That is not hypothetical:
+     it is exactly what the Lead page did while its .wat rule was missing.
+
+     min() so a long thread cannot outgrow a laptop screen, and min-height so it
+     is still usable on a short one. The horizontal inset is handled by adding
+     this class to the bleed-compensation list further down, the same way
+     .pgbar and .cust-empty are. */
+  .cust-wa-pane {
+    display: flex;
+    height: min(620px, calc(100vh - 340px));
+    min-height: 340px;
+    padding-top: 2px;
+    padding-bottom: 6px;
+  }
+  .cust-wa-pane .wat { flex: 1 1 auto; min-height: 0; }
+  /* The component caps its own list at 420px, sized for the narrow rail it was
+     built for. Here the pane owns the height, so the cap has to go or the chat
+     stops halfway down the panel with blank space beneath it. */
+  .cust-wa-pane .wat-scroll { max-height: none; overscroll-behavior: contain; }
+  /* 78% of a 400px rail is a chat bubble; 78% of a full-width tab pane is an
+     880px line of text, which nobody wants to read and which stops looking like
+     a conversation at all. Cap it and let the wallpaper take the rest. */
+  .cust-wa-pane .wat-bubble { max-width: min(78%, 520px); }
   .cust-empty { font-size:13px; color:var(--text-muted); text-align:center; padding:30px 0; font-style:italic; }
   .cust-history-card { border:1.5px solid var(--border); border-radius:14px; padding:14px 16px; background:var(--bg); transition:box-shadow .15s, border-color .15s; }
   .cust-history-card:hover { border-color:#bfdbfe; box-shadow:0 4px 16px rgba(15,23,42,.06); }
@@ -293,6 +321,159 @@
   .cust-table { min-width:700px; }
   .cust-table td { vertical-align:middle; }
   .cust-table tr:hover td { background:var(--bg-soft,#fafafa); }
+
+  /* ── Customer → Payments tab table ──────────────────────────────────────
+     Scoped to .cpt-table, NOT to .cust-table. The customers LIST page uses
+     .cust-table too, and there it sits inside a .lb-list where `.lb-list table
+     th` already owns the header. Widening .cust-table would reach across into
+     that page and win on import order, so the two stay separate.
+
+     .cust-table itself declares no th rule and no cell padding at all, which is
+     the whole story of this table: `th` fell back to the browser default
+     `text-align: center` over left-aligned cells, and text started flush at the
+     cell edge with nothing between it and the pane. */
+  .cpt-table { width:100%; border-collapse:collapse; }
+  .cpt-table th {
+    text-align:left;
+    padding:9px 14px;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    white-space:nowrap;
+    border-bottom:1px solid var(--border);
+  }
+  .cpt-table td { padding:9px 14px; border-bottom:1px solid var(--border); }
+  .cpt-table tbody tr:last-child td { border-bottom:0; }
+  /* The outer columns line up with the toolbar above rather than with the
+     bleed, so nothing in the table can be shaved off by the pane again. */
+  .cpt-table th:first-child, .cpt-table td:first-child { padding-left:20px; }
+  .cpt-table th:last-child,  .cpt-table td:last-child  { padding-right:20px; }
+
+  /* Money columns. Defined HERE rather than borrowed from PaymentsPage.css —
+     neither this page nor the tab imports that file, so the right-alignment was
+     only ever working because that stylesheet happened to be in the bundle.
+     tabular-nums keeps the digits in a column instead of a ragged edge. */
+  .cpt-table th.pay-num, .cpt-table td.pay-num { text-align:right; font-variant-numeric:tabular-nums; }
+  /* The actions column: no header, and hugging the right edge. */
+  .cpt-table th:last-child { width:1%; }
+  .cpt-actions { display:flex; gap:4px; justify-content:flex-end; }
+
+  /* A <td> cannot be a flex container and still be a table cell: it drops out
+     of the row's layout and loses vertical-align:middle, which is why the
+     payment method sat a few pixels above everything beside it. The flex box
+     belongs INSIDE the cell. */
+  .cpt-method { display:inline-flex; align-items:center; gap:5px; }
+
+  /* ── A receipt that has been returned ──
+     Two pieces, deliberately: the badge beside the type says WHAT happened, the
+     line under the amount says HOW MUCH. Before this, a fully refunded ₹50,000
+     advance was indistinguishable from one still sitting as credit — same
+     amount, same "unused" figure, same Refund button.
+
+     The amount itself is never struck through or reduced. The customer did pay
+     ₹50,000; the refund is a separate event with its own date and its own credit
+     note, and a ledger that rewrites the original is one that reconciles against
+     nothing. */
+  .cpt-refunded {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #b91c1c;
+    margin-top: 2px;
+    white-space: nowrap;
+    cursor: help;
+  }
+
+  .cpt-badge {
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 5px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .03em;
+    white-space: nowrap;
+  }
+  /* Red = the money has gone. */
+  .cpt-badge--refunded  { background:#fee2e2; color:#991b1b; }
+  /* Amber = on its way and can still fail. A gateway refund is pending for
+     days, and calling that "refunded" would have the row assert something that
+     is not yet true — and might never be. */
+  .cpt-badge--refunding { background:#fef3c7; color:#92400e; }
+
+  /* .icon-action is used by this tab but defined in no stylesheet, so these
+     buttons were rendering with the browser's default button chrome. */
+  .icon-action {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:28px; height:28px; flex-shrink:0;
+    border:1px solid var(--border); border-radius:7px;
+    background:var(--bg); color:var(--text-muted);
+    cursor:pointer; transition:background .12s, color .12s, border-color .12s;
+  }
+  .icon-action:hover { background:var(--bg-soft); color:var(--text); border-color:var(--text-muted); }
+  .icon-action--danger:hover { background:#fef2f2; color:#dc2626; border-color:#fecaca; }
+  .icon-action:disabled { opacity:.5; cursor:default; }
+
+  /* ── The Payments tab's three dialogs ───────────────────────────────────
+     Record payment, Refund advance and Take payment. All three were markup
+     with no stylesheet behind it: RecordPaymentModal used .po-backdrop /
+     .po-modal and the other two used .lb-pop-backdrop / .lb-pop-head /
+     .lb-pop-body — and NOT ONE of those five class names is defined anywhere
+     in this project.
+
+     So the backdrop was an ordinary block div: no fixed position, no dimming,
+     nothing to click away on. And .lb-pop, the only name of the five that does
+     exist, is a POPOVER — `position: absolute; top: calc(100% + 6px);
+     right: 0` — meant to hang under a filter button. Inside an unpositioned
+     backdrop it anchored to the page instead, which is why Take payment
+     appeared pinned to the bottom-right corner with the page still bright
+     behind it.
+
+     Modelled on .ci-pay-backdrop / .ci-pay-modal in CustomerInvoicesPage.css,
+     which is the same dialog done correctly. Named .cpt-* rather than reusing
+     those: this component is not on that page, and a shared name across two
+     stylesheets is how one page's dialog quietly restyles another's. */
+  .cpt-modal-backdrop {
+    position: fixed; inset: 0; z-index: 1200;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.45);
+  }
+  .cpt-modal {
+    width: 100%; max-height: 90dvh;
+    display: flex; flex-direction: column;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+    /* Clips the head's border and the rounded corners together. */
+    overflow: hidden;
+  }
+  /* For a dialog that lays out its own header and spacing inline instead of
+     using the head/body pair below. */
+  .cpt-modal--pad { padding: 16px 18px; overflow-y: auto; }
+  .cpt-modal-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 13px 16px; border-bottom: 1px solid var(--border);
+    font-size: 14px; flex-shrink: 0;
+  }
+  /* The one that scrolls. A dialog taller than the window has to scroll
+     INSIDE itself — scrolling the page behind a fixed backdrop moves nothing
+     the person can see. */
+  .cpt-modal-body { padding: 16px; overflow-y: auto; flex: 1 1 auto; }
+
+  /* On a phone a centred box with 20px either side wastes the width it needs
+     most. Same treatment as .ci-pay-backdrop: a sheet off the bottom edge. */
+  @media (max-width: 640px) {
+    .cpt-modal-backdrop { padding: 0; align-items: flex-end; }
+    .cpt-modal { max-width: 100% !important; max-height: 95dvh; border-radius: 16px 16px 0 0; }
+  }
+
+  /* A dialog left open must not print. */
+  @media print {
+    .cpt-modal-backdrop { display: none !important; }
+  }
+
   .cust-count-chip { display:inline-block; font-size:12px; font-weight:700; padding:3px 12px; border-radius:12px; }
   .cust-count-chip--lead { background:#e0f2fe; color:#0369a1; }
   .cust-count-chip--appt { background:#dcfce7; color:#16a34a; }
@@ -358,7 +539,15 @@
   .cust-detail-page.lb-page .cust-tab-content { margin-left: -20px; margin-right: -20px; }
   .cust-detail-page.lb-page .cds-toolbar { padding-left: 20px; padding-right: 20px; }
   .cust-detail-page.lb-page .cust-tab-content .pgbar,
+  .cust-detail-page.lb-page .cust-tab-content .cust-wa-pane,
   .cust-detail-page.lb-page .cust-tab-content .cust-empty { padding-left: 20px; padding-right: 20px; }
+  /* The Payments tab builds its own toolbar and filter row instead of reusing
+     .cds-toolbar, so it was never on the list above: it kept the bleed and lost
+     its first few pixels off the left edge of the pane — which is why the
+     summary line read "…payments · …received" with the count shaved off. Same
+     20px and the same reason as every other row in this block. */
+  .cust-detail-page.lb-page .cust-tab-content .cpt-toolbar,
+  .cust-detail-page.lb-page .cust-tab-content .cpt-filters { padding-left: 20px; padding-right: 20px; }
   .cust-detail-hdr { display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px solid var(--border); flex-shrink:0; min-height:52px; background:var(--bg); position:sticky; top:0; z-index:10; }
   .cust-back-btn { display:inline-flex; align-items:center; gap:5px; border:1.5px solid var(--border); background:var(--bg); color:var(--text-muted); font-size:12px; font-weight:700; padding:5px 12px; border-radius:8px; cursor:pointer; transition:all .15s; white-space:nowrap; flex-shrink:0; }
   .cust-back-btn:hover { background:var(--bg-soft); color:var(--text); border-color:var(--text-muted); }
@@ -411,14 +600,102 @@
      Identity sits beside the stats, which are now a 2x2 grid rather than
      a single 1x4 row spanning the full width. */
   .cdh-card { padding: 20px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: row; align-items: center; gap: 24px; background: var(--bg); }
-  .cdh-identity { display: flex; align-items: flex-start; gap: 14px; flex: 1 1 auto; min-width: 0; }
+
+  /* ── WHY THE IDENTITY BLOCK IS CAPPED AND THE STATS GROW ──
+     This is what made the stat cards stack vertically down the right-hand side
+     with a wide empty gap beside them.
+
+     .cdh-identity was `flex: 1 1 auto`, so it took every pixel of the row it
+     could get. .cdh-stats, with no flex declaration, fell back to `0 1 auto` —
+     sized from its CONTENT — and a grid of `auto-fit, minmax(160px, 1fr)` with
+     no width to fill resolves to its minimum: one 160px column. Five cards, one
+     column, straight down. The grid was never broken; it was never given a
+     width to lay out into.
+
+     Now the identity block takes what it needs up to 380px and the stats take
+     the rest, so auto-fit finally has a real width and produces as many columns
+     as fit. min-width: 0 on both is required — a flex item's default
+     `min-width: auto` refuses to shrink below its content, which on a long
+     customer name pushes the stats back down to one column on a narrow laptop. */
+  .cdh-identity { display: flex; align-items: flex-start; gap: 14px; flex: 0 1 380px; min-width: 0; }
   .cdh-name-row { display: flex; align-items: center; gap: 9px; }
   .cdh-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 2px 9px; border-radius: 20px; background: #dcfce7; color: #166534; }
-  .cdh-stats { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 10px; flex: 0 0 auto; }
-  .cdh-stat { display: flex; align-items: center; gap: 10px; border: 1.5px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+  /* auto-fit, so the row is five cards or six depending on whether this
+     customer is holding credit, without two hard-coded column counts. */
+  /* flex: 1 1 auto is the half of the fix that lives here — the grid needs a
+     width before auto-fit can decide how many columns fit in it. */
+  .cdh-stats { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+
+  /* Below this the two halves stop fitting side by side: 380px of identity plus
+     five 160px cards needs about 1200px of content width, and a 13" laptop with
+     the nav rail open has less. Stacking is the honest answer — the cards then
+     get the full width and stay in one row, which is the layout this screen is
+     actually for. Squeezing them into a narrow column beside the name is what it
+     was doing before, and that is the bug rather than the fallback. */
+  @media (max-width: 1180px) {
+    .cdh-card { flex-direction: column; align-items: stretch; gap: 16px; }
+    .cdh-identity { flex: 0 0 auto; }
+  }
+  .cdh-stat { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1.5px solid var(--border); border-radius: 12px; padding: 10px 12px; }
   .cdh-stat-icon { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .cdh-stat-val { font-size: 14px; font-weight: 800; color: var(--text); line-height: 1.2; }
   .cdh-stat-lbl { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-top: 1px; }
+
+  /* ── Money row, under the four stats ────────────────────────────────────
+     Spans the whole grid rather than sitting in it as a fifth card: five cards
+     in a two-column grid strands one alone on its own row, and this row is
+     doing a different job from the four above it — those report a number, this
+     one is where you act on it.
+
+     It is the reason the credit figure moved out of the Payments tab at all.
+     What the workshop is holding that belongs to no invoice is the thing you
+     open a customer to find out, and it was three clicks in and invisible from
+     every other tab. */
+  .cdh-money {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap;
+    border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 9px 12px;
+  }
+  /* Amber only when there is something to announce. A permanently highlighted
+     bar stops meaning anything, and most customers have no unused credit. */
+  .cdh-money--credit { background: #fffbeb; border-color: #fde68a; }
+  .cdh-money-fig { display: flex; align-items: center; gap: 9px; color: #92400e; min-width: 0; }
+  .cdh-money-fig--empty { font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
+  .cdh-money-val { font-size: 14px; font-weight: 800; line-height: 1.2; }
+  .cdh-money-sub { font-size: 10px; font-weight: 600; color: #b45309; margin-top: 1px; }
+  .cdh-money-acts { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  /* Same shape as the WhatsApp / delete buttons in the header above, so the
+     two action areas read as one family. */
+  .cdh-money-btn { background: var(--bg); border-color: var(--border); color: var(--text); }
+  .cdh-money-btn:hover { background: var(--bg-soft); }
+  .cdh-money-btn--go { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .cdh-money-btn--go:hover { filter: brightness(1.08); }
+
+  @media (max-width: 640px) {
+    .cdh-money { flex-direction: column; align-items: stretch; }
+    .cdh-money-acts { margin-left: 0; }
+    .cdh-money-acts .cust-hdr-btn { flex: 1 1 0; justify-content: center; }
+  }
+
+  /* ── Confirmation toast ─────────────────────────────────────────────────
+     The Payments tab's dialogs have always called showToast and this page
+     never passed one, so every success message went to an optional-chained
+     no-op. Harmless while the buttons were buried in a tab; not harmless now
+     that Record Payment is in the header and its only feedback was silence. */
+  .cust-toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    z-index: 1300;
+    display: flex; align-items: center; gap: 8px;
+    max-width: min(520px, calc(100vw - 32px));
+    padding: 10px 16px; border-radius: 10px;
+    background: #0f172a; color: #fff;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, .28);
+  }
+  .cust-toast svg { color: #4ade80; flex-shrink: 0; }
+  @media print { .cust-toast { display: none !important; } }
 
   @media (max-width: 900px) {
     .cdh-card { flex-direction: column; align-items: stretch; gap: 16px; }
@@ -431,8 +708,13 @@
   }
 
   /* ── Two-column layout ── */
-  .cust-detail-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; padding: 16px 0; }
-  .cdg-left { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  /* Single column: the rail's two cards moved into the Overview grid, so the
+     tab strip sits directly under the stats instead of halfway down. */
+  .cust-detail-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; padding: 16px 0; }
+  /* Holds only the edit modals now — fixed-position overlays that must stay
+     mounted at page level so Edit works from any tab. display:contents keeps
+     the wrapper out of the layout entirely. */
+  .cdg-left { display: contents; }
   .cdg-right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
   /* Side cards — Customer Info / Vehicles / B2B / Activity / Tabs all reuse
@@ -479,4 +761,522 @@
     .cds-toolbar { flex-direction: column; align-items: stretch; }
     .cds-toolbar > * { width: 100%; }
     .cds-toolbar button { justify-content: center; }
+  }
+
+  /* ── Stat sub-line and the credit variant ─────────────────────────────── */
+  .cdh-stat-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+  .cdh-stat--credit { border-color: #fde68a; background: #fffbeb; }
+  .cust-hdr-btn--edit { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .cust-hdr-btn--edit:hover { filter: brightness(1.08); }
+
+  /* ── More Actions ─────────────────────────────────────────────────────────
+     WhatsApp, Take Payment, Record Payment and Delete. They were four buttons
+     in one row next to the primary action, which put "take money" one pixel
+     from "delete this customer". */
+  .cust-more { position: relative; display: inline-flex; }
+  .cust-more-back { position: fixed; inset: 0; z-index: 999; }
+  .cust-more-pop {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 1000;
+    min-width: 210px; padding: 5px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(0,0,0,.14);
+  }
+  .cust-more-item {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 8px 10px; border: 0; border-radius: 7px; background: none;
+    font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text);
+    text-align: left; text-decoration: none; cursor: pointer;
+  }
+  .cust-more-item:hover { background: var(--bg-soft); }
+  .cust-more-item svg { color: var(--text-muted); flex-shrink: 0; }
+  .cust-more-item--del { color: #dc2626; }
+  .cust-more-item--del:hover { background: #fef2f2; }
+  .cust-more-item--del svg { color: #dc2626; }
+  .cust-more-sep { height: 1px; background: var(--border); margin: 5px 2px; }
+
+  /* ════════════════════════════════════════════════════════════════════════
+     OVERVIEW TAB
+     ════════════════════════════════════════════════════════════════════════
+     Every class CustomerOverviewTab.jsx renders. The component imports no
+     stylesheet of its own — it is only ever mounted by CustomersPage, so its
+     rules live here beside the rest of the profile.
+
+     ⚠ If this block goes missing, the profile's landing tab renders as
+     unstyled text: bare tables, no cards, no grid. It has happened twice, both
+     times by a stale copy of this file being written over a newer one. Nothing
+     in a build catches it, because undefined CSS classes are not an error. */
+
+  .cust-ov { display: block; }
+
+  /* minmax(0, 1fr), never plain 1fr: a long rupee figure inside a card sets a
+     min-content floor that widens its track, and the whole row stops lining up.
+     The same fix .pay-kpis and .cdh-stats already needed. */
+  .cust-ov-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    align-items: start;
+  }
+  @media (max-width: 1200px) { .cust-ov-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 760px)  { .cust-ov-grid { grid-template-columns: minmax(0, 1fr); } }
+
+  .cust-ov-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg);
+    padding: 0 0 4px;
+    overflow: hidden;
+  }
+  /* The activity strip, and anything else that should span the full row. */
+  .cust-ov-card--wide { grid-column: 1 / -1; margin-top: 14px; }
+
+  .cust-ov-hd {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-soft);
+  }
+  .cust-ov-hd-t {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    color: var(--text);
+  }
+  .cust-ov-hd-t svg { color: var(--text-muted); flex-shrink: 0; }
+
+  .cust-ov-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: none;
+    border: 0;
+    padding: 2px 4px;
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--primary);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .cust-ov-more:hover { text-decoration: underline; }
+
+  .cust-ov-empty {
+    padding: 18px 14px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  /* A muted second line, used in almost every card. */
+  .cust-ov-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+  /* ── Upcoming appointments ── */
+  .cust-ov-appt {
+    display: flex;
+    gap: 11px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cust-ov-appt:last-of-type { border-bottom: 0; }
+  /* A calendar tile. Fixed width so three rows of different dates line up. */
+  .cust-ov-appt-date {
+    flex: 0 0 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 0;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--bg-soft);
+    height: fit-content;
+  }
+  .cust-ov-appt-d { font-size: 15px; font-weight: 800; line-height: 1.1; color: var(--text); }
+  .cust-ov-appt-m { font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
+  .cust-ov-appt-body { min-width: 0; flex: 1 1 auto; }
+  .cust-ov-appt-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12.5px; }
+
+  .cust-ov-pill {
+    font-size: 9.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    padding: 2px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  /* ── Vehicles ── */
+  .cust-ov-veh {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cust-ov-veh:last-of-type { border-bottom: 0; }
+  .cust-ov-veh-plate { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; font-weight: 700; }
+  .cust-ov-veh-right { text-align: right; flex-shrink: 0; }
+  .cust-ov-veh-km { font-size: 12px; font-weight: 700; color: var(--text); }
+
+  /* ── The three-row mini tables ── */
+  .cust-ov-mini { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .cust-ov-mini th {
+    text-align: left;
+    padding: 7px 14px;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .cust-ov-mini td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .cust-ov-mini tr:last-child td { border-bottom: 0; }
+  .cust-ov-mini .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cust-ov-mini tr.clickable { cursor: pointer; }
+  .cust-ov-mini tr.clickable:hover { background: var(--bg-soft); }
+
+  .cust-ov-ref { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 700; color: var(--primary); }
+  .cust-ov-due { font-size: 10px; font-weight: 700; color: #dc2626; margin-top: 1px; }
+
+  /* ── Account card ── */
+  .cust-ov-kv {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cust-ov-kv span { color: var(--text-muted); }
+  .cust-ov-kv:last-of-type { border-bottom: 0; }
+  .cust-ov-kv--strong { background: var(--bg-soft); font-weight: 700; }
+  .cust-ov-kv--strong span { color: var(--text); }
+
+  /* ── The action at the foot of a card ── */
+  .cust-ov-foot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 9px 14px;
+    border: 0;
+    border-top: 1px solid var(--border);
+    background: none;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    cursor: pointer;
+  }
+  .cust-ov-foot:hover { background: var(--bg-soft); }
+
+  /* ── Recent activity strip ──
+     grid-auto-flow: column on wide screens, wrapping to rows when narrow.
+     NOT overflow-x: auto — a horizontal scrollbar inside a page that already
+     scrolls is two scrollbars, and the outer one wins every time. */
+  .cust-ov-acts {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px 14px;
+  }
+  @media (max-width: 1100px) {
+    .cust-ov-acts { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 620px) {
+    .cust-ov-acts { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  .cust-ov-act { display: flex; gap: 9px; min-width: 0; }
+  .cust-ov-act-icon {
+    width: 26px; height: 26px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .cust-ov-act-body { min-width: 0; }
+  .cust-ov-act-t {
+    font-size: 12px; font-weight: 700; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cust-ov-act-d { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+
+  /* ── The per-receipt ⋯ menu on the Payments tab ──
+     Replaced three icon buttons in a row. The table is eight columns wide
+     inside the profile pane and a fourth icon pushed it past its container
+     again — the same clipping the base .lb-scroll-x rule exists to prevent.
+
+     position: relative on the wrapper and absolute on the panel, so the menu
+     escapes the cell without the table's overflow clipping it. */
+  .cpt-menu-wrap { position: relative; display: inline-flex; justify-content: flex-end; width: 100%; }
+
+  /* A real element, not a document click listener. It closes on any outside
+     click — including one that lands on another row's ⋯ — and cannot be
+     defeated by a stopPropagation somewhere up the tree. Transparent, so it is
+     invisible; z-index one below the panel so the panel stays clickable. */
+  .cpt-menu-backdrop { position: fixed; inset: 0; z-index: 60; background: transparent; }
+
+  .cpt-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 61;
+    min-width: 210px;
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: 0 10px 28px rgba(15, 23, 42, .16);
+  }
+  /* useFlipPopup sets this when the menu would open below the viewport — the
+     last rows of a long payment history are exactly where that happens. */
+  .cpt-menu--flip { top: auto; bottom: calc(100% + 4px); }
+
+  .cpt-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 9px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .cpt-menu-item:hover:not(:disabled) { background: var(--bg-soft); }
+  .cpt-menu-item:disabled { opacity: .55; cursor: default; }
+  .cpt-menu-item svg { color: var(--text-muted); flex-shrink: 0; }
+  .cpt-menu-item--danger { color: #dc2626; }
+  .cpt-menu-item--danger svg { color: #dc2626; }
+  .cpt-menu-item--danger:hover:not(:disabled) { background: #fef2f2; }
+
+  /* Separates the reversible actions above from the irreversible one below. */
+  .cpt-menu-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+
+  /* ══ The Payment dialog ═════════════════════════════════════════════════
+     One dialog where there were two buttons. See PaymentModal in
+     CustomerPaymentsTab.jsx for why the amount comes before the destination.
+
+     Everything here is .cpt-* and lives in this file with the rest of the
+     dialog's furniture. Not shared with .ci-pay-* on CustomerInvoicesPage:
+     the same name across two stylesheets is how one page's dialog quietly
+     restyles another's, which the note by .cpt-modal-backdrop records
+     happening once already. */
+  .cpt-pay { max-width: 560px; }
+
+  /* ── The two kinds of money a customer is holding ──────────────────────
+     Free credit and a deposit against an un-billed job are shown apart
+     because they ARE apart: one can go anywhere, the other was paid for a
+     named job. Adding them together is how a Fortuner deposit came to be
+     spendable on an Innova invoice. Green reads as available, amber as
+     spoken-for — the same pair the rest of the app uses for that. */
+  .cpt-bank {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: 9px; font-size: 12.5px; margin-bottom: 12px;
+  }
+  .cpt-bank--free { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+  .cpt-bank--held { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .cpt-bank-use {
+    margin-left: auto; display: flex; align-items: center; gap: 6px;
+    font-weight: 700; cursor: pointer; white-space: nowrap;
+  }
+  .cpt-bank-use input { width: 14px; height: 14px; accent-color: var(--primary); cursor: pointer; }
+  /* A disabled checkbox still has to look like a thing that exists, or the
+     row reads as broken rather than as not-yours-to-use. */
+  .cpt-bank-use input:disabled { cursor: not-allowed; }
+  .cpt-bank-use:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+  .cpt-bank-lock {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 700; white-space: nowrap;
+  }
+
+  /* ── The amount ────────────────────────────────────────────────────────
+     Bigger than anything else in the dialog, because it is the one field
+     that decides what the rest of it says. */
+  .cpt-pay-amt { position: relative; }
+  .cpt-pay-amt > span {
+    position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+    font-size: 19px; font-weight: 600; color: var(--text-muted); pointer-events: none;
+  }
+  .cpt-pay-amt input {
+    width: 100%; box-sizing: border-box;
+    padding: 11px 14px 11px 34px;
+    font: inherit; font-size: 21px; font-weight: 700; color: var(--text);
+    background: var(--panel);
+    border: 2px solid var(--border); border-radius: 10px; outline: none;
+    transition: border-color .14s;
+    /* The spinners are noise on a money field and a mis-click away from
+       changing an amount by one rupee. */
+    -moz-appearance: textfield;
+  }
+  .cpt-pay-amt input::-webkit-outer-spin-button,
+  .cpt-pay-amt input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .cpt-pay-amt input:focus { border-color: var(--primary); }
+
+  /* ── Where it goes ─────────────────────────────────────────────────────
+     Three buttons rather than a <select>: the choice changes what the rest
+     of the dialog shows, and a closed dropdown hides two thirds of what is
+     possible behind a click. A disabled one stays visible with its reason in
+     the title, per the permissions decision — hiding it would leave two
+     people comparing screens with no explanation. */
+  .cpt-dest { display: flex; gap: 6px; }
+  .cpt-dest button {
+    flex: 1; padding: 8px 6px;
+    border: 1.5px solid var(--border); background: var(--panel); border-radius: 9px;
+    font: inherit; font-size: 12px; font-weight: 700; color: var(--text-muted);
+    cursor: pointer; transition: all .14s; text-align: center;
+  }
+  .cpt-dest button:hover:not(:disabled) { border-color: var(--text-muted); color: var(--text); }
+  .cpt-dest button.on {
+    border-color: var(--primary); background: var(--primary-soft, #f0fdfa); color: var(--primary);
+  }
+  .cpt-dest button:disabled { opacity: .42; cursor: not-allowed; }
+  .cpt-dest-note { margin: 8px 0 0; font-size: 11.5px; color: var(--text-muted); line-height: 1.55; }
+
+  /* ── The plan ──────────────────────────────────────────────────────────
+     The feature, not a summary of it: this is what makes "automatic" mean
+     "you can see it" rather than "trust me". */
+  .cpt-plan-hd {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin: 14px 0 6px;
+  }
+  .cpt-plan-hd span {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--text-muted);
+  }
+  .cpt-plan-hd button {
+    border: 0; background: transparent; color: var(--primary);
+    font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; padding: 0;
+  }
+  .cpt-plan-hd button:hover { text-decoration: underline; }
+
+  .cpt-plan { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .cpt-plan-row {
+    display: flex; align-items: center; gap: 9px;
+    padding: 9px 12px; font-size: 12.5px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  .cpt-plan-row:last-child { border-bottom: 0; }
+  .cpt-plan-row--dim { background: var(--bg-soft); color: var(--text-muted); }
+  /* Untick to leave an invoice out. Deliberately the first thing in the row:
+     it is the only control here, and a control hidden at the end of a line of
+     figures is a control nobody finds. */
+  .cpt-plan-tick {
+    width: 15px; height: 15px; accent-color: var(--primary);
+    cursor: pointer; flex-shrink: 0; margin: 0;
+  }
+  .cpt-plan-row .inv { font-weight: 700; white-space: nowrap; }
+  .cpt-plan-row .dt  { color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+  .cpt-plan-row .hub {
+    font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+    background: var(--bg-soft); color: var(--text-muted); white-space: nowrap;
+  }
+  .cpt-plan-row .due   { margin-left: auto; color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+  .cpt-plan-row .arrow { color: var(--border); font-weight: 700; }
+  /* Tabular figures, so the column of amounts lines up on the decimal
+     instead of wandering with the digit widths. */
+  .cpt-plan-row .got {
+    font-weight: 700; min-width: 76px; text-align: right;
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .cpt-plan-row .got.zero { color: var(--border); }
+  .cpt-plan-row .edit {
+    width: 88px; padding: 4px 7px; font: inherit; font-size: 12.5px; font-weight: 700;
+    text-align: right; border: 1.5px solid var(--border); border-radius: 6px;
+    outline: none; font-variant-numeric: tabular-nums; background: var(--panel); color: var(--text);
+  }
+  .cpt-plan-row .edit:focus { border-color: var(--primary); }
+  /* A box you fixed by hand looks different from one still being worked out
+     for you — otherwise "which of these did I decide?" has no answer. */
+  .cpt-plan-row .edit.pinned {
+    border-color: var(--primary); background: var(--primary-soft, #f0fdfa); color: var(--primary);
+  }
+  .cpt-plan-row .pill {
+    font-size: 10px; font-weight: 800; letter-spacing: .02em;
+    padding: 2px 7px; border-radius: 999px;
+    min-width: 78px; text-align: center; white-space: nowrap;
+  }
+  .cpt-plan-row .pill--paid { background: #dcfce7; color: #15803d; }
+  .cpt-plan-row .pill--part { background: #fef3c7; color: #a16207; }
+  .cpt-plan-row .pill--none { background: var(--bg-soft); color: var(--text-muted); }
+  .cpt-plan-foot {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px; font-size: 12.5px; font-weight: 700;
+    background: #ecfdf5; color: #065f46; border-top: 1px solid #a7f3d0;
+  }
+  .cpt-plan-foot .n { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .cpt-plan-empty { padding: 16px 12px; text-align: center; font-size: 12.5px; color: var(--text-muted); }
+
+  /* ── Method chips ──────────────────────────────────────────────────────
+     Lifted out of the inline styles the old dialog carried, unchanged in
+     appearance — five of them repeated per render is five style objects
+     rebuilt on every keystroke of the amount field. */
+  .cpt-method {
+    padding: 5px 12px; border-radius: 99px; font: inherit; font-size: 12.5px;
+    cursor: pointer; border: 1px solid var(--border); background: transparent;
+    font-weight: 500; color: var(--text-muted); transition: all .14s;
+  }
+  .cpt-method:hover { color: var(--text); }
+  .cpt-method.on {
+    border-color: var(--primary); background: var(--primary-soft, #f0fdfa);
+    font-weight: 700; color: var(--primary);
+  }
+
+  /* ── Confirm, done, errors, footer ─────────────────────────────────────*/
+  .cpt-pay-confirm {
+    background: var(--bg-soft); border-radius: 10px;
+    padding: 15px 18px; text-align: center; margin-bottom: 13px;
+  }
+  .cpt-pay-confirm-cap {
+    font-size: 10.5px; letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted);
+  }
+  .cpt-pay-confirm-amt { font-size: 25px; font-weight: 700; color: var(--primary); margin-top: 4px; }
+  .cpt-pay-warn {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+    padding: 10px 12px; font-size: 12px; color: #92400e; line-height: 1.6;
+  }
+  .cpt-pay-done {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0;
+    border-radius: 8px; padding: 12px 14px; font-size: 13px; margin-bottom: 14px;
+  }
+  .cpt-pay-err {
+    margin-top: 12px; font-size: 12.5px; color: #b91c1c;
+    display: flex; gap: 6px; align-items: flex-start;
+  }
+  .cpt-pay-err svg { flex-shrink: 0; margin-top: 1px; }
+  .cpt-pay-actions {
+    display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px;
+  }
+  /* Pushed left so it reads as a caption on the dialog rather than a label on
+     the Save button next to it. */
+  .cpt-pay-sum { margin-right: auto; font-size: 12px; color: var(--text-muted); }
+
+  /* On a phone the three destinations do not fit side by side without the
+     text shrinking past readable. Stacked, they are three obvious choices. */
+  @media (max-width: 480px) {
+    .cpt-dest { flex-direction: column; }
+    .cpt-plan-row { flex-wrap: wrap; row-gap: 4px; }
+    .cpt-plan-row .due { margin-left: 0; }
+    .cpt-plan-row .pill { margin-left: auto; }
   }

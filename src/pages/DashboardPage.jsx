@@ -25,6 +25,7 @@ import {
 } from 'recharts';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import AppointmentSchedule from '../components/AppointmentSchedule.jsx';
 import '../styles/DashboardPage.css';
 
 /**
@@ -115,7 +116,6 @@ export default function DashboardPage() {
   const [revTrend,     setRevTrend]     = useState([]);
   const [activities,   setActivities]   = useState([]);
   const [purchaseInvs, setPurchaseInvs] = useState([]);
-  const [todayAppts,   setTodayAppts]   = useState([]);
   // Total appointments created by the current user (all-time) — fetched via a
   // dedicated limit=1 call so we get the accurate `total` without pulling every
   // row (the dashboard's other appointments fetch below is capped at 30, which
@@ -135,7 +135,11 @@ export default function DashboardPage() {
 
   // ── Dashboard section order ───────────────────────────────────────────
   const DEFAULT_ORDER = [
-    'kpi', 'strip', 'fustat', 'row1', 'row2', 'row3', 'row4', 'row5', 'team', 'calls', 'parts',
+    // 'schedule' is the full-width appointment section, shared with the hub
+    // portal. It sits high on purpose — it is the "what is happening today"
+    // view, and it replaced the narrow Today's Appointments card that used to
+    // live inside row4.
+    'kpi', 'strip', 'schedule', 'fustat', 'row1', 'row2', 'row3', 'row4', 'row5', 'team', 'calls', 'parts',
   ];
   const storageKey = `db-order-${user?.id || 'default'}`;
   const [sectionOrder, setSectionOrder] = useState(() => {
@@ -233,24 +237,21 @@ export default function DashboardPage() {
 
   // Widget data fetch
   useEffect(() => {
-    const todayISO = new Date().toISOString().slice(0, 10);
     Promise.all([
       canViewDashEstimates ? api('/api/estimates?limit=5').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       (canViewReports || canViewDashRevenue) ? api('/api/reports/analytics/revenue-trend').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       canViewDashActivities ? api('/api/logs/activity?limit=8').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       (canViewDashInvoices) ? api('/api/purchase-invoices?limit=5').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
-      canViewDashAppointments ? api('/api/appointments?limit=30').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       canViewDashCustomers ? api('/api/customers?limit=5').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       canViewDashNotifications ? api('/api/notifications?limit=8').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       canViewDashParts ? api('/api/parts?limit=200').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       (canViewReports || canViewDashLeads) ? api('/api/reports/analytics/funnel').catch(() => ({ funnel: [] })) : Promise.resolve({ funnel: [] }),
       (canViewReports || canViewDashRevenue) ? api('/api/reports/analytics/top-performers').catch(() => ({ top_hubs: [], top_services: [] })) : Promise.resolve({ top_hubs: [], top_services: [] }),
-    ]).then(([est, rt, act, pi, appts, cust, notifs, parts, fn, tp]) => {
+    ]).then(([est, rt, act, pi, cust, notifs, parts, fn, tp]) => {
       setEstimates(est.items || []);
       setRevTrend((rt.items || []).slice(-10));
       setActivities(act.items || []);
       setPurchaseInvs(pi.items || []);
-      setTodayAppts((appts.items || []).filter(a => a.scheduled_date === todayISO).slice(0, 6));
       setCustomers(cust.items || []);
       setNotifications(notifs.items || []);
       const partsList = parts.items || [];
@@ -479,7 +480,9 @@ export default function DashboardPage() {
   const row2Cols = [canViewDashLeads, canViewDashRevenueTrend, canViewDashQuickActions].filter(Boolean).length;
   const canViewRecentInvoices = canViewDashRevenue && (isSuperAdmin || canViewDashInvoices || user?.permissions?.includes('VIEW_INVOICE'));
   const row3Cols = [canViewRecentInvoices, canViewDashEstimates, canViewDashActivities].filter(Boolean).length;
-  const row4Cols = [canViewDashInvoices, canViewDashApptList, canViewDashCustomers].filter(Boolean).length;
+  // canViewDashApptList is no longer counted here — its Today's Appointments
+  // card moved out to the full-width 'schedule' section above.
+  const row4Cols = [canViewDashInvoices, canViewDashCustomers].filter(Boolean).length;
   const row5Cols = (canViewDashFunnel || canViewDashTopServices || canViewDashNotifications)
     ? [canViewDashFunnel, canViewDashTopServices, canViewDashNotifications].filter(Boolean).length : 0;
 
@@ -487,6 +490,7 @@ export default function DashboardPage() {
   const sectionMap = {
     kpi:    canViewDashAppointments || canViewDashRevenue || canViewDashInvoices || canViewDashLeads || canViewOwnDashboard,
     strip:  canViewDashStatsStrip,
+    schedule: canViewDashApptList,
     fustat: canViewDashFollowups,
     row1:   canViewDashLeads || canViewDashAppointments || canViewDashFollowups,
     row2:  canViewDashLeads || canViewDashRevenueTrend || canViewDashQuickActions,
@@ -527,7 +531,9 @@ export default function DashboardPage() {
         <SortableContext items={sectionOrder} strategy={verticalListSortingStrategy}>
           {sectionOrder.filter(id => sectionMap[id]).map(id => (
             <SortableSection key={id} id={id} activeId={activeId}>
-              {id === 'kpi' ? (
+              {id === 'schedule' && canViewDashApptList ? (
+        <AppointmentSchedule />
+              ) : id === 'kpi' ? (
       <div className="db-kpi-row">
         {canViewDashAppointments && (
           <KpiCard
@@ -1286,46 +1292,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Today's Appointments — Super Admin only */}
-          {canViewDashApptList && (
-            <div className="db-card">
-              <div className="db-card-hd">
-                <div className="db-card-title">
-                  <span className="db-card-dot" style={{ background: '#3b82f6' }} />
-                  <CalendarDays size={13} style={{ color: '#3b82f6' }} />
-                  Today's Appointments
-                  {todayAppts.length > 0 && <span className="db-count-badge">{todayAppts.length}</span>}
-                </div>
-                <Link to="/appointments" className="db-view-all">View all <ArrowRight size={12} /></Link>
-              </div>
-              {todayAppts.length === 0 ? (
-                <div className="db-empty" style={{ padding: 20 }}><CalendarDays size={20} style={{ opacity: 0.2 }} /><div>No appointments today</div></div>
-              ) : (
-                <div className="db-inv-list">
-                  {todayAppts.map((a, i) => {
-                    const timeStr = a.scheduled_time || '—';
-                    const statusKey = (a.status_name || '').toLowerCase().replace(/\s+/g,'');
-                    const pillCfg = {
-                      scheduled:  { bg:'#dbeafe', color:'#1e40af' },
-                      confirmed:  { bg:'#dcfce7', color:'#166534' },
-                      completed:  { bg:'#f3f4f6', color:'#374151' },
-                      cancelled:  { bg:'#fee2e2', color:'#991b1b' },
-                    }[statusKey] || { bg:'#dbeafe', color:'#1e40af' };
-                    return (
-                      <div key={a.id} className="db-inv-row" onClick={() => navigate(a.public_token ? `/appointments/${a.public_token}` : '/appointments', a.public_token ? undefined : { state: { openApptId: a.id } })}>
-                        <div className="db-appt-time-badge">{timeStr}</div>
-                        <div className="db-inv-info">
-                          <div className="db-inv-name">{a.customer_name || a.mobile || `Appt #${a.id}`}</div>
-                          <div className="db-inv-meta">{a.hub_name}{a.vehicle_number ? ` · ${a.vehicle_number}` : ''}</div>
-                        </div>
-                        <span className="db-status-pill" style={{ background: pillCfg.bg, color: pillCfg.color }}>{a.status_name || 'Scheduled'}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Recent Customers — Super Admin only */}
           {canViewDashCustomers && (

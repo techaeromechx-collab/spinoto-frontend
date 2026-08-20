@@ -1,0 +1,392 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Workshops — candidate hubs.
+   Uses the shared list layout (listLayout.css); everything here is the parts
+   that page does not have: status tabs, the photo grid, and the convert form.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ws-page { display: flex; flex-direction: column; }
+
+/* ── Status tabs ─────────────────────────────────────────────────────────── */
+.ws-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  /* Six tabs plus counts overflow a narrow window. Scrolling them beats
+     wrapping onto a second row that pushes the whole table down. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ws-tabs::-webkit-scrollbar { display: none; }
+
+.ws-tab {
+  display: flex; align-items: center; gap: 7px;
+  flex-shrink: 0;
+  padding: 12px 14px;
+  border: 0; background: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.ws-tab:hover { color: var(--text); }
+.ws-tab.on   { color: var(--primary); border-bottom-color: var(--primary); }
+
+.ws-tab-n {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  font-size: 11px; font-weight: 700;
+}
+.ws-tab.on .ws-tab-n { background: #e6f7f2; color: var(--primary); }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.ws-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ws-table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  white-space: nowrap;
+}
+.ws-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ws-table tbody tr:hover { background: var(--bg-soft); }
+.ws-right { text-align: right; }
+
+.ws-name   { font-weight: 600; }
+.ws-sub    { font-size: 11.5px; color: var(--text-muted); }
+.ws-status { font-weight: 700; font-size: 12px; }
+
+/* A rejection reason is often a sentence. One line with the rest on hover
+   keeps the row height stable across a page of results. */
+.ws-reason {
+  max-width: 190px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.ws-photos {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-top: 3px; padding: 1px 6px;
+  border-radius: 9px; background: var(--bg-soft);
+  font-size: 10.5px; color: var(--text-muted);
+}
+
+/* flex, not inline-flex: as an inline sibling of the status span it sat right
+   up against it and read as one word — "ConvertedSAC". */
+.ws-hublink {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 3px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--primary);
+  width: fit-content;
+}
+.ws-hublink:hover { text-decoration: underline; }
+
+.ws-empty { padding: 34px; text-align: center; color: var(--text-muted); }
+.ws-spin  { display: inline-block; vertical-align: -3px; animation: ws-rot 1s linear infinite; }
+@keyframes ws-rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ws-spin { animation: none; } }
+
+/* ── Row actions ─────────────────────────────────────────────────────────── */
+.ws-actions { display: inline-flex; align-items: center; gap: 4px; justify-content: flex-end; }
+
+.ws-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); color: var(--text-muted); cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.ws-icon:hover        { border-color: var(--primary); color: var(--primary); }
+.ws-ok:hover          { border-color: #16b994; color: #16b994; }
+.ws-no:hover          { border-color: #dc2626; color: #dc2626; }
+.ws-convert { padding: 5px 11px !important; font-size: 12px; white-space: nowrap; }
+
+/* ── Modals ──────────────────────────────────────────────────────────────── */
+.ws-modal { max-width: 720px; width: 100%; }
+
+.ws-form {
+  display: grid;
+  /* minmax(0, 1fr) so a long <select> option cannot widen a column and push
+     the other one off the dialog. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px 16px;
+  padding: 18px 24px;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+.ws-form label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.ws-form input, .ws-form select, .ws-form textarea {
+  width: 100%; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text);
+  font-family: inherit; font-size: 13px; font-weight: 400;
+}
+.ws-form input:focus, .ws-form select:focus, .ws-form textarea:focus { outline: none; border-color: var(--primary); }
+.ws-form select:disabled { background: var(--bg-soft); color: var(--text-muted); cursor: not-allowed; }
+.ws-wide { grid-column: 1 / -1; }
+
+/* A labelled field that is NOT inside .ws-form and so inherits no layout.
+   Used by the reject dialog. */
+.ws-standalone-field {
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+}
+.ws-standalone-field textarea {
+  width: 100%; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text);
+  font-family: inherit; font-size: 13px; font-weight: 400;
+  resize: vertical;
+}
+.ws-standalone-field textarea:focus { outline: none; border-color: var(--primary); }
+
+.ws-modal-foot {
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 14px 24px; border-top: 1px solid var(--border);
+}
+
+/* ── Photos ──────────────────────────────────────────────────────────────── */
+.ws-photos-block { border-top: 1px solid var(--border); padding-top: 14px; }
+.ws-photos-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 9px; font-size: 12px; font-weight: 700; color: var(--text-muted);
+}
+.ws-photos-hd em { font-weight: 500; font-style: normal; opacity: .75; }
+
+.ws-upload {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--border); border-radius: 7px;
+  font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer;
+}
+.ws-upload:hover { border-color: var(--primary); color: var(--primary); }
+
+.ws-photo-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.ws-photo { position: relative; width: 92px; height: 70px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+.ws-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ws-photo button {
+  position: absolute; top: 3px; right: 3px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0;
+  border: 0; border-radius: 5px;
+  background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
+}
+
+/* ── Convert ─────────────────────────────────────────────────────────────── */
+/* Laid out like the Add HUB form: hb-section-sep bands with the fields grouped
+   under them. Only the grids and the carried-over summary are local — the
+   fields themselves use the hub form's own classes so the two cannot drift. */
+.ws-convert-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 24px;
+  max-height: 68vh;
+  overflow-y: auto;
+}
+
+.ws-grid2, .ws-grid3 { display: grid; gap: 12px 16px; }
+/* minmax(0, …) so a long select option cannot widen a column and push the rest
+   off the dialog. */
+.ws-grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ws-grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* What the workshop already knows — shown, not re-typed, and visibly not an
+   input so nobody tries to correct it here. */
+.ws-carried {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 18px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  background: var(--bg-soft);
+}
+.ws-carried > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ws-carried span { font-size: 10px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted); }
+.ws-carried b { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ws-convert-note { margin: 0; padding: 14px 24px 0; font-size: 12.5px; color: var(--text-muted); }
+
+/* Not decoration. With no commission and no tech rates, purchase invoices fall
+   through to tech-rate mode with null rates and pay the hub ₹0 on every
+   invoice — silently. This is the warning that stops that being discovered
+   three months later in a payout run. */
+.ws-rate-note {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid #fde68a; border-radius: 8px;
+  background: #fffbeb; color: #92400e;
+  font-size: 12px; line-height: 1.45;
+}
+
+/* Two columns of labelled file pickers.
+   These used to inherit `display:flex` from `.ws-form label`. Moving them into
+   .ws-convert-body left them as bare inline <label>s, so seven labels and seven
+   file inputs reflowed into one paragraph of text. They carry their own layout
+   now instead of borrowing a parent's. */
+.ws-docs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  padding: 4px 0 2px;
+}
+.ws-doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+/* The name must not push the picker off the row. */
+.ws-doc-row > span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0;
+}
+.ws-doc-row input[type="file"] {
+  flex-shrink: 0;
+  max-width: 148px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+/* The note under the grid runs the full width rather than sitting in column 1. */
+.ws-docs > .ws-sub { grid-column: 1 / -1; }
+
+.ws-problem {
+  margin: 0 24px; padding: 8px 11px;
+  border-radius: 8px; background: #fef2f2; color: #b91c1c;
+  font-size: 12px; font-weight: 500;
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+.ws-toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  z-index: 3000;
+  padding: 10px 18px; border-radius: 9px;
+  background: var(--text); color: #fff;
+  font-size: 13px; font-weight: 500;
+  box-shadow: 0 10px 30px rgba(0,0,0,.2);
+}
+.ws-toast--error { background: #dc2626; }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+/* ── Card list (below 760px) ──────────────────────────────────────────────
+   The table is replaced here, not squeezed. Six columns on a 390px screen is a
+   horizontal scrollbar showing two of them, and hiding columns — which is what
+   this page did before — just loses the data. */
+.ws-cards { display: flex; flex-direction: column; }
+
+.ws-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ws-card-top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+}
+.ws-card-name {
+  font-size: 14px; font-weight: 700; line-height: 1.3;
+  min-width: 0; /* so a long name wraps instead of shoving the status off */
+}
+.ws-card-status {
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+/* A real <dl>: the table had column headers to say what each value was, and a
+   card has nothing unless the label travels with the value. */
+.ws-card-meta { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.ws-card-meta > div { display: flex; gap: 8px; align-items: baseline; }
+.ws-card-meta dt {
+  flex: 0 0 62px;
+  font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.ws-card-meta dd { margin: 0; font-size: 12.5px; min-width: 0; word-break: break-word; }
+
+/* Wrapped, not clipped. The desktop row hides the overflow behind a title
+   tooltip; a touch screen has no hover, so truncating hides it for good. */
+.ws-card-reason {
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.ws-card-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding-top: 2px;
+}
+
+@media (max-width: 760px) {
+  /* ── Forms ──
+     One column. Two fields across a phone leaves each too narrow to read the
+     label, let alone the value. */
+  .ws-form { grid-template-columns: minmax(0, 1fr); }
+  .ws-grid2, .ws-grid3, .ws-carried, .ws-docs { grid-template-columns: minmax(0, 1fr); }
+
+  /* ── Modals go near full-screen ──
+     A 720px dialog centred in a 390px viewport is all margin. dvh, not vh, so
+     the footer is not hidden behind a collapsing address bar — the Cancel and
+     Create buttons live down there. */
+  .ws-modal { max-width: 100%; margin: 0; border-radius: 12px 12px 0 0; }
+  .ws-form         { padding: 14px 16px; max-height: calc(100dvh - 210px); }
+  .ws-convert-body { padding: 12px 14px; max-height: calc(100dvh - 210px); }
+
+  /* Full-width buttons in a row that would otherwise crowd two 44px targets
+     into a corner. */
+  .ws-modal-foot { padding: 12px 14px; gap: 8px; }
+  .ws-modal-foot .btn { flex: 1; min-height: 44px; }
+
+  .ws-tabs { padding: 0 12px; }
+  .ws-tab  { padding: 12px; min-height: 44px; }
+
+  /* ── Touch targets ──
+     28px is a cursor size. 40px is the smallest comfortably tappable one, and
+     these sit side by side. */
+  .ws-icon { width: 40px; height: 40px; }
+  .ws-convert { padding: 9px 14px !important; font-size: 13px; min-height: 40px; }
+  .ws-upload  { min-height: 40px; }
+
+  .ws-doc-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .ws-doc-row input[type="file"] { max-width: 100%; }
+  .ws-doc-row > span { flex: none; }
+
+  /* Bigger thumbnails: 92px was sized for a dense desktop grid, and a photo of
+     a workshop floor at that size on a phone shows nothing. */
+  .ws-photo { width: calc(50% - 4px); height: 96px; }
+  .ws-photo button { width: 26px; height: 26px; }
+
+  /* The toast clears the mobile bottom nav rather than sitting under it. */
+  .ws-toast { bottom: 78px; left: 12px; right: 12px; transform: none; text-align: center; }
+}
+
+/* Narrow phones: the meta label column costs more than it earns below ~360px. */
+@media (max-width: 380px) {
+  .ws-card-meta > div { flex-direction: column; gap: 1px; }
+  .ws-card-meta dt { flex: none; }
+  .ws-photo { width: 100%; height: 150px; }
+}

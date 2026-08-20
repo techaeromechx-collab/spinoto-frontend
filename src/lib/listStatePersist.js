@@ -9,8 +9,20 @@
  *
  * Scoped to sessionStorage (not localStorage) so it clears on tab close and
  * never leaks between different browser sessions/users on a shared machine.
+ *
+ * ⚠ "clears on tab close" is NOT "clears on logout". Logging out and back in as
+ * a different user in the same tab keeps every saved filter — which is how an
+ * admin's unfiltered hub selection ended up applied to a hub partner's session.
+ * clearAllListState() below is called from logout for exactly that reason. It
+ * is defence in depth: hub scoping is enforced server-side now, so no client
+ * filter can widen a result set, but a hub partner should not open the app to
+ * somebody else's saved view either.
  * ─────────────────────────────────────────────────────────────────────────────
  */
+
+// Every key this module owns starts with this. A prefix sweep rather than a
+// hardcoded list, so a list page added later cannot be forgotten here.
+const LIST_STATE_PREFIX = 'sp_';
 
 export function readListState(key, fallback = {}) {
   try {
@@ -36,4 +48,25 @@ export function writeListState(key, value) {
 export function patchListState(key, partial) {
   const current = readListState(key);
   writeListState(key, { ...current, ...partial });
+}
+
+/**
+ * Drops every persisted list view. Called on logout so the next person to sign
+ * in on this tab starts from the default filters rather than inheriting the
+ * previous session's.
+ *
+ * Keys are collected before removing: mutating sessionStorage while iterating
+ * it by index shifts the remaining entries and silently skips half of them.
+ */
+export function clearAllListState() {
+  try {
+    const keys = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith(LIST_STATE_PREFIX)) keys.push(k);
+    }
+    keys.forEach(k => sessionStorage.removeItem(k));
+  } catch {
+    // Private mode / disabled storage — nothing was persisted either way.
+  }
 }
