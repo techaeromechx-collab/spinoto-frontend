@@ -381,9 +381,31 @@ function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
   const [saving,       setSaving]       = useState(false);
   const [err,          setErr]          = useState('');
   const [propagateNumber, setPropagateNumber] = useState(false);
+  // Correcting the make or model. Ticked by default: the overwhelmingly common
+  // reason to open this form is that the vehicle is WRONG, and work not yet
+  // invoiced should be right. Unticking is the exception.
+  const [propagateDetails, setPropagateDetails] = useState(true);
+  // ...and reaching back into finished jobs. Unticked by default, because it
+  // rewrites documents the customer already has.
+  const [propagateDetailsAll, setPropagateDetailsAll] = useState(false);
   const [usage, setUsage] = useState(null); // { appointments, estimates, invoices } for the ORIGINAL plate
 
   const plateChanged = form.vehicle_number.trim().toUpperCase() !== originalPlate;
+
+  // Did the CAR change, as opposed to its colour or the notes about it?
+  //
+  // Only type/make/model, because those are the only three the cascade writes
+  // — appointments and estimates have no colour, year or notes column. Editing
+  // a colour must not offer to rewrite anything, and comparing loosely here
+  // would put a checkbox in front of somebody who only fixed a typo in a note.
+  //
+  // Compared as strings: the form holds select values, which are strings, while
+  // the vehicle record holds numbers.
+  const same = (a, b) => String(a ?? '') === String(b ?? '');
+  const detailsChanged =
+    !same(form.vehicle_type_id, vehicle.vehicle_type_id) ||
+    !same(form.make_id,         vehicle.make_id) ||
+    !same(form.model_id,        vehicle.model_id);
 
   useEffect(() => {
     api(`/api/customers/${encodeURIComponent(mobile)}/vehicle-usage?number=${encodeURIComponent(originalPlate)}`)
@@ -442,6 +464,11 @@ function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
           year:            form.year ? parseInt(form.year, 10) : null,
           notes:           form.notes           || null,
           propagate_vehicle_number: plateChanged && propagateNumber,
+          // Sent only when something about the vehicle actually changed —
+          // saving a colour edit must not rewrite make/model across the
+          // customer's history for no reason.
+          propagate_details:     detailsChanged && propagateDetails,
+          propagate_details_all: detailsChanged && propagateDetailsAll,
         },
       });
       onSaved();
@@ -517,6 +544,45 @@ function EditVehicleModal({ mobile, vehicle, onClose, onSaved }) {
               />
             </div>
           </div>
+
+          {/* ── Where a corrected vehicle should reach ────────────────────
+              Shown only when the type, make or model actually changed —
+              correcting a colour has nothing to cascade, and a checkbox that
+              appears on every edit is one people stop reading.
+
+              Two boxes, not one, because they undo different amounts of
+              history. The first fixes work still to be done. The second
+              rewrites records the customer has already been sent, which is
+              sometimes right and never the default. */}
+          {detailsChanged && (
+            <div className="aveh-cascade">
+              <label className="aveh-checkbox-row">
+                <input type="checkbox" checked={propagateDetails}
+                  onChange={e => {
+                    setPropagateDetails(e.target.checked);
+                    // The wider box cannot outlive the narrower one: "update
+                    // finished jobs but not the open one" is not a state
+                    // anybody means to be in.
+                    if (!e.target.checked) setPropagateDetailsAll(false);
+                  }}/>
+                <span>Update this vehicle on jobs not yet invoiced</span>
+              </label>
+
+              <label className="aveh-checkbox-row">
+                <input type="checkbox" checked={propagateDetailsAll}
+                  disabled={!propagateDetails}
+                  onChange={e => setPropagateDetailsAll(e.target.checked)}/>
+                <span>
+                  Also update completed jobs and estimates
+                  <span className="aveh-hint" style={{ display: 'block', marginTop: 2 }}>
+                    Changes records the customer may already have been sent. Invoices keep
+                    their own figures — only the vehicle changes, and purchase invoices
+                    follow their estimate automatically.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
 
           {selectedModel && (
             <div className="aveh-autoinfo">
@@ -1005,20 +1071,22 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                      onClick={() => setMoreOpen(false)}>
                     <MessageCircle size={14}/> Open WhatsApp
                   </a>
-                  {/* ── One Payment button ──────────────────────────────
-                      Take Payment and Record Payment were two buttons for one
-                      act, and choosing between them meant knowing whether the
-                      money was for an invoice before you had seen the invoices.
-                      The dialog asks for the amount and works that out. See
-                      PaymentModal in CustomerPaymentsTab.
+                  {/* ── ONE Payment button ─────────────────────────────────
+                      This was two — "Take Payment" and "Record Payment" — and
+                      which one you needed depended on where the money was going,
+                      which is the thing the dialog is for working out. The
+                      dialog now handles all three destinations (an invoice, a
+                      job deposit, credit on account) and picks a sensible
+                      default, so the choice belongs inside it rather than in
+                      front of it.
 
-                      Shown to anyone who can do ANY of the three things it
-                      offers. The dialog then disables the branches they cannot
-                      use, with the reason — rather than this button quietly
-                      meaning something different per person. */}
+                      Shown to anyone who can do ANY of the three. The dialog
+                      then disables the branches they cannot use, and says why —
+                      rather than one button quietly meaning something different
+                      per person. */}
                   {(canCollect || canRecordPay || canAllocate) && (
                     <button type="button" className="cust-more-item"
-                            onClick={() => { setMoreOpen(false); startPayAction('take'); }}>
+                            onClick={() => { setMoreOpen(false); startPayAction('record'); }}>
                       <Wallet size={14}/> Payment
                     </button>
                   )}
@@ -1487,7 +1555,6 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
               <CustomerPaymentsTab
                 mobile={mobile}
                 invoices={data.invoices || []}
-                estimates={data.estimates || []}
                 credit={credit}
                 showToast={showToast}
                 action={payAction}

@@ -142,59 +142,17 @@ function formatDuration(seconds) {
   return `${m}m`;
 }
 
-// ── Lost Reason options ───────────────────────────────────────────────────────
-export const LOST_REASONS = [
-  'Price too high',
-  'Chose competitor',
-  'Not interested',
-  'Budget issue',
-  'No response',
-  'Wrong requirement',
-  'Other',
-];
+/* ── Lost no longer asks for a reason ──────────────────────────────────────
+   LOST_REASONS and LostReasonModal lived here. Setting a lead to Lost now
+   applies immediately from all three places it can be set — the edit form, the
+   inline dropdown on a row, and the bulk bar — because being stopped by a
+   dialog on the one status you set most often, most often in batches, cost
+   more than the reason was worth.
 
-// Mini modal shown when user changes status to "Lost"
-function LostReasonModal({ statusName, onConfirm, onCancel }) {
-  useBodyLock();
-  useEscapeClose(onCancel);
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState('');
-
-  function handleConfirm() {
-    if (!reason) { setError('Please select a reason.'); return; }
-    onConfirm(reason);
-  }
-
-  return (
-    <div className="lr-backdrop">
-      <div className="lr-modal" onClick={e => e.stopPropagation()}>
-        <div className="lr-header">
-          <span className="lr-title">Why is this lead lost?</span>
-          <button className="lr-close" onClick={onCancel}><X size={16} /></button>
-        </div>
-        <div className="lr-body">
-          <p className="lr-sub">
-            Status is being changed to <strong>{statusName}</strong>. Select a reason so you can track where leads drop off.
-          </p>
-          <div className="lr-reasons">
-            {LOST_REASONS.map(r => (
-              <button
-                key={r} type="button"
-                className={`lr-reason-btn${reason === r ? ' lr-reason-btn--active' : ''}`}
-                onClick={() => { setReason(r); setError(''); }}
-              >{r}</button>
-            ))}
-          </div>
-          {error && <p className="lr-error"><AlertCircle size={12} /> {error}</p>}
-        </div>
-        <div className="lr-footer">
-          <button className="lr-btn-cancel" onClick={onCancel}>Cancel</button>
-          <button className="lr-btn-confirm" onClick={handleConfirm}>Mark as Lost</button>
-        </div>
-      </div>
-    </div>
-  );
-}
+   leads.lost_reason is NOT dropped and nothing clears it: reasons recorded
+   before this still show under the lead's name and in its timeline, and a lead
+   that already has one keeps it when it is edited. There is simply no longer a
+   way to enter a new one, so treat the field as historical. */
 
 // ── Avatar helpers ────────────────────────────────────────────────────────────
 const AVATAR_STYLES = [
@@ -1252,7 +1210,6 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [priceRecalcNotice, setPriceRecalcNotice] = useState(false); // shown after vehicle-change recalc
-  const [lostModal, setLostModal] = useState(null); // { statusName } when intercepting Lost
   const [actionModal, setActionModal] = useState(null); // { statusName, logsCall, needsFollowUp }
   const [actionData, setActionData] = useState(null); // call outcome, follow_up_date, etc.
   const [existingCustomer, setExistingCustomer] = useState(null);
@@ -1695,9 +1652,12 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
                       const newSt = e.target.value;
                       const statusObj = statusList.find(s => s.name === newSt);
 
-                      if (newSt.toLowerCase().includes('lost') && !form.status.toLowerCase().includes('lost')) {
-                        setLostModal({ statusName: newSt });
-                      } else if (statusObj?.converts_to_appointment && onOpenConvert) {
+                      /* No Lost branch any more — it falls through to the
+                         same flags every other status obeys. If somebody has
+                         ticked "logs call" or "needs follow-up" on Lost in
+                         Settings, it opens that modal like any other status
+                         would; untick them there to make it fully instant. */
+                      if (statusObj?.converts_to_appointment && onOpenConvert) {
                         onClose();
                         onOpenConvert({
                           statusName: newSt, leadId: lead.id, leadName: lead.name,
@@ -1997,16 +1957,6 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
           </div>
         </form>
       </div>
-      {lostModal && (
-        <LostReasonModal
-          statusName={lostModal.statusName}
-          onConfirm={reason => {
-            setForm(f => ({ ...f, status: lostModal.statusName, lost_reason: reason }));
-            setLostModal(null);
-          }}
-          onCancel={() => setLostModal(null)}
-        />
-      )}
       {actionModal && (
         <StatusActionModal
           statusName={actionModal.statusName}
@@ -3220,7 +3170,6 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const [lostModal, setLostModal] = useState(null);   // { statusName }
   const [actionModal, setActionModal] = useState(null); // { statusName, logsCall, needsFollowUp }
   const btnRef = useRef(null);
   const dropRef = useRef(null);
@@ -3268,19 +3217,15 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
   async function pick(name) {
     if (name === current) { setOpen(false); return; }
     const statusObj = statusList.find(s => s.name === name);
-    // 1. Intercept "Lost" status — require a reason first
-    if (name.toLowerCase().includes('lost')) {
-      setOpen(false);
-      setLostModal({ statusName: name });
-      return;
-    }
-    // 2. Intercept "converts_to_appointment" flag — open appointment form
+    // Lost is no longer intercepted — it takes the same path as any other
+    // status and saves straight away.
+    // 1. Intercept "converts_to_appointment" flag — open appointment form
     if (statusObj?.converts_to_appointment) {
       setOpen(false);
       onOpenConvert?.({ statusName: name, leadId, leadName, saveFn: save });
       return;
     }
-    // 3. Intercept logs_call and/or needs_follow_up — open merged action modal
+    // 2. Intercept logs_call and/or needs_follow_up — open merged action modal
     if (statusObj?.logs_call || statusObj?.needs_follow_up) {
       setOpen(false);
       setActionModal({
@@ -3327,13 +3272,6 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
 
   return (
     <>
-      {lostModal && (
-        <LostReasonModal
-          statusName={lostModal.statusName}
-          onConfirm={reason => { setLostModal(null); save(lostModal.statusName, reason); }}
-          onCancel={() => setLostModal(null)}
-        />
-      )}
       {actionModal && (
         <StatusActionModal
           statusName={actionModal.statusName}
@@ -3568,13 +3506,13 @@ export default function LeadsPage() {
   const [agentsList, setAgentsList] = useState([]);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
-  // Bulk status change. bulkLost holds the status name while the reason is
-  // being asked for — a "Lost" status needs one, exactly as it does for a
-  // single lead, and applying it to twenty leads without asking would put
-  // twenty blank reasons in the pipeline report.
+  // Bulk status change. bulkFollow holds the chosen status while the ONE
+  // follow-up for the whole selection is being filled in — a status flagged
+  // needs_follow_up in Settings asks for a date here exactly as it does on a
+  // single lead. Every other status applies straight away.
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
   const [bulkStatusBusy, setBulkStatusBusy] = useState(false);
-  const [bulkLost, setBulkLost] = useState(null);   // { statusName }
+  const [bulkFollow, setBulkFollow] = useState(null);   // { statusName }
 
   // Modals
   const [viewId, setViewId] = useState(null);
@@ -3608,7 +3546,19 @@ export default function LeadsPage() {
     closedRef.current = false;
     resolvedTokenRef.current = l.public_token;
     setViewId(l.id);
-    navigate(`/leads/${l.public_token}`);
+    // ── Only route by token when there IS one ───────────────────────────────
+    //
+    // Template literals stringify null, so `/leads/${null}` is the four
+    // characters "null" — a perfectly valid-looking URL that renders "null" in
+    // the breadcrumb and 404s on /api/leads/by-token/null. Two populations of
+    // rows still hit this: anything created before migration 085 (which added
+    // the column and never backfilled) and every lead ever created by Bulk
+    // Upload (which never set it). Migration 165 repairs both, and this guard
+    // is what stops a future null becoming a broken URL again.
+    //
+    // With no token the record still opens — setViewId above does that — the
+    // URL simply stays put rather than becoming a link that goes nowhere.
+    if (l.public_token) navigate(`/leads/${l.public_token}`);
   }
 
   function closeLead() {
@@ -3639,11 +3589,17 @@ export default function LeadsPage() {
   // refresh, or browser back/forward) — resolve the token to a numeric id
   // so ViewLeadModal can load it the same way it always has.
   useEffect(() => {
-    if (!token) { setViewId(null); resolvedTokenRef.current = null; return; }
-    if (resolvedTokenRef.current === token) return; // already opening/open
+    // "null" and "undefined" are the STRINGS a template literal makes from a
+    // missing token. They are truthy, so `!token` never caught them, and the
+    // effect happily asked the API for a lead whose token is "null". Treated
+    // as no token at all — which is what they are — so an old bookmarked
+    // /leads/null stops producing a 404 in the console.
+    const real = token && token !== 'null' && token !== 'undefined' ? token : null;
+    if (!real) { setViewId(null); resolvedTokenRef.current = null; return; }
+    if (resolvedTokenRef.current === real) return; // already opening/open
     closedRef.current = false;
-    resolvedTokenRef.current = token;
-    api(`/api/leads/by-token/${token}`)
+    resolvedTokenRef.current = real;
+    api(`/api/leads/by-token/${real}`)
       .then(r => { if (!closedRef.current) setViewId(r.item.id); })
       .catch(() => { resolvedTokenRef.current = null; }); // invalid/unknown token — leave modal closed
   }, [token]);
@@ -3964,23 +3920,44 @@ export default function LeadsPage() {
      no sane way to fill that in once for a selection of twenty. The server
      refuses it too; this list is what stops anybody getting that far.
 
-     Statuses that log a call or ask for a follow-up ARE offered, but the modal
-     that normally collects those details is skipped: a call outcome belongs to
-     one conversation and a follow-up to one lead. The status still moves and
-     the timeline still records it — you just add the call notes per lead
-     afterwards, which is the only place they mean anything.
+     A status that NEEDS A FOLLOW-UP is offered and asks for one — a single
+     date, time and note, written to every lead that moved. "Chase all of
+     these on Tuesday" is one decision, so one answer is the honest shape of
+     it, and skipping the question (which is what this used to do) meant the
+     flag was quietly ignored on exactly the batches where a chased list
+     matters most.
 
-     A LOST status is the exception that keeps its prompt. One reason genuinely
-     can describe a batch ("price", "went elsewhere"), and a Lost lead with no
-     reason is the one gap the pipeline report cannot fill in later. */
+     A status that LOGS A CALL is offered and does NOT ask. A call outcome
+     describes one conversation; there is no answer that is true of twenty. The
+     status still moves and the timeline still records it — you add the call
+     notes per lead as you make the calls, which is the only place they mean
+     anything. A status with both flags asks for the follow-up only.
+
+     A LOST status is no exception any more. It used to stop and ask for a
+     reason; it now applies like everything else here. leads.lost_reason is
+     left alone rather than blanked — a lead that already carries one keeps
+     showing it — so the field reads as history, not as something this screen
+     maintains. */
   const bulkStatusOptions = statusList.filter(s => !s.converts_to_appointment);
 
-  async function applyBulkStatus(statusName, lostReason = null) {
+  /* The second argument is a follow-up, and it is the only extra this screen
+     can supply. No lost_reason: the endpoint still accepts one and the
+     single-lead PATCH still re-sends an existing one, but nothing here asks
+     for a reason any more, and a parameter no caller can fill is a parameter
+     that goes stale. */
+  async function applyBulkStatus(statusName, followUp = null) {
     setBulkStatusBusy(true);
     setBulkStatusOpen(false);
     try {
       const body = { lead_ids: [...selectedLeads], status: statusName };
-      if (lostReason) body.lost_reason = lostReason;
+      if (followUp?.follow_up_date) {
+        body.follow_up_date = followUp.follow_up_date;
+        body.follow_up_time = followUp.follow_up_time || '09:00';
+        // `note` is what StatusActionModal calls it; the API calls it
+        // follow_up_note. Renamed here rather than in either of them, because
+        // the modal is shared with the single-lead path that sends `note`.
+        if (followUp.note) body.follow_up_note = followUp.note;
+      }
       const r = await api('/api/leads/bulk-status', { method: 'POST', body });
 
       // Reflect it locally rather than refetching the list: the server told us
@@ -3999,6 +3976,10 @@ export default function LeadsPage() {
       if (r.unchanged)         bits.push(`${r.unchanged} already there`);
       if (r.skipped_locked)    bits.push(`${r.skipped_locked} locked`);
       if (r.skipped_converted) bits.push(`${r.skipped_converted} already converted`);
+      // Counted from the RESPONSE, not from what was asked for. A follow-up is
+      // only written for leads that actually moved, so saying "12 scheduled"
+      // because twelve were ticked would be a number nobody could reconcile.
+      if (r.follow_ups)        bits.push(`follow-up set for ${r.follow_up_date}`);
       showToast(bits.join(' · '), r.updated ? 'success' : 'warning');
     } catch (e) {
       showToast(e.message || 'Could not change the status.', 'error');
@@ -4036,14 +4017,24 @@ export default function LeadsPage() {
         />
       )}
 
-      {/* One reason for the whole selection. At page level, like the convert
-          modal above it, so re-rendering the list underneath cannot close it
-          half-answered. */}
-      {bulkLost && (
-        <LostReasonModal
-          statusName={bulkLost.statusName}
-          onConfirm={reason => { const m = bulkLost; setBulkLost(null); applyBulkStatus(m.statusName, reason); }}
-          onCancel={() => setBulkLost(null)}
+      {/* One follow-up for the whole selection.
+
+          The SAME modal the single-lead path opens, with the call half
+          switched off — a call outcome describes one conversation and cannot
+          describe twenty, so bulk asks for the date and nothing else. Reusing
+          it means the date picker, the default 09:00 and the "pick a date"
+          validation cannot drift between the two places.
+
+          At page level, like the convert modal, so re-rendering the list
+          underneath cannot close it half-filled. */}
+      {bulkFollow && (
+        <StatusActionModal
+          statusName={bulkFollow.statusName}
+          leadName={`${selectedLeads.size} selected lead${selectedLeads.size !== 1 ? 's' : ''}`}
+          logsCall={false}
+          needsFollowUp
+          onConfirm={data => { const m = bulkFollow; setBulkFollow(null); applyBulkStatus(m.statusName, data); }}
+          onCancel={() => setBulkFollow(null)}
         />
       )}
 
@@ -4802,11 +4793,13 @@ export default function LeadsPage() {
                         key={s.id}
                         className="lp-bulk-dd-opt"
                         onClick={() => {
-                          // Same interception the single-lead dropdown makes,
-                          // so "Lost" means the same thing from either place.
-                          if (s.name.toLowerCase().includes('lost')) {
+                          // The one interception left, and it is the flag's
+                          // own rule rather than a special case for a status
+                          // name: needs_follow_up means "this status is not
+                          // finished until somebody says when to chase it".
+                          if (s.needs_follow_up) {
                             setBulkStatusOpen(false);
-                            setBulkLost({ statusName: s.name });
+                            setBulkFollow({ statusName: s.name });
                             return;
                           }
                           applyBulkStatus(s.name);

@@ -3825,7 +3825,13 @@ export default function EstimatesPage() {
     closedRef.current = false;
     resolvedTokenRef.current = est.public_token;
     setSelectedId(est.id);
-    navigate(`${P.estimates}/${est.public_token}`);
+    // Only route by token when there IS one. `${null}` stringifies to the
+    // four characters "null" — a valid-looking URL that 404s on by-token/null
+    // and prints "null" in the breadcrumb. Rows from before migration 085
+    // (added the column, never backfilled) still have nulls; 165 repairs them
+    // and this stops a future one becoming a broken URL. The record still
+    // opens either way — only the address bar is skipped.
+    if (est.public_token) navigate(`${P.estimates}/${est.public_token}`);
   }
 
   function handleEstimateLoaded(est) {
@@ -3836,7 +3842,11 @@ export default function EstimatesPage() {
   }
 
   react.useEffect(() => {
-    if (!token) {
+    // "null"/"undefined" are the STRINGS a template literal makes from a
+    // missing token. Truthy, so `!token` never caught them and the effect
+    // asked the API for a record whose token is literally "null".
+    const real = token && token !== 'null' && token !== 'undefined' ? token : null;
+    if (!real) {
       // Only clear if we were previously showing a token-resolved estimate —
       // don't stomp on a `selectedId` that came from location.state (e.g. an
       // inbound deep link) before it's had a chance to resolve its own token.
@@ -3845,9 +3855,9 @@ export default function EstimatesPage() {
       return;
     }
     closedRef.current = false;
-    if (resolvedTokenRef.current === token) return;
-    resolvedTokenRef.current = token;
-    api(`/api/estimates/by-token/${token}`)
+    if (resolvedTokenRef.current === real) return;
+    resolvedTokenRef.current = real;
+    api(`/api/estimates/by-token/${real}`)
       .then(r => { if (!closedRef.current) setSelectedId(r.item.id); })
       .catch(() => { resolvedTokenRef.current = null; });
   }, [token]);

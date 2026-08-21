@@ -1371,7 +1371,7 @@ function BankPayoutModal({ hubName, hubId, readiness, invoices, onClose, onSucce
  * work for two different people: missing bank details is paperwork on the hub
  * record, missing registration is one button here.
  */
-function PayoutReadinessBand({ readiness, hubName, canRegister, onRegister, registering }) {
+function PayoutReadinessBand({ readiness, hubName }) {
   if (!readiness || readiness.error || !readiness.blocker) return null;
   const needsDetails = readiness.blocker === 'bank_details';
   return (
@@ -1380,18 +1380,26 @@ function PayoutReadinessBand({ readiness, hubName, canRegister, onRegister, regi
       <div style={{ flex:1 }}>
         <strong>{hubName} cannot be paid by bank transfer yet.</strong>
         <div style={{ marginTop:3, opacity:0.9 }}>
+          {/* ── Both blockers now point at the SAME place ─────────────────
+              There used to be a Register account button here, and the two
+              blockers sent you to two different screens: "add bank details"
+              to the hub record, "register" to a button on this page. They are
+              consecutive steps on one form, so that split made the second one
+              feel like a separate system.
+
+              Registration now lives on the hub's own record, beside the
+              account it registers — which is also where it has to be, because
+              editing the account number un-registers the hub (a database
+              trigger, migration 144) and the person editing is the one who
+              needs to see it. */}
           {needsDetails
-            ? `Missing ${readiness.missing.join(', ')}. Add them on the hub record, then come back here.`
+            ? `Missing ${readiness.missing.join(', ')}.`
             : 'Bank details are on file but the account is not registered with the payout provider yet.'}
+          {' '}Open the hub under <strong>Master Data → Hubs</strong> to
+          {needsDetails ? ' add them and register the account' : ' register the account'}.
           {' '}Until then, pay this hub from your banking app and record it here with <strong>Pay</strong>.
         </div>
       </div>
-      {!needsDetails && canRegister && (
-        <button className="po-btn-primary" style={{ padding:'5px 14px', fontSize:12, whiteSpace:'nowrap' }}
-                onClick={onRegister} disabled={registering}>
-          {registering ? 'Registering…' : 'Register account'}
-        </button>
-      )}
     </div>
   );
 }
@@ -1414,22 +1422,12 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
   // which is a bookkeeping entry. This one moves real money and cannot be undone
   // from this application.
   const canPayOnline  = useCan('PAY_HUB_ONLINE');
-  const canRegister   = useCan('MANAGE_HUB_PAYOUT_ACCOUNT', 'PAY_HUB_ONLINE');
+  // canRegister used to live here for the Register account button. That button
+  // moved to the hub's own record (Master Data → Hubs → view a hub), so this
+  // page no longer needs the permission — see PayoutReadinessBand below.
   const [readyKey, setReadyKey]   = useState(0);
   const readiness  = useHubPayoutReadiness(hubId, readyKey);
-  const [registering, setRegistering] = useState(false);
   const [bankModal, setBankModal] = useState(null);   // invoices to transfer for
-
-  async function registerHub() {
-    setRegistering(true);
-    try {
-      await api(`/api/hub-payouts/hubs/${hubId}/register`, { method: 'POST' });
-      showToast?.(`${hubName} is registered — bank transfers are now available.`);
-      setReadyKey(k => k + 1);
-    } catch (err) {
-      showToast?.(err.message || 'Could not register the hub account.', 'error');
-    } finally { setRegistering(false); }
-  }
 
   // Offered only when the money can actually go somewhere. A disabled Pay-by-
   // bank button on an unregistered hub is a button that explains nothing; the
@@ -1497,7 +1495,6 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
           {canPayOnline && (
             <PayoutReadinessBand
               readiness={readiness} hubName={hubName}
-              canRegister={canRegister} onRegister={registerHub} registering={registering}
             />
           )}
 

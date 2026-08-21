@@ -590,23 +590,68 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                             }}
                             onBlur={handleMobileBlur} />
                           {dupChecking && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, display: 'block' }}>Checking for duplicates…</span>}
+                          {/* ── Duplicate mobile ─────────────────────────────
+                              The check behind this is the one lead query that
+                              is NOT scoped to what you may see — deliberately,
+                              because the advisor most likely to create a second
+                              lead for a customer is exactly the one who cannot
+                              see the first.
+
+                              So what it shows is rationed to what acting on it
+                              needs: that the number is taken, and WHO TO ASK.
+                              Two things changed here:
+
+                                · it named the CREATOR, which answered a
+                                  question nobody had — whoever typed the row
+                                  in months ago is not who owns the customer
+                                  today. It now names the assignee.
+
+                                · "View Lead →" was offered to everybody and
+                                  went nowhere for anyone outside the lead's
+                                  scope: getLead applies the normal filter and
+                                  answers 404. Being told a record exists, given
+                                  a link, and having the link fail reads as a
+                                  broken CRM rather than a boundary. The server
+                                  now says whether the link will work. */}
                           {duplicates.length > 0 && (
                             <div style={{ marginTop: 6, background: '#fffbeb', border: '1.5px solid #fcd34d', borderRadius: 8, padding: '10px 12px' }}>
                               <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
-                                ⚠️ Duplicate mobile detected
+                                ⚠️ This number is already in the pipeline
                               </div>
                               {duplicates.map(d => (
-                                <div key={d.id} style={{ fontSize: 12, color: '#78350f', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <span><strong>{d.name || d.mobile}</strong> · {d.status || 'New Lead'} · by {d.created_by_name || '—'}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => { onClose(); window.dispatchEvent(new CustomEvent('open-lead-view', { detail: { id: d.id } })); }}
-                                    style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', textDecoration: 'underline' }}>
-                                    View Lead →
-                                  </button>
+                                <div key={d.id} style={{ fontSize: 12, color: '#78350f', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                  {/* The customer's name only when this person
+                                      may open the record anyway. Otherwise the
+                                      number they already typed, which tells them
+                                      nothing they did not know. */}
+                                  <span>
+                                    {d.can_view
+                                      ? <><strong>{d.name || d.mobile}</strong> · {d.status || 'New Lead'} · </>
+                                      : <>{d.status || 'New Lead'} · </>}
+                                    {d.assigned_to_name
+                                      ? <>assigned to <strong>{d.assigned_to_name}</strong></>
+                                      : <>not assigned to anyone yet</>}
+                                  </span>
+                                  {d.can_view && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { onClose(); window.dispatchEvent(new CustomEvent('open-lead-view', { detail: { id: d.id } })); }}
+                                      style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', textDecoration: 'underline', flexShrink: 0 }}>
+                                      View Lead →
+                                    </button>
+                                  )}
                                 </div>
                               ))}
-                              <div style={{ fontSize: 11, color: '#92400e', marginTop: 4 }}>You can still save this lead if it's intentional.</div>
+                              {/* The next step, and it differs by whether they
+                                  can look. Somebody who cannot open the lead
+                                  needs telling that talking to the assignee is
+                                  the move — otherwise the only action the screen
+                                  leaves them is to save a duplicate. */}
+                              <div style={{ fontSize: 11, color: '#92400e', marginTop: 4 }}>
+                                {duplicates.some(d => !d.can_view)
+                                  ? 'Check with whoever it is assigned to before creating another one. You can still save if it is intentional.'
+                                  : "You can still save this lead if it's intentional."}
+                              </div>
                             </div>
                           )}
                           {existingCustomer && (

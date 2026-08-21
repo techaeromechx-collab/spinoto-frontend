@@ -2405,7 +2405,13 @@ export default function CustomerInvoicesPage() {
     closedRef.current = false;
     resolvedTokenRef.current = inv.public_token;
     setSelectedId(inv.id);
-    navigate(`${P.customerInvoices}/${inv.public_token}`);
+    // Only route by token when there IS one. `${null}` stringifies to the
+    // four characters "null" — a valid-looking URL that 404s on by-token/null
+    // and prints "null" in the breadcrumb. Rows from before migration 085
+    // (added the column, never backfilled) still have nulls; 165 repairs them
+    // and this stops a future one becoming a broken URL. The record still
+    // opens either way — only the address bar is skipped.
+    if (inv.public_token) navigate(`${P.customerInvoices}/${inv.public_token}`);
   }
 
   function closeInvoice() {
@@ -2427,7 +2433,11 @@ export default function CustomerInvoicesPage() {
 
   // Resolve an inbound /customer-invoices/:token into a selectedId.
   useEffect(() => {
-    if (!token) {
+    // "null"/"undefined" are the STRINGS a template literal makes from a
+    // missing token. Truthy, so `!token` never caught them and the effect
+    // asked the API for a record whose token is literally "null".
+    const real = token && token !== 'null' && token !== 'undefined' ? token : null;
+    if (!real) {
       // Only clear if we were previously showing a token-resolved invoice —
       // do not stomp a selectedId that came from location.state (an inbound
       // deep link) before it has resolved its own token.
@@ -2443,11 +2453,11 @@ export default function CustomerInvoicesPage() {
     // request that resolves to the id we set a moment ago.
     // The fetch still runs for a token that arrived from OUTSIDE — a pasted
     // link, a bookmark, a cross-page navigation — which is what it is for.
-    if (resolvedTokenRef.current === token) return;
+    if (resolvedTokenRef.current === real) return;
 
     // Claimed BEFORE the request, so an effect re-run cannot fire a second one.
     // Cleared again on failure so a retry is possible.
-    resolvedTokenRef.current = token;
+    resolvedTokenRef.current = real;
 
     // NO per-run "cancelled" flag here, and that omission is load-bearing.
     //
@@ -2467,7 +2477,7 @@ export default function CustomerInvoicesPage() {
     // slow response re-opening a record the user has already closed.
     // This is exactly how the Estimates and Purchase Invoices resolvers work,
     // which is why neither of them ever had this bug.
-    api(`/api/customer-invoices/by-token/${token}`)
+    api(`/api/customer-invoices/by-token/${real}`)
       .then(res => { if (!closedRef.current && res?.item?.id) setSelectedId(res.item.id); })
       .catch(() => {
         resolvedTokenRef.current = null;

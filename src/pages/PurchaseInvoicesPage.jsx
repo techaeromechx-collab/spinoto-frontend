@@ -1586,7 +1586,13 @@ export default function PurchaseInvoicesPage() {
     closedRef.current = false;
     resolvedTokenRef.current = inv.public_token;
     setSelectedId(inv.id);
-    navigate(`${P.salesInvoices}/${inv.public_token}`);
+    // Only route by token when there IS one. `${null}` stringifies to the
+    // four characters "null" — a valid-looking URL that 404s on by-token/null
+    // and prints "null" in the breadcrumb. Rows from before migration 085
+    // (added the column, never backfilled) still have nulls; 165 repairs them
+    // and this stops a future one becoming a broken URL. The record still
+    // opens either way — only the address bar is skipped.
+    if (inv.public_token) navigate(`${P.salesInvoices}/${inv.public_token}`);
   }
 
   function closeInvoice() {
@@ -1607,7 +1613,11 @@ export default function PurchaseInvoicesPage() {
   }
 
   useEffect(() => {
-    if (!token) {
+    // "null"/"undefined" are the STRINGS a template literal makes from a
+    // missing token. Truthy, so `!token` never caught them and the effect
+    // asked the API for a record whose token is literally "null".
+    const real = token && token !== 'null' && token !== 'undefined' ? token : null;
+    if (!real) {
       // Only clear if we were previously showing a token-resolved invoice —
       // don't stomp on a `selectedId` that came from location.state (e.g. an
       // inbound deep link from Estimates) before it's had a chance to resolve
@@ -1617,9 +1627,9 @@ export default function PurchaseInvoicesPage() {
       return;
     }
     closedRef.current = false;
-    if (resolvedTokenRef.current === token) return;
-    resolvedTokenRef.current = token;
-    api(`/api/purchase-invoices/by-token/${token}`)
+    if (resolvedTokenRef.current === real) return;
+    resolvedTokenRef.current = real;
+    api(`/api/purchase-invoices/by-token/${real}`)
       .then(r => { if (!closedRef.current) setSelectedId(r.item.id); })
       .catch(() => { resolvedTokenRef.current = null; });
   }, [token]);

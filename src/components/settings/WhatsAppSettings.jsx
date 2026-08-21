@@ -4,6 +4,11 @@ import { api } from '../../api/client.js';
 // and reusing it means this panel cannot drift from the rest of the app.
 import PaginationBar from '../PaginationBar.jsx';
 import WhatsAppRoutingTab from './WhatsAppRoutingTab.jsx';
+// Their own files rather than two more functions at the bottom of this one.
+// This module is already ~2,000 lines and holds five screens; a sixth and a
+// seventh in here would mean nobody can open the file to change a label.
+import WhatsAppImagesTab from './WhatsAppImagesTab.jsx';
+import WhatsAppQuickRepliesTab from './WhatsAppQuickRepliesTab.jsx';
 import {
   MessageCircle, Loader2, AlertTriangle, Send, Check, X, RefreshCw, Zap, Info,
   // Retiring a template, and the add-template form.
@@ -367,9 +372,16 @@ export default function WhatsAppSettings() {
           today's traffic and its delivery ladder, straight off wa_messages. */}
       {stats && <StatsRow stats={stats} />}
 
-      {/* Four questions, four tabs: WHEN does it send (the day-to-day one, so
-          it comes first), WHAT can be sent, WHO receives what comes back, and
-          IS IT CONNECTED. */}
+      {/* Six questions, six tabs: WHEN does it send (the day-to-day one, so it
+          comes first), WHAT can be sent automatically, what an advisor can
+          send BY HAND — the two library tabs — WHO receives what comes back,
+          and IS IT CONNECTED.
+
+          The libraries sit next to Templates because both answer "what may
+          leave this number", and apart from it because a template is approved
+          by Meta and these are not — putting a library inside the Templates
+          tab would be the fastest way to have somebody expect Meta approval
+          for a price list. */}
       <div className="wa-tabs">
         <button
           className={`wa-tab ${tab === 'automations' ? 'wa-tab--active' : ''}`}
@@ -379,6 +391,14 @@ export default function WhatsAppSettings() {
           className={`wa-tab ${tab === 'templates' ? 'wa-tab--active' : ''}`}
           onClick={() => setTab('templates')}
         >Templates</button>
+        <button
+          className={`wa-tab ${tab === 'images' ? 'wa-tab--active' : ''}`}
+          onClick={() => setTab('images')}
+        >Image Library</button>
+        <button
+          className={`wa-tab ${tab === 'quick' ? 'wa-tab--active' : ''}`}
+          onClick={() => setTab('quick')}
+        >Quick Replies</button>
         <button
           className={`wa-tab ${tab === 'routing' ? 'wa-tab--active' : ''}`}
           onClick={() => setTab('routing')}
@@ -396,6 +416,12 @@ export default function WhatsAppSettings() {
       {/* WHO receives an inbound lead. A fourth question alongside the three
           above, and the only one that is about people rather than messages. */}
       {tab === 'routing' && <WhatsAppRoutingTab />}
+
+      {/* WHAT an advisor may send by hand. Both mounted only while their tab
+          is open, so neither fetches on a screen somebody opened to change an
+          automation. */}
+      {tab === 'images' && <WhatsAppImagesTab />}
+      {tab === 'quick'  && <WhatsAppQuickRepliesTab />}
 
       {tab === 'automations' && <AutomationsTab onChanged={loadStats} createSignal={createSignal} />}
 

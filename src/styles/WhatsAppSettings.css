@@ -1131,3 +1131,295 @@
   pointer-events: none;
   user-select: none;
 }
+
+/* ══ Image Library ═════════════════════════════════════════════════════════ */
+.wai { display: flex; flex-direction: column; gap: 14px; }
+
+.wai-loading {
+  display: flex; align-items: center; gap: 8px;
+  padding: 28px; justify-content: center;
+  color: var(--text-muted); font-size: 13px;
+}
+
+.wai-banner--ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+
+/* ── Add row ── */
+.wai-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg, #fff);
+}
+.wai-add-f { display: flex; flex-direction: column; gap: 4px; flex: 1 1 200px; min-width: 0; }
+/* The address is four times longer than the name and gets the room to match,
+   so a pasted ImageKit URL is readable rather than a scrolling sliver. */
+.wai-add-f--wide { flex: 3 1 320px; }
+.wai-add-f label { font-size: 11.5px; font-weight: 600; color: var(--text); }
+.wai-add-f input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg, #fff);
+  font: inherit; font-size: 12.5px; color: var(--text);
+  min-width: 0;
+}
+.wai-add-f input:focus { outline: none; border-color: var(--primary); }
+.wai-add-f em { font-style: normal; font-size: 10.5px; color: var(--text-muted); line-height: 1.4; }
+/* Aligns with the inputs rather than the labels above them. */
+.wai-add-btn { align-self: flex-start; margin-top: 19px; flex: none; }
+
+.wai-count { font-size: 11.5px; color: var(--text-muted); }
+
+.wai-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+.wai-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg, #fff);
+  min-width: 0;
+}
+/* Dimmed, not hidden. An admin has to be able to find the poster they
+   switched off in order to switch it back on. */
+.wai-card--off { background: var(--bg-soft); }
+.wai-card--off .wai-thumb, .wai-card--off .wai-name { opacity: .5; }
+
+.wai-thumb {
+  display: grid; place-items: center;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.wai-thumb img { width: 100%; height: 100%; object-fit: contain; }
+
+.wai-name {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wai-url {
+  font-size: 10.5px; color: var(--text-muted);
+  text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wai-url:hover { color: var(--primary); text-decoration: underline; }
+
+.wai-acts { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+
+.wai-icon {
+  display: inline-grid; place-items: center;
+  width: 26px; height: 26px; padding: 0;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg, #fff); color: var(--text-muted); cursor: pointer;
+}
+.wai-icon:hover { background: var(--bg-soft); color: var(--text); }
+.wai-icon--danger:hover { color: #b4472c; border-color: #f3c6bb; background: #fef4f1; }
+
+.wai-confirm { display: inline-flex; align-items: center; gap: 4px; }
+.wai-del {
+  padding: 5px 9px;
+  border: 1px solid #f3c6bb; border-radius: 7px;
+  background: #fef4f1; color: #b4472c;
+  font: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.wai-del:hover { background: #b4472c; color: #fff; border-color: #b4472c; }
+
+.wai-ghost {
+  padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg, #fff); color: var(--text);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.wai-ghost:hover { background: var(--bg-soft); }
+
+.wai-edit { display: flex; flex-direction: column; gap: 6px; }
+.wai-edit input {
+  padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg, #fff);
+  font: inherit; font-size: 12px; color: var(--text);
+  min-width: 0;
+}
+.wai-edit input:focus { outline: none; border-color: var(--primary); }
+.wai-edit-acts { display: flex; align-items: center; gap: 6px; }
+
+/* ── The on/off switch, shared by both library tabs ── */
+.wai-sw, .waq-sw {
+  display: inline-flex; align-items: center; gap: 6px;
+  cursor: pointer; margin-right: auto;
+}
+.wai-sw input, .waq-sw input { position: absolute; opacity: 0; width: 0; height: 0; }
+.wai-sw > span, .waq-sw > span {
+  position: relative;
+  width: 30px; height: 17px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background .15s ease;
+  flex: none;
+}
+.wai-sw > span::after, .waq-sw > span::after {
+  content: '';
+  position: absolute; top: 2px; left: 2px;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .15s ease;
+}
+.wai-sw input:checked + span, .waq-sw input:checked + span { background: #0f9d76; }
+.wai-sw input:checked + span::after, .waq-sw input:checked + span::after { transform: translateX(13px); }
+.wai-sw input:disabled + span, .waq-sw input:disabled + span { opacity: .5; }
+.wai-sw em, .waq-sw em {
+  font-style: normal; font-size: 10.5px; font-weight: 600;
+  color: var(--text-muted);
+}
+.wai-sw--big > span { width: 38px; height: 21px; }
+.wai-sw--big > span::after { width: 17px; height: 17px; }
+.wai-sw--big input:checked + span::after { transform: translateX(17px); }
+.wai-sw--big { margin-right: 0; }
+
+.wai-empty, .waq-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 34px 20px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--bg-soft);
+  text-align: center;
+  color: var(--text-muted);
+}
+.wai-empty strong, .waq-empty strong { font-size: 13px; color: var(--text); }
+.wai-empty span, .waq-empty span { font-size: 11.5px; line-height: 1.55; max-width: 460px; }
+
+/* ── The paperclip switch ── */
+.wai-upload {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg, #fff);
+}
+.wai-upload > svg { flex: none; margin-top: 2px; color: #0f9d76; }
+/* Off is a real state with a consequence, so it looks like one — the amber
+   that every other "this is restricted now" notice in this app uses. */
+.wai-upload--off { background: #fffbeb; border-color: #fde68a; }
+.wai-upload--off > svg { color: #b45309; }
+.wai-upload-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.wai-upload-txt strong { font-size: 12.5px; color: var(--text); }
+.wai-upload-txt em {
+  font-style: normal; font-size: 11.5px; line-height: 1.55; color: var(--text-muted);
+}
+
+/* ══ Quick Replies ═════════════════════════════════════════════════════════ */
+.waq { display: flex; flex-direction: column; gap: 14px; }
+
+.waq-loading {
+  display: flex; align-items: center; gap: 8px;
+  padding: 28px; justify-content: center;
+  color: var(--text-muted); font-size: 13px;
+}
+.waq-banner--ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+
+.waq-addbar { display: flex; align-items: center; gap: 12px; }
+.waq-count { font-size: 11.5px; color: var(--text-muted); }
+
+.waq-form {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg, #fff);
+}
+.waq-form--inline { border: 0; padding: 0; background: transparent; }
+.waq-form-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.waq-f { display: flex; flex-direction: column; gap: 4px; flex: 1 1 220px; min-width: 0; }
+.waq-f--short { flex: 0 1 180px; }
+.waq-f label { font-size: 11.5px; font-weight: 600; color: var(--text); }
+.waq-f label span { font-weight: 400; color: var(--text-muted); }
+.waq-f input, .waq-f textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg, #fff);
+  font: inherit; font-size: 12.5px; line-height: 1.5; color: var(--text);
+  min-width: 0;
+}
+.waq-f textarea { resize: vertical; }
+.waq-f input:focus, .waq-f textarea:focus { outline: none; border-color: var(--primary); }
+.waq-f em { font-style: normal; font-size: 10.5px; color: var(--text-muted); line-height: 1.4; }
+
+.waq-form-acts { display: flex; align-items: center; gap: 8px; }
+.waq-ghost {
+  padding: 7px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg, #fff); color: var(--text);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.waq-ghost:hover { background: var(--bg-soft); }
+
+.waq-list { display: flex; flex-direction: column; gap: 10px; }
+.waq-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg, #fff);
+}
+.waq-card--off { background: var(--bg-soft); }
+.waq-card--off .waq-head strong, .waq-card--off .waq-msg { opacity: .55; }
+
+.waq-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.waq-head strong { font-size: 13px; color: var(--text); }
+.waq-head code {
+  font-size: 11px; color: var(--text-muted);
+  background: var(--bg-soft); border-radius: 5px; padding: 2px 6px;
+}
+.waq-acts { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.waq-acts .waq-sw { margin-right: 4px; }
+
+.waq-icon {
+  display: inline-grid; place-items: center;
+  width: 26px; height: 26px; padding: 0;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg, #fff); color: var(--text-muted); cursor: pointer;
+}
+.waq-icon:hover { background: var(--bg-soft); color: var(--text); }
+.waq-icon--danger:hover { color: #b4472c; border-color: #f3c6bb; background: #fef4f1; }
+
+.waq-confirm { display: inline-flex; align-items: center; gap: 4px; }
+.waq-del {
+  padding: 5px 9px;
+  border: 1px solid #f3c6bb; border-radius: 7px;
+  background: #fef4f1; color: #b4472c;
+  font: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.waq-del:hover { background: #b4472c; color: #fff; border-color: #b4472c; }
+
+.waq-msg {
+  white-space: pre-wrap;
+  font-size: 12px; line-height: 1.6;
+  color: var(--text-muted);
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+}
+
+@media screen and (max-width: 560px) {
+  .wai-add-btn { margin-top: 0; width: 100%; justify-content: center; }
+  .wai-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .waq-acts { margin-left: 0; width: 100%; }
+}
+
+/* Six tabs no longer fit a narrow settings pane. Scrolling rather than
+   wrapping: a wrapped second row lifts the active underline off the border it
+   is drawn against, and the tab strip stops reading as one strip. */
+.wa-tabs { overflow-x: auto; scrollbar-width: none; }
+.wa-tabs::-webkit-scrollbar { display: none; }
+.wa-tab { flex: none; white-space: nowrap; }

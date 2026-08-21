@@ -3064,7 +3064,13 @@ export default function AppointmentsPage() {
     closedRef.current = false;
     resolvedTokenRef.current = a.public_token;
     setModal({ mode: 'view', appt: a });
-    navigate(`${P.appointments}/${a.public_token}`);
+    // Only route by token when there IS one. `${null}` stringifies to the
+    // four characters "null" — a valid-looking URL that 404s on by-token/null
+    // and prints "null" in the breadcrumb. Rows from before migration 085
+    // (added the column, never backfilled) still have nulls; 165 repairs them
+    // and this stops a future one becoming a broken URL. The record still
+    // opens either way — only the address bar is skipped.
+    if (a.public_token) navigate(`${P.appointments}/${a.public_token}`);
   }
 
   // The calendar carries a SLIM row — twelve columns, no mobile, no pickup, no
@@ -3117,11 +3123,15 @@ export default function AppointmentsPage() {
 
   // Direct token URL entry / refresh / browser back-forward.
   useEffect(() => {
-    if (!token) { setModal(null); resolvedTokenRef.current = null; return; }
-    if (resolvedTokenRef.current === token) return;
+    // "null"/"undefined" are the STRINGS a template literal makes from a
+    // missing token. Truthy, so `!token` never caught them and the effect
+    // asked the API for a record whose token is literally "null".
+    const real = token && token !== 'null' && token !== 'undefined' ? token : null;
+    if (!real) { setModal(null); resolvedTokenRef.current = null; return; }
+    if (resolvedTokenRef.current === real) return;
     closedRef.current = false;
-    resolvedTokenRef.current = token;
-    api(`/api/appointments/by-token/${token}`)
+    resolvedTokenRef.current = real;
+    api(`/api/appointments/by-token/${real}`)
       .then(r => { if (r.item && !closedRef.current) setModal({ mode: 'view', appt: r.item }); })
       .catch(() => { resolvedTokenRef.current = null; });
   }, [token]);

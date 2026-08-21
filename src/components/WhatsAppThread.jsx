@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
-import { api } from '../api/client.js';
+// API_URL and getToken, because api() hard-sets Content-Type: application/json
+// and JSON.stringify's the body — it cannot post a file. Same raw-fetch escape
+// hatch InvoiceThemeSettings already uses for the company logo.
+import { api, API_URL, getToken } from '../api/client.js';
 import { useCan, useAuth } from '../auth/AuthContext.jsx';
 import {
   Send, Loader2, RefreshCw, Check, CheckCheck, Clock, AlertTriangle, MessageCircle,
@@ -8,8 +11,14 @@ import {
   // this project is pinned to. The new names would build and then blow up at
   // runtime as undefined components.
   BookOpen, Smile, CheckCircle2, AlertCircle, Bot, User,
+  // Both long-standing lucide names, same vintage as the ones above.
+  Paperclip, X, Image as ImageIcon, Zap,
 } from 'lucide-react';
 import WhatsAppSendMenu from './WhatsAppSendMenu.jsx';
+// The '/' matcher lives in its own module so it can be tested against the
+// inputs nobody types on purpose — a pasted URL, a slash mid-word, a caret
+// moved back into finished text. See waShortcut.js.
+import { matchShortcut, applyShortcut } from '../utils/waShortcut.js';
 import '../styles/WhatsAppThread.css';
 
 /**
@@ -129,10 +138,10 @@ function timeLeft(expiresAt, now) {
   if (isNaN(ms)) return null;
   if (ms <= 0) return { expired: true, text: 'Reply window closed' };
 
-  const mins  = Math.floor(ms / 60000);
+  const mins = Math.floor(ms / 60000);
   const hours = Math.floor(mins / 60);
   // Under an hour, minutes alone. "0h 43m" reads like a bug.
-  const text  = hours > 0 ? `${hours}h ${mins % 60}m` : `${mins}m`;
+  const text = hours > 0 ? `${hours}h ${mins % 60}m` : `${mins}m`;
   return { expired: false, text, urgent: mins <= 60 };
 }
 
@@ -171,11 +180,11 @@ function prettyNumber(national) {
 
 /** WhatsApp's own vocabulary — one tick, two ticks, blue ticks. */
 function Ticks({ status }) {
-  if (status === 'queued')    return <Clock size={12} className="wat-tick" />;
-  if (status === 'sent')      return <Check size={12} className="wat-tick" />;
+  if (status === 'queued') return <Clock size={12} className="wat-tick" />;
+  if (status === 'sent') return <Check size={12} className="wat-tick" />;
   if (status === 'delivered') return <CheckCheck size={12} className="wat-tick" />;
-  if (status === 'read')      return <CheckCheck size={12} className="wat-tick wat-tick--read" />;
-  if (status === 'failed')    return <AlertTriangle size={12} className="wat-tick wat-tick--bad" />;
+  if (status === 'read') return <CheckCheck size={12} className="wat-tick wat-tick--read" />;
+  if (status === 'failed') return <AlertTriangle size={12} className="wat-tick wat-tick--bad" />;
   return null;
 }
 
@@ -236,7 +245,7 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
   // offering one that cannot work is worse than not offering it.
   const tplEntityId = entityId ?? conv?.lead_id ?? null;
 
-  const owner     = conv?.assigned_user_name || null;
+  const owner = conv?.assigned_user_name || null;
   const ownerIsMe = owner != null && Number(conv?.assigned_user_id) === Number(me?.id);
 
   // Recomputed on every render against `now`, which ticks every 30s.
@@ -294,7 +303,7 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
   useEffect(() => {
     if (!national || !canReadWa) return;
     api('/api/whatsapp/inbox/read', { method: 'POST', body: { mobile: national } })
-      .catch(() => {});
+      .catch(() => { });
 
     // ── …and tell this tab ─────────────────────────────────────────────────
     //
@@ -342,6 +351,276 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
     pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   };
 
+  /* ══ PHOTO REPLIES ═══════════════════════════════════════════════════════
+   *
+   * The checks below duplicate the server's — 5 MB, JPEG or PNG. That is on
+   * purpose and it is not belt-and-braces: without them the advisor waits
+   * through the upload of a 12 MB photo to be told it was too big, having
+   * spent their patience and the office's bandwidth on a refusal that was
+   * knowable before the first byte moved. The server's copy is the RULE; this
+   * one is the courtesy.
+   */
+  /* ══ THE LIBRARY ═════════════════════════════════════════════════════════
+   *
+   * Images and quick replies an admin configured in Settings. Fetched once per
+   * mount rather than on every open: they change when somebody edits Settings,
+   * which is rare, and re-fetching on each click would put a spinner between
+   * an agent and a canned reply — the one thing a canned reply exists to avoid.
+   *
+   * Both endpoints return ACTIVE rows only. The server enforces that; this is
+   * not filtering a longer list it was given.
+   */
+  const [library, setLibrary] = useState({ images: [], replies: [], allowUpload: true });
+  const [libErr, setLibErr] = useState('');
+  const [panel, setPanel] = useState(null);   // 'images' | 'replies' | null
+
+  useEffect(() => {
+    if (!canSend) return;
+    let alive = true;
+    // Each call is caught on its own so one failing does not blank the other
+    // two — a broken images endpoint should not also cost the agent their
+    // quick replies. `failed` is what makes that visible instead of silent:
+    // an empty picker and an unreachable picker look identical otherwise, and
+    // only one of them is worth waiting a minute and reopening.
+    let failed = false;
+    const soft = fallback => e => { failed = true; console.error('[wa-library]', e); return fallback; };
+    Promise.all([
+      api('/api/whatsapp/images').catch(soft({ items: [] })),
+      api('/api/whatsapp/quick-replies').catch(soft({ items: [] })),
+      // Whether the paperclip is offered at all. Defaults to ON if the call
+      // fails — the button has always been there, and a settings endpoint
+      // being briefly unreachable is not a reason to take a working tool away.
+      api('/api/whatsapp/library-settings').catch(soft({ allow_local_upload: true })),
+    ]).then(([img, qr, cfg]) => {
+      if (!alive) return;
+      setLibrary({
+        images: img.items || [],
+        replies: qr.items || [],
+        allowUpload: cfg.allow_local_upload !== false,
+      });
+      if (failed) setLibErr('Some saved items could not be loaded. Reopen the chat to try again.');
+    });
+    return () => { alive = false; };
+  }, [canSend]);
+
+  const [libQ, setLibQ] = useState('');
+
+  /* libErr is deliberately NOT cleared here. It describes the load, not the
+     panel — the items are still missing after a close, and wiping the only
+     notice of that would leave a short list looking complete. */
+  const closePanel = useCallback(() => { setPanel(null); setLibQ(''); }, []);
+
+  /* What the open panel is showing, and what survives the filter.
+     A quick reply matches on its title, its shortcut OR its text — somebody
+     who remembers the wording but not the name still finds it, and typing the
+     '/slug' they know works without a second box to type it in. */
+  const libList  = panel === 'images' ? library.images : panel === 'replies' ? library.replies : [];
+  const libNeedle = libQ.trim().toLowerCase();
+  const libShown = !libNeedle ? libList : libList.filter(it => (
+    panel === 'images'
+      ? String(it.name || '').toLowerCase().includes(libNeedle)
+      : [it.title, it.shortcut, it.message]
+          .some(f => String(f || '').toLowerCase().includes(libNeedle))
+  ));
+
+  /**
+   * A quick reply is INSERTED, never sent.
+   *
+   * That is the whole safety of the feature. A stock answer is only correct
+   * once somebody has confirmed it answers the question that was actually
+   * asked — "/location" fired straight at a customer asking about a price is
+   * worse than no canned replies at all.
+   *
+   * Appended to whatever is already typed rather than replacing it: an agent
+   * part-way through a sentence who reaches for a stock paragraph means to
+   * have both.
+   */
+  function useQuickReply(qr) {
+    setDraft(d => (d.trim() ? `${d.trim()}\n${qr.message}` : qr.message));
+    closePanel();
+    // Focus and put the caret at the end, so the next keystroke continues the
+    // message instead of landing wherever the caret happened to be.
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }
+
+  /* ══ TYPING '/' IN THE BOX ═══════════════════════════════════════════════
+   *
+   * The shortcut has to work where an advisor's hands already are. Opening a
+   * panel to search for '/test' when they have just typed '/test' is the long
+   * way round to the thing they already named.
+   *
+   * WHICH replies a token offers, and which tokens count at all — the pasted
+   * URL, the slash mid-word — is matchShortcut's decision, in waShortcut.js
+   * with the tests. What lives here is only what a component owns: what is
+   * currently open, which row is highlighted, and what Escape did.
+   */
+  const [sugg, setSugg] = useState(null);   // { start, end, items, idx }
+  // The token they pressed Escape on. Cleared as soon as the token changes, so
+  // dismissing '/te' does not also suppress '/test'.
+  const dismissed = useRef('');
+
+  const refreshSuggest = useCallback((value, caret) => {
+    const r = matchShortcut(library.replies, value, caret);
+    if (!r) { setSugg(null); dismissed.current = ''; return; }
+    const token = value.slice(r.start, r.end);
+    if (dismissed.current === token) { setSugg(null); return; }
+    dismissed.current = '';
+    setSugg({ ...r, idx: 0 });
+  }, [library.replies]);
+
+  /**
+   * Accepting replaces the '/token' — it does not append.
+   *
+   * The slash was an instruction, not part of the message. Leaving it in place
+   * and adding the text below would send the customer "/test" followed by the
+   * reply, which is the mistake this whole affordance exists to remove.
+   */
+  function acceptSuggest(qr) {
+    if (!sugg) return;
+    const { value, caret } = applyShortcut(draft, sugg, qr.message);
+    setDraft(value);
+    setSugg(null);
+    dismissed.current = '';
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(caret, caret);
+    });
+  }
+
+  /**
+   * Picking a library image reuses the SAME preview sheet as an upload.
+   *
+   * `pending` carries a `libraryId` instead of a `file`, and sendPhoto branches
+   * on which. One preview step, one caption box, one set of states — rather
+   * than a second sheet that looks the same and drifts.
+   */
+  function useLibraryImage(img) {
+    setPhotoErr('');
+    setPhotoCap('');
+    setPending({ libraryId: img.id, url: img.imagekit_url, name: img.name, size: null });
+    closePanel();
+  }
+
+  const fileInput = useRef(null);
+  const [pending, setPending] = useState(null);   // { file, url, name, size }
+  const [photoCap, setPhotoCap] = useState('');
+  const [photoErr, setPhotoErr] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  const MAX_PHOTO = 5 * 1024 * 1024;
+  const OK_PHOTO  = ['image/jpeg', 'image/png'];
+
+  function pickPhoto(e) {
+    const f = e.target.files?.[0];
+    // Cleared immediately so choosing the SAME file twice still fires a change
+    // event. Without this, cancelling a photo and re-picking it does nothing.
+    e.target.value = '';
+    if (!f) return;
+
+    setPhotoErr('');
+    setPhotoCap('');
+
+    if (!OK_PHOTO.includes(f.type)) {
+      setPending(null);
+      setPhotoErr(`WhatsApp accepts JPG and PNG photos only — that one is ${f.type || 'an unknown type'}.`);
+      return;
+    }
+    if (f.size > MAX_PHOTO) {
+      setPending(null);
+      setPhotoErr(`That photo is ${(f.size / 1048576).toFixed(1)} MB. The limit is 5 MB.`);
+      return;
+    }
+
+    // An object URL, not a FileReader data URL: it does not copy the file into
+    // a string, so a 5 MB photo costs a handle rather than ~7 MB of base64 in
+    // memory. Revoked in closePhoto and when the composer unmounts.
+    setPending({ file: f, url: URL.createObjectURL(f), name: f.name, size: f.size });
+  }
+
+  /* Only an uploaded file has an object URL to release. A library image's URL
+     belongs to ImageKit and revoking it would be meaningless — the `blob:`
+     test is what tells the two apart, and it reads the same in both places
+     that need to know. */
+  const isBlob = u => typeof u === 'string' && u.startsWith('blob:');
+
+  function closePhoto() {
+    if (isBlob(pending?.url)) URL.revokeObjectURL(pending.url);
+    setPending(null);
+    setPhotoCap('');
+    setPhotoErr('');
+  }
+
+  /**
+   * One button, two requests.
+   *
+   * An UPLOADED photo has to travel as multipart — the bytes exist only in the
+   * browser, and the server puts them on ImageKit before WhatsApp can fetch
+   * them.
+   *
+   * A LIBRARY photo is already on ImageKit, so nothing needs uploading and only
+   * its row id is sent. The URL is deliberately NOT sent even though the
+   * composer knows it: a client that names the address to send is a client that
+   * can send any address, which would turn this endpoint into an open relay for
+   * arbitrary images over the workshop's number. The server looks the id up in
+   * wa_images and refuses anything inactive — so an image an admin switched off
+   * a moment ago cannot be sent by a picker that loaded before they did.
+   */
+  async function sendPhoto() {
+    if (!pending || uploading) return;
+    setUploading(true);
+    setPhotoErr('');
+    try {
+      const caption = photoCap.trim();
+
+      if (pending.libraryId) {
+        await api('/api/whatsapp/messages/reply-image', {
+          method: 'POST',
+          body: {
+            mobile: national,
+            image_id: pending.libraryId,
+            ...(caption ? { caption } : {}),
+          },
+        });
+      } else {
+        const fd = new FormData();
+        fd.append('photo', pending.file);
+        fd.append('mobile', national);
+        if (caption) fd.append('caption', caption);
+
+        const res = await fetch(`${API_URL}/api/whatsapp/messages/reply-media`, {
+          method: 'POST',
+          // No Content-Type — the browser must set it, including the multipart
+          // boundary. Setting it by hand is the classic way this silently fails.
+          headers: { Authorization: `Bearer ${getToken()}` },
+          body: fd,
+        });
+
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || 'The photo could not be sent.');
+      }
+
+      closePhoto();
+      pinned.current = true;
+      await load();
+    } catch (e) {
+      // Kept open with the error showing. Closing would throw away the photo
+      // they chose and make them find it again to retry.
+      setPhotoErr(e.message || 'The photo could not be sent.');
+    }
+    setUploading(false);
+  }
+
+  // A composer that unmounts mid-preview would leak the object URL.
+  useEffect(() => () => { if (isBlob(pending?.url)) URL.revokeObjectURL(pending.url); },
+    [pending?.url]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   async function send() {
     const text = draft.trim();
     if (!text || sending) return;
@@ -375,7 +654,7 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
     if (!el) { setDraft(d => d + ch); setEmojiOpen(false); return; }
 
     const a = el.selectionStart ?? draft.length;
-    const b = el.selectionEnd   ?? a;
+    const b = el.selectionEnd ?? a;
     setDraft(draft.slice(0, a) + ch + draft.slice(b));
     setEmojiOpen(false);
 
@@ -455,47 +734,80 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
           // A separator whenever the calendar day changes — and before the
           // first message, so the top of the thread is dated too.
           const stamp = m.sent_at || m.created_at;
-          const prev  = i > 0 ? (items[i - 1].sent_at || items[i - 1].created_at) : null;
+          const prev = i > 0 ? (items[i - 1].sent_at || items[i - 1].created_at) : null;
           const newDay = dayKey(stamp) && dayKey(stamp) !== dayKey(prev);
 
           return (
-          <Fragment key={m.id}>
-          {newDay && (
-            <div className="wat-daysep"><span>{dayLabel(stamp)}</span></div>
-          )}
-          <div className={`wat-row wat-row--${m.direction === 'in' ? 'in' : 'out'}`}>
-            <div className={`wat-bubble${m.origin === 'bot' ? ' wat-bubble--bot' : ''}`}>
-              {/* Three kinds of outbound message, three different things worth
+            <Fragment key={m.id}>
+              {newDay && (
+                <div className="wat-daysep"><span>{dayLabel(stamp)}</span></div>
+              )}
+              <div className={`wat-row wat-row--${m.direction === 'in' ? 'in' : 'out'}`}>
+                <div className={`wat-bubble${m.origin === 'bot' ? ' wat-bubble--bot' : ''}`}>
+                  {/* Three kinds of outbound message, three different things worth
                   saying about them. A workflow message must be labelled hardest:
                   it is on the right-hand side in green like everything a human
                   colleague sent, and mistaking "What do you need help with?" for
                   something an advisor typed changes how you read every answer
                   underneath it. */}
-              {m.origin === 'bot' && (
-                <span className="wat-tpl wat-tpl--bot"><Bot size={10} /> Interakt flow</span>
-              )}
+                  {m.origin === 'bot' && (
+                    <span className="wat-tpl wat-tpl--bot"><Bot size={10} /> Interakt Bot flow</span>
+                  )}
 
-              {/* An outbound TEMPLATE says which one it was. A typed reply has
+                  {/* An outbound TEMPLATE says which one it was. A typed reply has
                   no template_key and needs no label. */}
-              {m.direction === 'out' && m.origin !== 'bot' && m.template_key && (
-                <span className="wat-tpl">{m.template_key}</span>
-              )}
+                  {m.direction === 'out' && m.origin !== 'bot' && m.template_key && (
+                    <span className="wat-tpl">{m.template_key}</span>
+                  )}
 
-              <span className="wat-body">
-                {m.body_rendered || <em className="wat-nobody">(no text)</em>}
-              </span>
+                  {/* ── A photo ────────────────────────────────────────
+                      The first type branch this thread has ever had; until
+                      now every message rendered as text and body_rendered was
+                      the whole of it.
 
-              <span className="wat-meta">
-                {when(m.sent_at || m.created_at)}
-                {m.direction === 'out' && <Ticks status={m.status} />}
-              </span>
+                      Guarded on media_url as well as message_type because a
+                      row can legitimately be 'image' with the URL not yet
+                      written — the send endpoint inserts the row before the
+                      upload finishes, so a poll landing in that window would
+                      otherwise draw a broken image. It falls through to the
+                      text line below, which reads "📷 Photo": true, and what
+                      the customer's phone shows a moment later anyway. */}
+                  {m.message_type === 'image' && m.media_url && (
+                    <a
+                      className="wat-photo"
+                      href={m.media_url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      title="Open the full-size photo"
+                    >
+                      <img src={m.media_url} alt={m.caption || 'Photo'} loading="lazy" />
+                    </a>
+                  )}
 
-              {m.direction === 'out' && m.status === 'failed' && (
-                <span className="wat-err">{m.error_message || m.error_code || 'Failed'}</span>
-              )}
-            </div>
-          </div>
-          </Fragment>
+                  {/* A caption belongs to the photo above it, so it replaces
+                      body_rendered rather than joining it — body_rendered on a
+                      photo row is the "📷 Photo" fallback written for readers
+                      that know nothing about media, and showing both would
+                      print the caption twice with an emoji before one copy. */}
+                  {m.message_type === 'image' && m.media_url ? (
+                    m.caption ? <span className="wat-body wat-cap">{m.caption}</span> : null
+                  ) : (
+                    <span className="wat-body">
+                      {m.body_rendered || <em className="wat-nobody">(no text)</em>}
+                    </span>
+                  )}
+
+                  <span className="wat-meta">
+                    {when(m.sent_at || m.created_at)}
+                    {m.direction === 'out' && <Ticks status={m.status} />}
+                  </span>
+
+                  {m.direction === 'out' && m.status === 'failed' && (
+                    <span className="wat-err">{m.error_message || m.error_code || 'Failed'}</span>
+                  )}
+                </div>
+              </div>
+            </Fragment>
           );
         })}
       </div>
@@ -550,8 +862,43 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
                   rows={2}
                   placeholder="Type a reply…"
                   value={draft}
-                  onChange={e => setDraft(e.target.value)}
+                  onChange={e => {
+                    setDraft(e.target.value);
+                    refreshSuggest(e.target.value, e.target.selectionStart);
+                  }}
+                  // A click moves the caret without changing the text, so the
+                  // token under it changes with no onChange to notice.
+                  onClick={e => refreshSuggest(e.target.value, e.target.selectionStart)}
                   onKeyDown={e => {
+                    /* The shortcut list owns these keys while it is open, and
+                       that includes Enter. An advisor looking at a highlighted
+                       suggestion who presses Enter means "that one" — sending
+                       the literal "/test" there would be obeying the keyboard
+                       and ignoring the person. Escape gets them out, and then
+                       Enter sends the slash text as typed. */
+                    if (sugg && !panel) {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setSugg(s => ({ ...s, idx: (s.idx + 1) % s.items.length }));
+                        return;
+                      }
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setSugg(s => ({ ...s, idx: (s.idx - 1 + s.items.length) % s.items.length }));
+                        return;
+                      }
+                      if (e.key === 'Enter' || e.key === 'Tab') {
+                        e.preventDefault();
+                        acceptSuggest(sugg.items[sugg.idx]);
+                        return;
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        dismissed.current = draft.slice(sugg.start, sugg.end);
+                        setSugg(null);
+                        return;
+                      }
+                    }
                     // Enter sends, Shift+Enter is a newline — the convention
                     // every messaging app uses, and the one an advisor's hands
                     // expect.
@@ -570,6 +917,61 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
                   >
                     <Smile size={15} />
                   </button>
+
+                  {/* Library images. Present even when empty — it opens and
+                      says where they come from, which is how somebody finds
+                      out the feature exists. A button that appears only once
+                      an admin has already used the screen teaches nobody. */}
+                  <button
+                    type="button"
+                    className={panel === 'images' ? 'wat-tool wat-tool--on' : 'wat-tool'}
+                    onClick={() => setPanel(p => (p === 'images' ? null : 'images'))}
+                    title="Send a saved image"
+                    aria-expanded={panel === 'images'}
+                    disabled={sending || uploading}
+                  >
+                    <ImageIcon size={15} />
+                  </button>
+
+                  <button
+                    type="button"
+                    className={panel === 'replies' ? 'wat-tool wat-tool--on' : 'wat-tool'}
+                    onClick={() => setPanel(p => (p === 'replies' ? null : 'replies'))}
+                    title="Quick replies"
+                    aria-expanded={panel === 'replies'}
+                    disabled={sending || uploading}
+                  >
+                    <Zap size={15} />
+                  </button>
+
+                  {/* The attach control — a photo from this computer.
+                      Hidden entirely, not disabled, when an admin has turned
+                      local uploads off: a greyed-out paperclip invites a click
+                      and then explains nothing, and the agent cannot fix it
+                      anyway. The saved-image button remains, which is the
+                      route that setting is steering them to. The server
+                      refuses the upload route independently — this only stops
+                      offering it. */}
+                  {library.allowUpload && (
+                    <>
+                      <button
+                        type="button"
+                        className={pending && !pending.libraryId ? 'wat-tool wat-tool--on' : 'wat-tool'}
+                        onClick={() => fileInput.current?.click()}
+                        title="Attach a photo"
+                        disabled={sending || uploading}
+                      >
+                        <Paperclip size={15} />
+                      </button>
+                      <input
+                        ref={fileInput}
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        hidden
+                        onChange={pickPhoto}
+                      />
+                    </>
+                  )}
 
                   <button
                     className="wat-send"
@@ -593,9 +995,222 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
                     </div>
                   </>
                 )}
+
+                {/* ── The '/' shortcut list ────────────────────────────────
+                    No backdrop, unlike the pickers below. This one is not a
+                    mode the advisor entered — they are still typing, and a
+                    backdrop that swallowed the next click would make the box
+                    they are looking at unclickable. It closes when the token
+                    stops matching, which is what carrying on typing does. */}
+                {sugg && !panel && (
+                  <div className="wat-sugg" role="listbox">
+                    {sugg.items.map((qr, i) => (
+                      <button
+                        key={qr.id}
+                        type="button"
+                        role="option"
+                        aria-selected={i === sugg.idx}
+                        className={i === sugg.idx ? 'wat-sugg-i wat-sugg-i--on' : 'wat-sugg-i'}
+                        // The textarea must keep focus, or the caret position
+                        // acceptSuggest splices at is gone by the time the
+                        // click lands.
+                        onMouseDown={e => e.preventDefault()}
+                        onMouseEnter={() => setSugg(s => ({ ...s, idx: i }))}
+                        onClick={() => acceptSuggest(qr)}
+                      >
+                        <span className="wat-sugg-top">
+                          <code>{qr.shortcut}</code>
+                          <strong>{qr.title}</strong>
+                        </span>
+                        <span className="wat-sugg-msg">{qr.message}</span>
+                      </button>
+                    ))}
+                    <div className="wat-sugg-foot">
+                      ↑↓ to choose · Enter to insert · Esc to type it as text
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Library pickers ──────────────────────────────────────
+                    Same backdrop-and-popover shape as the emoji menu, because
+                    they are the same kind of thing: a short list you open,
+                    take one item from, and close. */}
+                {panel && (
+                  <>
+                    <div className="wat-emoji-backdrop" onClick={closePanel} />
+                    <div className="wat-lib" role="dialog" aria-label={
+                      panel === 'images' ? 'Saved images' : 'Quick replies'
+                    }>
+                      <div className="wat-lib-head">
+                        <strong>{panel === 'images' ? 'Saved images' : 'Quick replies'}</strong>
+                        <button type="button" className="wat-lib-x" onClick={closePanel} title="Close">
+                          <X size={14} />
+                        </button>
+                      </div>
+
+                      {/* Only once the list is long enough that scanning it
+                          costs something. A filter box above four items is
+                          furniture. */}
+                      {libList.length > 6 && (
+                        <input
+                          className="wat-lib-find"
+                          placeholder={panel === 'images' ? 'Find an image…' : 'Find a reply, or type /shortcut…'}
+                          value={libQ}
+                          onChange={e => setLibQ(e.target.value)}
+                          autoFocus
+                        />
+                      )}
+
+                      {libErr && (
+                        <div className="wat-photo-err">
+                          <AlertTriangle size={13} /> <span>{libErr}</span>
+                        </div>
+                      )}
+
+                      {panel === 'images' ? (
+                        libShown.length ? (
+                          <div className="wat-lib-grid">
+                            {libShown.map(img => (
+                              <button
+                                key={img.id}
+                                type="button"
+                                className="wat-lib-img"
+                                onClick={() => useLibraryImage(img)}
+                                title={img.name}
+                              >
+                                {/* An image whose URL has stopped resolving
+                                    still shows its name and stays pickable —
+                                    the send does not depend on this thumbnail
+                                    loading, and hiding the row would make a
+                                    broken ImageKit link look like a deleted
+                                    image. */}
+                                <img src={img.imagekit_url} alt="" loading="lazy" />
+                                <span>{img.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="wat-lib-empty">
+                            {library.images.length
+                              ? 'No image matches that.'
+                              : 'No images saved yet. An admin adds them in Settings → WhatsApp → Image Library.'}
+                          </div>
+                        )
+                      ) : (
+                        libShown.length ? (
+                          <div className="wat-lib-list">
+                            {libShown.map(qr => (
+                              <button
+                                key={qr.id}
+                                type="button"
+                                className="wat-lib-qr"
+                                onClick={() => useQuickReply(qr)}
+                              >
+                                <span className="wat-lib-qr-top">
+                                  <strong>{qr.title}</strong>
+                                  {qr.shortcut && <code>{qr.shortcut}</code>}
+                                </span>
+                                <span className="wat-lib-qr-msg">{qr.message}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="wat-lib-empty">
+                            {library.replies.length
+                              ? 'No reply matches that.'
+                              : 'No quick replies saved yet. An admin adds them in Settings → WhatsApp → Quick Replies.'}
+                          </div>
+                        )
+                      )}
+
+                      {panel === 'replies' && libShown.length > 0 && (
+                        <div className="wat-lib-foot">
+                          Picking one puts it in the box — nothing is sent until you press Send.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
 
-              <div className="wat-hint">Press Enter to send · Shift + Enter for new line</div>
+              {/* A rejected file never opens the sheet — there is nothing to
+                  preview — so its reason shows here, by the paperclip that was
+                  just pressed. */}
+              {photoErr && !pending && (
+                <div className="wat-photo-err">
+                  <AlertTriangle size={13} /> <span>{photoErr}</span>
+                </div>
+              )}
+
+              {/* The slash is only mentioned when something would answer it.
+                  Advertising a shortcut on an install with none configured
+                  teaches an advisor that the feature is broken. */}
+              <div className="wat-hint">
+                Press Enter to send · Shift + Enter for new line
+                {library.replies.some(q => q.shortcut) && ' · Type / for a saved reply'}
+              </div>
+
+              {/* ── Preview and caption ───────────────────────────────────
+                  The last look before it reaches a customer, and the reason
+                  the paperclip does not send immediately. A photo is the one
+                  thing in this panel that cannot be unsent or edited, and the
+                  cost of picking the wrong one out of a camera roll is a
+                  customer seeing somebody else's car.
+
+                  Covers the composer rather than the thread, so the
+                  conversation it belongs to stays readable behind it. */}
+              {pending && (
+                <div className="wat-sheet" role="dialog" aria-modal="true" aria-label="Send photo">
+                  <div className="wat-sheet-head">
+                    <strong>Send photo</strong>
+                    {/* Size only for an upload. A library image's file lives on
+                        ImageKit and was never measured here — printing
+                        "0.0 MB" beside it would be a made-up number. */}
+                    <span className="wat-sheet-file">
+                      {pending.name.length > 24 ? pending.name.slice(0, 22) + '…' : pending.name}
+                      {pending.libraryId
+                        ? ' · from library'
+                        : ` · ${(pending.size / 1048576).toFixed(1)} MB`}
+                    </span>
+                    <button type="button" className="wat-sheet-x" onClick={closePhoto}
+                            disabled={uploading} title="Cancel">
+                      <X size={15} />
+                    </button>
+                  </div>
+
+                  {photoErr && (
+                    <div className="wat-photo-err">
+                      <AlertTriangle size={13} /> <span>{photoErr}</span>
+                    </div>
+                  )}
+
+                  <div className="wat-sheet-img">
+                    <img src={pending.url} alt="Photo to send" />
+                  </div>
+
+                  <input
+                    className="wat-input wat-sheet-cap"
+                    placeholder="Add a caption (optional)"
+                    value={photoCap}
+                    onChange={e => setPhotoCap(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendPhoto(); } }}
+                    maxLength={1024}
+                    disabled={uploading}
+                    autoFocus
+                  />
+
+                  <div className="wat-sheet-acts">
+                    <button type="button" className="wat-sheet-cancel" onClick={closePhoto} disabled={uploading}>
+                      Cancel
+                    </button>
+                    <button type="button" className="wat-sheet-send" onClick={sendPhoto} disabled={uploading}>
+                      {uploading
+                        ? <><Loader2 size={13} className="spin" /> Sending…</>
+                        : <><Send size={13} /> Send photo</>}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

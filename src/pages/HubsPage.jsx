@@ -1044,6 +1044,46 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectReason, setRejectReason]     = useState('');
 
+  // ── Payout registration ───────────────────────────────────────────────────
+  //
+  // Same permission the Payouts page used, so moving the button does not
+  // quietly widen or narrow who may press it. MANAGE_HUB_PAYOUT_ACCOUNT is the
+  // real one; PAY_HUB_ONLINE is accepted because someone trusted to send money
+  // is necessarily trusted to name the account it goes to.
+  const canRegisterPayout = useCan('MANAGE_HUB_PAYOUT_ACCOUNT', 'PAY_HUB_ONLINE');
+  const [payoutBusy, setPayoutBusy] = useState(false);
+  const [payoutErr, setPayoutErr]   = useState('');
+  const [payoutMsg, setPayoutMsg]   = useState('');
+
+  // All three, because the backend refuses on any one of them missing and the
+  // resulting 400 reads like a bug rather than a missing field.
+  const hasFullBankDetails = Boolean(
+    hub.account_holder_name && hub.bank_account_number && hub.bank_ifsc
+  );
+
+  async function handleRegisterPayout() {
+    setPayoutBusy(true); setPayoutErr(''); setPayoutMsg('');
+    try {
+      const out = await api(`/api/hub-payouts/hubs/${hub.id}/register`, { method: 'POST' });
+      // The server's own view of the row, not an assumption about what the call
+      // did. `already: true` comes back when it was registered all along, and
+      // saying "registered" for that is still true and still what to show.
+      const updated = {
+        ...hub,
+        payout_status: out?.registered ? 'verified' : (out?.payout_status || hub.payout_status),
+      };
+      setHub(updated);
+      onHubUpdated?.(updated);
+      setPayoutMsg('Registered — this hub can now be paid by bank transfer.');
+    } catch (e) {
+      // Shown verbatim. The two failures people actually hit both explain
+      // themselves: "Payouts are not configured on this server" (no RazorpayX
+      // keys) and "the bank details changed while it was being registered".
+      // Replacing either with a generic message would throw away the answer.
+      setPayoutErr(e.message || 'Could not register this hub for payouts.');
+    } finally { setPayoutBusy(false); }
+  }
+
   async function handleVerify() {
     setVerifyErr(''); setVerifyBusy(true);
     try {
@@ -1356,9 +1396,59 @@ function ViewModal({ hub: initialHub, onClose, onEdit, canManage, canVerify, onH
                         ? 'The provider rejected this account — check the details and register again'
                         : hub.payout_status === 'pending'
                           ? 'Registration in progress'
-                          : 'Not registered — register it on the Payouts page to pay by bank transfer'}
+                          : 'Not registered — this hub can only be paid by hand and recorded'}
                   </span>
                 </div>
+
+                {/* ── Register with the payout provider ────────────────────
+                    Registration lives HERE, beside the account it registers,
+                    rather than on the Payouts page where it used to be. Three
+                    reasons, and the third is the one that matters:
+
+                      · it is a property of the hub, not of a payout run;
+                      · the person who types the bank details is the person who
+                        should register them, in one sitting;
+                      · the trigger from migration 144 UN-registers a hub the
+                        moment its account number or IFSC changes — so the
+                        "register again" prompt has to appear where the editing
+                        happens, or nobody sees it until a payout fails.
+
+                    Deliberately in the VIEW modal and not the edit form: this
+                    acts on the SAVED bank details. On the edit form it would sit
+                    beside inputs holding unsaved values, and registering the old
+                    account while new numbers are on screen is exactly the
+                    confusion that sends money to the wrong bank. */}
+                {hub.payout_status !== 'verified' && canRegisterPayout && (
+                  <div className="hbv-field" style={{ alignItems: 'center' }}>
+                    <span className="hbv-lbl" />
+                    <span className="hbv-val" style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                      <button type="button" className="btn btn-primary"
+                              onClick={handleRegisterPayout}
+                              disabled={payoutBusy || !hasFullBankDetails}
+                              title={hasFullBankDetails
+                                ? 'Create this hub as a payee with the payout provider'
+                                : 'Add the account holder name, account number and IFSC first'}>
+                        {payoutBusy ? 'Registering…' : 'Register account'}
+                      </button>
+                      {/* Inline styles, not new classes: HubsPage.css has no
+                          note/error/ok trio in the hbv- family, and inventing
+                          three classes for three lines would leave a reader
+                          hunting a stylesheet for something this local. The
+                          colour tokens are the app-wide ones. */}
+                      {!hasFullBankDetails && (
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>
+                          Needs the account holder name, account number and IFSC before it can be registered.
+                        </span>
+                      )}
+                      {payoutErr && (
+                        <span style={{ fontSize: 12, color: 'var(--danger, #b42318)', fontWeight: 400 }}>{payoutErr}</span>
+                      )}
+                      {payoutMsg && (
+                        <span style={{ fontSize: 12, color: 'var(--success, #067647)', fontWeight: 400 }}>{payoutMsg}</span>
+                      )}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}

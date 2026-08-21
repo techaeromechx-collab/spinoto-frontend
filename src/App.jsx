@@ -274,8 +274,14 @@ export default function App() {
 
                 {/* Hub Payouts Dashboard — no detail view of its own (per the
                     shareable-urls audit: every Payouts link targets Purchase
-                    Invoices or Customer Invoices), so no :token route here. */}
-                <Route path="/payouts" element={<RequirePermission codes={['VIEW_HUB','MANAGE_HUBS','VIEW_INVOICE']}><PayoutsPage /></RequirePermission>} />
+                    Invoices or Customer Invoices), so no :token route here.
+
+                    Codes mirror canView in backend/src/routes/hub_payouts.routes.js,
+                    which is canonical; test/hubpayoutperms.test.js fails if they
+                    differ. This guard previously listed VIEW_HUB and VIEW_INVOICE,
+                    neither of which the backend accepts, and omitted both
+                    VIEW_HUB_PAYOUTS and VIEW_PURCHASE_INVOICE, which it does. */}
+                <Route path="/payouts" element={<RequirePermission codes={['VIEW_HUB_PAYOUTS','MANAGE_HUBS','VIEW_PURCHASE_INVOICE','VIEW_PAYMENTS']}><PayoutsPage /></RequirePermission>} />
                 {/* Payments. The optional :ref opens the detail drawer, so a
                     payment is linkable, survives a refresh and works with the
                     Back button — the same pattern the other detail views use,

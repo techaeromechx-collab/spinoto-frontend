@@ -223,7 +223,13 @@ const NAV_ITEMS = [
 
   // ── Accounting ────────────────────────────────────────────────────────────
   { label: 'Purchase Invoices', to: '/purchase-invoices', permissions: ['VIEW_PURCHASE_INVOICE','CREATE_PURCHASE_INVOICE','APPROVE_PURCHASE_INVOICE'], icon: ReceiptText, section: 'ACCOUNTING' },
-  { label: 'Hub Payouts',       to: '/payouts',           permissions: ['VIEW_PURCHASE_INVOICE','VIEW_HUB','MANAGE_HUBS'],       icon: Wallet, section: 'ACCOUNTING' },
+  // Mirrors canView in backend/src/routes/hub_payouts.routes.js — that list is
+  // canonical, this one follows it, and test/hubpayoutperms.test.js fails if
+  // they differ. VIEW_HUB used to be here and is not on the backend, so the
+  // link appeared for people whose every request on the page then 403'd;
+  // VIEW_HUB_PAYOUTS was missing, so the permission named for this screen did
+  // nothing at all.
+  { label: 'Hub Payouts',       to: '/payouts',           permissions: ['VIEW_HUB_PAYOUTS','MANAGE_HUBS','VIEW_PURCHASE_INVOICE','VIEW_PAYMENTS'], icon: Wallet, section: 'ACCOUNTING' },
   // Money IN, beside the two screens for money out.
   //
   // Gated on VIEW_PAYMENTS alone, not the usual any-of list. COLLECT_PAYMENT is
