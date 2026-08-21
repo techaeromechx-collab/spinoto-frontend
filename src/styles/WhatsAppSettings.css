@@ -1423,3 +1423,27 @@
 .wa-tabs { overflow-x: auto; scrollbar-width: none; }
 .wa-tabs::-webkit-scrollbar { display: none; }
 .wa-tab { flex: none; white-space: nowrap; }
+
+/* The two ways to add an image, separated. Upload is the route that cannot go
+   wrong, so it gets the primary button and the top row; pasting is quieter,
+   below a rule that names it as the alternative rather than the default. */
+.wai-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px 0 -6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.wai-or::before,
+.wai-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.wai-add--url { background: var(--bg-soft); }
+.wai-add--url .wai-add-f input { background: var(--bg, #fff); }
+/* The ghost Add-by-address button lines up with the inputs, not the labels,
+   exactly as the primary one does. */
+.wai-add--url .wai-add-btn { margin-top: 19px; }

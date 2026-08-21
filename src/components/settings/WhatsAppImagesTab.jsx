@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { api } from '../../api/client.js';
+import { useState, useEffect, useCallback, useRef } from 'react';
+// API_URL and getToken as well as api(): api() hard-sets
+// Content-Type: application/json and stringifies the body, so it cannot post a
+// file. Same raw-fetch escape hatch the WhatsApp composer uses.
+import { api, API_URL, getToken } from '../../api/client.js';
 import {
   Loader2, Plus, Trash2, Info, AlertTriangle, Check, X, Pencil, Save,
-  ImageOff, Paperclip,
+  ImageOff, Paperclip, Upload,
 } from 'lucide-react';
 
 /**
@@ -11,18 +14,29 @@ import {
  * The images an advisor can send from a WhatsApp conversation without
  * uploading anything: the price list, the workshop map, the offer poster.
  *
- * ── Why this screen takes a URL and not a file ──────────────────────────────
+ * ── Two ways in, and why UPLOAD is the one on the left ──────────────────────
  *
- * WhatsApp does not accept image bytes from us. Interakt's API has no upload
- * endpoint at all — the only thing that can be sent is an address, which
- * WhatsApp's own servers then fetch. So the file must already be somewhere
- * publicly reachable before it can be sent, and ImageKit is where this CRM
- * already puts public files.
+ * WhatsApp does not accept image bytes from us. Interakt has no upload
+ * endpoint; the only thing that can be sent is an address WhatsApp's own
+ * servers fetch. So the file must be publicly reachable before it can be sent,
+ * and what this screen stores is always an address.
  *
- * That is not a limitation this screen invented to avoid building an uploader.
- * An uploader here would be a box that accepts a file, puts it on ImageKit, and
- * pastes the URL back into this same field — worth building later, and it would
- * change nothing about what is stored or what is sent.
+ * WHERE that address comes from is the whole difference. Pasting one looks
+ * simpler and is not: it asks somebody to copy an exact string out of a
+ * different product, and it failed in practice every way it can —
+ *
+ *   • the filename had spaces, which ImageKit sanitises on upload, so the
+ *     address in the design tool is not the address the file lives at
+ *   • the file was renamed, and every rename mints a new address
+ *   • the new URL was pasted into the MIDDLE of the old one
+ *   • the file was uploaded private, and answers 400 to anyone unsigned
+ *
+ * — and all four save cleanly and fail later, at send time, in front of a
+ * customer. Uploading removes all of them at once: the bytes go through this
+ * server, the address comes back from ImageKit, and nobody types anything.
+ *
+ * Pasting stays for the case it is genuinely good at — an image already on
+ * ImageKit and already known to work — and is now checked before it saves.
  *
  * ── Why active/inactive as well as delete ───────────────────────────────────
  *
@@ -61,6 +75,12 @@ export default function WhatsAppImagesTab() {
   // would make turning it off wait on unrelated edits.
   const [allowUpload, setAllowUpload] = useState(true);
   const [uploadBusy, setUploadBusy]   = useState(false);
+
+  // Uploading a file INTO the library. Nothing to do with allowUpload above,
+  // which is about the advisor's paperclip in the chat — this is an admin
+  // adding a library image, and it is always available to them.
+  const fileInput = useRef(null);
+  const [picking, setPicking] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -106,6 +126,64 @@ export default function WhatsAppImagesTab() {
       setErr(e.message || 'Could not add that image.');
     }
     setBusy(false);
+  }
+
+  /**
+   * The file goes through OUR server, not through ImageKit's dashboard.
+   *
+   * Every failure this feature had in practice came from copying an address by
+   * hand: a renamed file, a space ImageKit sanitised on upload, a paste landing
+   * in the middle of the old value, a file uploaded private. None of them can
+   * happen when the address is never typed.
+   */
+  async function pickFile(e) {
+    const f = e.target.files?.[0];
+    // Cleared at once so choosing the SAME file twice still fires a change
+    // event — otherwise a failed upload cannot be retried with that file.
+    e.target.value = '';
+    if (!f) return;
+
+    // Checked here as well as on the server, and that is not belt-and-braces:
+    // without it the admin waits through the upload of a 12 MB poster to be
+    // told it was too big. The server's copy is the rule; this is the courtesy.
+    if (!['image/jpeg', 'image/png'].includes(f.type)) {
+      setErr(`WhatsApp accepts JPG and PNG only — that one is ${f.type || 'an unknown type'}.`);
+      return;
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      setErr(`That image is ${(f.size / 1048576).toFixed(1)} MB. The limit is 5 MB.`);
+      return;
+    }
+
+    // The name field if it has one, otherwise the filename with its extension
+    // trimmed off. Not the raw filename: 'Spinoto_CAR SERVICE PRICE-03.png' is
+    // a fine picture and a terrible thing to read in a picker.
+    const label = name.trim() || f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+    if (!label) { setErr('Give the image a name first.'); return; }
+
+    setPicking(true); setErr('');
+    try {
+      const fd = new FormData();
+      fd.append('photo', f);
+      fd.append('name', label);
+
+      const res = await fetch(`${API_URL}/api/whatsapp/images/upload`, {
+        method: 'POST',
+        // No Content-Type — the browser must set it, including the multipart
+        // boundary. Setting it by hand is the classic way this fails silently.
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: fd,
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || 'The image could not be uploaded.');
+
+      setItems(list => [...list, out.item].sort(byName));
+      setName(''); setUrl('');
+      setOk(`“${out.item.name}” uploaded and ready to send.`);
+    } catch (e2) {
+      setErr(e2.message || 'The image could not be uploaded.');
+    }
+    setPicking(false);
   }
 
   async function patch(id, body, okMsg) {
@@ -179,11 +257,11 @@ export default function WhatsAppImagesTab() {
       <div className="wa-banner wa-banner--info">
         <Info size={15} />
         <div>
-          <strong>Images an advisor can send in one tap.</strong> Paste the ImageKit address
-          of a picture that is already uploaded — the price list, a workshop map, this
-          month's offer. WhatsApp fetches the picture from that address itself, so it has
-          to be a public <code>https://</code> link; a file on your computer or a link that
-          only opens inside the office will not reach the customer.
+          <strong>Images an advisor can send in one tap.</strong> The price list, a workshop
+          map, this month's offer. Upload the picture and we put it on ImageKit for you —
+          WhatsApp fetches it from there itself, so it has to live at a public address.
+          You can paste an address instead if the image is already on ImageKit and you have
+          the exact URL.
         </div>
       </div>
 
@@ -205,20 +283,55 @@ export default function WhatsAppImagesTab() {
               picker, so it has to say what the picture is. */}
           <em>What the advisor picks from. They never see the address.</em>
         </div>
+
+        {/* Upload sits FIRST and carries the primary styling, because it is
+            the route that cannot go wrong. Pasting is second and quieter —
+            still there, no longer the obvious thing to reach for. */}
+        <button
+          className="btn btn-primary wai-add-btn"
+          onClick={() => fileInput.current?.click()}
+          disabled={picking || busy}
+        >
+          {picking ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
+          {picking ? 'Uploading…' : 'Upload image'}
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/jpeg,image/png"
+          hidden
+          onChange={pickFile}
+        />
+      </div>
+
+      <div className="wai-or">
+        <span>or paste an address it already has</span>
+      </div>
+
+      <div className="wai-add wai-add--url">
         <div className="wai-add-f wai-add-f--wide">
           <label>ImageKit address</label>
           <input
             value={url}
             onChange={e => setUrl(e.target.value)}
+            /* Selects the lot on focus. Nobody edits one character of an
+               ImageKit URL — the whole value is always replaced — and a caret
+               dropped mid-string means the next paste lands INSIDE the old
+               address instead of over it, which produces a 300-character
+               hybrid that looks almost right. */
+            onFocus={e => e.target.select()}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
             placeholder="https://ik.imagekit.io/…/price-list.jpg"
             maxLength={2000}
             spellCheck={false}
           />
-          <em>Open it in a private window first — if it loads there, WhatsApp can fetch it.</em>
+          <em>
+            Use ImageKit's <strong>Copy URL</strong> button rather than typing the name —
+            renaming a file there changes its address. We check it loads before saving.
+          </em>
         </div>
-        <button className="btn btn-primary wai-add-btn" onClick={add} disabled={busy || !name.trim() || !url.trim()}>
-          {busy ? <Loader2 size={14} className="spin" /> : <Plus size={14} />} Add image
+        <button className="wai-ghost wai-add-btn" onClick={add} disabled={busy || !name.trim() || !url.trim()}>
+          {busy ? <Loader2 size={14} className="spin" /> : <Plus size={14} />} Add by address
         </button>
       </div>
 
@@ -228,7 +341,7 @@ export default function WhatsAppImagesTab() {
           <ImageOff size={22} />
           <strong>No images yet</strong>
           <span>
-            Add the two or three you send most often — the price list and the workshop
+            Upload the two or three you send most often — the price list and the workshop
             map are usually the first. They appear behind the 🖼 button in every WhatsApp
             conversation the moment you add them.
           </span>
@@ -265,6 +378,10 @@ export default function WhatsAppImagesTab() {
                     <input
                       value={edit.imagekit_url}
                       onChange={e => setEdit(d => ({ ...d, imagekit_url: e.target.value }))}
+                      /* Same reason as the add field: replacing an address is
+                         the only thing anybody does to one, so clicking it
+                         should select all of it. */
+                      onFocus={e => e.target.select()}
                       maxLength={2000}
                       placeholder="https://…"
                       spellCheck={false}
