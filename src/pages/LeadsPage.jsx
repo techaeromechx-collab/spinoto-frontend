@@ -4185,7 +4185,19 @@ export default function LeadsPage() {
                 ) : null}
                 {!fuLoading && visibleEvents.map(ev => {
                   const evStatusObj = statusList.find(s => s.name === ev.lead_current_status);
-                  const isEvLocked = !!evStatusObj?.is_locked || ev.lead_current_status === 'Appointment Scheduled' || ev.lead_current_status === 'Appointment Completed';
+                  /* "Locked" here means: this follow-up cannot go overdue,
+                     because the lead is no longer waiting on anybody.
+
+                     It used to test the two status NAMES 'Appointment
+                     Scheduled' and 'Appointment Completed' — master data an
+                     admin renames on a screen, at which point every converted
+                     lead's follow-up starts glowing red for a chase nobody
+                     owes. The flags carry the same meaning and survive a
+                     rename: converts_to_appointment (it became a booking) and
+                     is_closed (it is finished, however it finished). */
+                  const isEvLocked = !!evStatusObj?.is_locked
+                    || !!evStatusObj?.converts_to_appointment
+                    || !!evStatusObj?.is_closed;
                   const cfg = getStatusCfg(ev.lead_current_status);
                   const initials = (ev.lead_name || ev.lead_mobile || '?').charAt(0).toUpperCase();
                   const _today = new Date(); const _localToday = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, '0')}-${String(_today.getDate()).padStart(2, '0')}`;
