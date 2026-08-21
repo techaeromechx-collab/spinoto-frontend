@@ -1018,9 +1018,8 @@
 /* .lp-filters used to sit inside a padded card and supply 14px/16px around all
    three of its children (toolbar, advanced panel, active tags). The toolbar now
    carries its own 20px, so the container drops its side padding and the other
-   two children get the same 20px inset explicitly — otherwise the panel and the
-   filter chips sit flush against the window edge while the toolbar above them
-   does not. */
+   children get the same 20px inset explicitly — otherwise the filter chips sit
+   flush against the window edge while the toolbar above them does not. */
 .leads-page.lb-page .lp-filters {
   padding: 0 0 14px;
 }
@@ -1030,7 +1029,9 @@
   /* .lp-filters' 10px gap spaces the rows instead */
 }
 
-.leads-page.lb-page .lp-adv-panel,
+/* .lp-adv-panel was in this selector too. It is gone — the advanced filters are
+   a fixed-position modal now, and a margin on a fixed element does not inset it
+   the way it did an in-flow block. */
 .leads-page.lb-page .lp-active-tags {
   margin-left: 20px;
   margin-right: 20px;
@@ -1285,86 +1286,53 @@
   margin-top: 2px;
 }
 
-/* ── Follow-ups bar (tab-nav style) ───────────────────── */
-.lp-fu-bar {
-  display: flex;
-  align-items: stretch;
-  width: 100%;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-  font-family: inherit;
-  margin-bottom: 16px;
-}
+/* ── Follow-up button ─────────────────────────────────────────────────────
+   What is left of the follow-ups bar. The bar was a full-width card of its own
+   above the table — label, four date tabs, a "View all" link — and every one of
+   those controls opened the same drawer, so it cost a whole row of vertical
+   space to duplicate switches that also exist inside the thing it opened.
 
-.lp-fu-tab-item {
+   Now it sits at the right end of the source-chip strip. Filled rather than
+   outlined ON PURPOSE: it shares that row with the chips but does not belong to
+   them. The chips are a segmented view of the list — exactly one is lit at a
+   time — and an outlined pill sitting among them would join that group visually
+   and imply it is a fourth source. A solid button is unmistakably an action.
+
+   The red is the same red the old badge used, kept because the number is a
+   backlog: follow-ups you owe today. --primary (the brand green) would have
+   made this the second primary action on screen alongside "Capture New Lead",
+   and it is not that — it is a warning you are behind. */
+.lp-fu-pill {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 10px 20px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  cursor: pointer;
-  position: relative;
-  white-space: nowrap;
-  transition: color 0.15s;
-  font-family: inherit;
-  border-bottom: 2px solid transparent;
-}
-
-.lp-fu-tab-item:hover {
-  color: var(--text);
-}
-
-.lp-fu-tab-item--label {
-  color: var(--text);
-  font-weight: 700;
-  border-bottom-color: var(--primary);
-}
-
-.lp-fu-tab-item--active {
-  color: #ef4444;
-  border-bottom-color: #ef4444;
-}
-
-.lp-fu-tab-badge {
+  /* Pushes it to the far right of .lp-src-chips. On a narrow window the strip
+     wraps and this drops to its own line, still right-aligned — which is the
+     correct degradation, since squeezing it between chips is what would make
+     it read as one. */
+  margin-left: auto;
+  padding: 6px 14px;
+  border: 1px solid #ef4444;
+  border-radius: 20px;
   background: #ef4444;
   color: #fff;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 800;
-  padding: 1px 7px;
-  line-height: 1.4;
-}
-
-.lp-fu-sep {
-  width: 1px;
-  background: var(--border);
-  flex-shrink: 0;
-  align-self: stretch;
-  margin: 8px 0;
-}
-
-.lp-fu-viewall {
-  margin-left: auto;
-  padding: 10px 18px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--primary);
-  background: none;
-  border: none;
-  cursor: pointer;
-  white-space: nowrap;
   font-family: inherit;
-  transition: opacity 0.15s;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.lp-fu-viewall:hover {
-  opacity: 0.75;
+.lp-fu-pill:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.lp-fu-pill:focus-visible {
+  outline: 2px solid #ef4444;
+  outline-offset: 2px;
 }
 
 /* ── Page header row ── */
@@ -1982,24 +1950,160 @@
   background: #fef2f2;
 }
 
-/* Advanced filter panel */
-.lp-adv-panel {
+/* ── Advanced filters modal ───────────────────────────────────────────────
+   Was .lp-adv-panel: an inline block that expanded in the flow between the
+   toolbar and the table. Three sections wide, nine fields, roughly 130px tall —
+   on a laptop that pushed the first row of leads below the fold, so opening the
+   filters hid the thing being filtered and every change had to be judged by
+   scrolling back down.
+
+   z-index sits above the page but below the toast layer, so a "filters
+   cleared" style message is never covered by the dialog that caused it. */
+.lp-adv-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 1200;
+}
+
+.lp-adv-modal {
+  position: fixed;
+  /* Centred with translate rather than flex on the backdrop: the backdrop is a
+     separate sibling so it can fade on its own timing, and nesting the dialog
+     inside it would make every backdrop click land on the dialog's padding
+     box — closing the modal when the user meant to reach a field. */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
   display: flex;
-  gap: 0;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-soft);
+  flex-direction: column;
+  background: var(--panel, #fff);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+  z-index: 1201;
   overflow: hidden;
 }
 
-.lp-adv-section {
-  flex: 1;
-  padding: 12px 14px;
-  border-right: 1px solid var(--border);
+.lp-adv-modal-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
-.lp-adv-section:last-child {
-  border-right: none;
+.lp-adv-modal-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.lp-adv-modal-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.lp-adv-modal-x:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+/* The three groups become a responsive grid instead of three fixed columns.
+   Side by side they were 1/3 of a full-width page each; inside a 720px dialog
+   that is ~230px per column, which is fine until the window is narrow — then
+   auto-fit collapses them to one column rather than crushing three date inputs
+   into 90px apiece. */
+.lp-adv-modal-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  /* The dividers are the grid gap showing through, not borders on the cells.
+     Borders cannot do this job here: which edge needs a line depends on how
+     many columns auto-fit decided on, and no :first/:last-child rule can know
+     that. `border-right except :last-child` draws a stray line down the middle
+     of a wrapped single-column layout; `border-bottom on all` doubles up
+     against the footer. A 1px gap over a border-coloured background is right
+     at every column count, including one. */
+  gap: 1px;
+  background: var(--border);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.lp-adv-modal-ftr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+  flex-shrink: 0;
+}
+
+.lp-adv-modal-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 7px;
+}
+
+.lp-adv-modal-clear:hover:not(:disabled) {
+  background: #fef2f2;
+}
+
+.lp-adv-modal-clear:disabled {
+  color: var(--text-muted);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.lp-adv-modal-done {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 9px;
+  background: var(--primary);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lp-adv-modal-done:hover {
+  filter: brightness(0.94);
+}
+
+/* Opaque, so the grid's border-coloured background only shows in the 1px gaps
+   between cells rather than behind them. */
+.lp-adv-section {
+  padding: 14px 16px;
+  background: var(--panel, #fff);
 }
 
 .lp-adv-section-label {
@@ -2819,35 +2923,9 @@
 /* ── Mobile responsive ── */
 @media (max-width: 768px) {
 
-  /* ── Follow-ups tab bar: horizontal scroll on mobile ── */
-  .lp-fu-bar {
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    border-radius: 10px;
-    flex-wrap: nowrap;
-  }
-
-  .lp-fu-bar::-webkit-scrollbar {
-    display: none;
-  }
-
-  .lp-fu-tab-item {
-    padding: 9px 12px;
-    font-size: 12px;
-    flex-shrink: 0;
-  }
-
-  .lp-fu-viewall {
-    padding: 9px 12px;
-    font-size: 12px;
-    flex-shrink: 0;
-  }
-
-  .lp-fu-sep {
-    margin: 6px 0;
-  }
+  /* The follow-ups tab bar had five rules here making it scroll sideways so
+     four tabs and a "View all" link could fit on a phone. There is one button
+     now; it needs none of them. */
 
   /* This block used to undo the desktop locked-scroll layout — five rules of
      !important restoring overflow and height that the desktop CSS had taken
@@ -2914,19 +2992,10 @@
     font-size: 20px;
   }
 
-  .lp-adv-panel {
-    flex-direction: column;
-  }
-
-  .lp-adv-section {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .lp-adv-section:last-child {
-    border-bottom: none;
-  }
-
+  /* The panel's mobile stacking rules are gone with the panel. The modal's grid
+     collapses to one column on its own via auto-fit, and its dividers are the
+     grid gap rather than cell borders, so there is nothing to flip here.
+     .lp-adv-row stays column on mobile for the same reason it always did. */
   .lp-adv-row {
     flex-direction: column;
   }
@@ -5444,10 +5513,20 @@
   flex-wrap: wrap;
   align-items: center;
   column-gap: 6px;
-  /* Wrapping is normal at six chips plus three, and a wrapped row with only the
-     column gap between lines reads as one clump. */
+  /* Wrapping is normal at four chips plus three plus a button, and a wrapped
+     row with only the column gap between lines reads as one clump. */
   row-gap: 8px;
-  padding: 0 0 10px;
+  /* 20px each side. NOT the 16px that .lp-filters declares — on this page that
+     16px is overridden away (`.leads-page.lb-page .lp-filters { padding: 0 0
+     14px }`) and the real inset comes from .lb-toolbar's own `padding: 20px` in
+     listLayout.css, which is also why .lp-active-tags is given an explicit 20px
+     margin a few hundred lines up. Matching the declared value rather than the
+     effective one would have left this strip 4px proud of the dropdown row
+     beneath it — close enough to look like a mistake rather than a choice.
+
+     The strip previously had NO horizontal padding at all and sat flush against
+     the card edge. */
+  padding: 14px 20px 12px;
 }
 
 .lp-src-chip {
@@ -5967,3 +6046,45 @@
   white-space: nowrap;
 }
 .lp-act-who { font-weight: 600; }
+
+/* ── Waiting for a page of leads ──────────────────────────────────────────
+   Rows of the right height and roughly the right column widths, so the layout
+   is already where the data will land. A centred "Loading…" collapses the
+   table to one line and the page jumps when rows arrive — which on a slow
+   connection reads as a broken screen rather than a busy one. */
+.lp-sk-row td {
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+.lp-sk {
+  display: block;
+  height: 11px;
+  border-radius: 4px;
+  background: linear-gradient(90deg,
+    var(--bg-soft) 25%, rgba(0, 0, 0, .06) 37%, var(--bg-soft) 63%);
+  background-size: 400% 100%;
+  animation: lp-sk-shine 1.4s ease-in-out infinite;
+}
+.lp-sk + .lp-sk { margin-top: 6px; }
+.lp-sk--sm   { height: 9px; opacity: .7; }
+.lp-sk--chk  { width: 14px; height: 14px; border-radius: 3px; }
+.lp-sk--pill { width: 72px; height: 18px; border-radius: 999px; }
+
+@keyframes lp-sk-shine {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* The phone layout's rows are cards, so its skeleton is too. */
+.lp-sk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: default;
+}
+
+/* Respect a system-level request for less motion. The shimmer is the part that
+   moves; the shape is what does the actual work, so it stays. */
+@media (prefers-reduced-motion: reduce) {
+  .lp-sk { animation: none; background: var(--bg-soft); }
+}

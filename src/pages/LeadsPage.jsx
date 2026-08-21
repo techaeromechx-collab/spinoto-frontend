@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo, Fragment } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useSearchParams, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
@@ -26,13 +26,26 @@ import WhatsAppThread from '../components/WhatsAppThread.jsx';
  *   Other    — the complement, defined so a source nobody anticipated still
  *              shows up SOMEWHERE instead of being invisible under every chip.
  */
+/* Website and Meta Ads are deliberately NOT chips.
+   They are still first-class everywhere else — the backend still partitions on
+   them, matchesSourceChip below still knows them, and both remain selectable in
+   the "All Sources" dropdown in Advanced filters. What changed is only which
+   ones earn a permanent seat in the strip: Website has sat at 0 since launch,
+   and Meta traffic is looked at by campaign rather than as one lump.
+
+   The consequence is worth stating because it is not obvious from the strip:
+   the visible chips no longer add up to All. A Meta lead now falls under All
+   and under nothing else, because `other` is defined as the complement of ALL
+   FIVE original buckets, not of the three still shown. That is the honest
+   behaviour — folding Meta into "Other" would silently redefine a filter people
+   already use — but it does mean Meta leads are one dropdown away, not one
+   click. Change `other` in leads.controller.js (sourceChipSql) if that trade
+   ever stops being the right one. */
 const SOURCE_CHIPS = [
-  { key: 'all',      label: 'All' },
+  { key: 'all', label: 'All' },
   { key: 'whatsapp', label: 'WhatsApp' },
-  { key: 'website',  label: 'Website' },
-  { key: 'meta ads', label: 'Meta Ads' },
-  { key: 'manual',   label: 'Manual' },
-  { key: 'other',    label: 'Other' },
+  { key: 'manual', label: 'Manual' },
+  { key: 'other', label: 'Other' },
 ];
 
 /* ── Who owns it — a SEPARATE axis from where it came from ───────────────────
@@ -49,13 +62,13 @@ const SOURCE_CHIPS = [
 function activityLabel(row) {
   const to = (row.last_activity_new || '').trim();
   switch (row.last_activity_type) {
-    case 'status_changed':      return to ? `Status → ${to}` : 'Status changed';
-    case 'assigned_changed':    return to ? `Assigned to ${to}` : 'Unassigned';
+    case 'status_changed': return to ? `Status → ${to}` : 'Status changed';
+    case 'assigned_changed': return to ? `Assigned to ${to}` : 'Unassigned';
     case 'appointment_created': return 'Converted to appointment';
-    case 'service_added':       return to ? `Service added: ${to}` : 'Service added';
-    case 'service_removed':     return to ? `Service removed: ${to}` : 'Service removed';
-    case 'note_added':          return to ? `Note: ${to}` : 'Note added';
-    case 'created':             return 'Lead created';
+    case 'service_added': return to ? `Service added: ${to}` : 'Service added';
+    case 'service_removed': return to ? `Service removed: ${to}` : 'Service removed';
+    case 'note_added': return to ? `Note: ${to}` : 'Note added';
+    case 'created': return 'Lead created';
     default:
       return String(row.last_activity_type || '').replace(/_/g, ' ') || '';
   }
@@ -70,8 +83,8 @@ function timeAgo(v) {
   if (isNaN(then)) return '';
   const mins = Math.floor((Date.now() - then.getTime()) / 60000);
 
-  if (mins < 1)    return 'just now';
-  if (mins < 60)   return `${mins}m ago`;
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
   if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
   if (mins < 2880) return 'yesterday';
 
@@ -83,29 +96,29 @@ function timeAgo(v) {
 }
 
 const OWNER_CHIPS = [
-  { key: 'all',        label: 'Everyone' },
-  { key: 'mine',       label: 'Mine' },
+  { key: 'all', label: 'Everyone' },
+  { key: 'mine', label: 'Mine' },
   { key: 'unassigned', label: 'Unassigned' },
 ];
 
 export function matchesOwnerChip(lead, chip, userId) {
   if (!chip || chip === 'all') return true;
-  if (chip === 'unassigned')   return !lead.assigned_to;
-  if (chip === 'mine')         return userId != null && Number(lead.assigned_to) === Number(userId);
+  if (chip === 'unassigned') return !lead.assigned_to;
+  if (chip === 'mine') return userId != null && Number(lead.assigned_to) === Number(userId);
   return true;
 }
 
-const META_SOURCES   = ['meta ads', 'meta', 'facebook', 'instagram', 'facebook ads', 'instagram ads', 'social media'];
+const META_SOURCES = ['meta ads', 'meta', 'facebook', 'instagram', 'facebook ads', 'instagram ads', 'social media'];
 const MANUAL_SOURCES = ['manual', 'walk-in', 'walk in', 'phone call', 'referral'];
 
 export function matchesSourceChip(leadSource, chip) {
   if (!chip || chip === 'all') return true;
   const s = (leadSource || '').trim().toLowerCase();
   if (chip === 'whatsapp') return s === 'whatsapp';
-  if (chip === 'website')  return s === 'website';
+  if (chip === 'website') return s === 'website';
   if (chip === 'meta ads') return META_SOURCES.includes(s);
-  if (chip === 'manual')   return s === '' || MANUAL_SOURCES.includes(s);
-  if (chip === 'other')    return s !== '' && !META_SOURCES.includes(s) && !MANUAL_SOURCES.includes(s) && s !== 'whatsapp' && s !== 'website';
+  if (chip === 'manual') return s === '' || MANUAL_SOURCES.includes(s);
+  if (chip === 'other') return s !== '' && !META_SOURCES.includes(s) && !MANUAL_SOURCES.includes(s) && s !== 'whatsapp' && s !== 'website';
   return s === chip;
 }
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
@@ -153,6 +166,55 @@ function formatDuration(seconds) {
    before this still show under the lead's name and in its timeline, and a lead
    that already has one keeps it when it is edited. There is simply no longer a
    way to enter a new one, so treat the field as historical. */
+
+/**
+ * The waiting state.
+ *
+ * "Loading leads…" in the middle of an empty table told you a request was in
+ * flight and nothing else — the header collapsed, the page jumped when rows
+ * arrived, and on a slow connection it read as a broken screen rather than a
+ * busy one.
+ *
+ * Rows of the right height and roughly the right column widths keep the layout
+ * exactly where it will be, so arriving data replaces the placeholder instead
+ * of shoving the page around. That is the entire point of a skeleton: not
+ * decoration, but a promise about where things are going to be.
+ *
+ * The count matches the page size, so ten rows do not appear where three were
+ * being waited for.
+ */
+function LeadRowsSkeleton({ rows = 10 }) {
+  return Array.from({ length: rows }, (_, i) => (
+    <tr key={`sk${i}`} className="lp-sk-row" aria-hidden="true">
+      <td><span className="lp-sk lp-sk--chk" /></td>
+      <td><span className="lp-sk" style={{ width: '70%' }} /></td>
+      <td>
+        <span className="lp-sk" style={{ width: '80%' }} />
+        <span className="lp-sk lp-sk--sm" style={{ width: '55%' }} />
+      </td>
+      <td><span className="lp-sk" style={{ width: '60%' }} /></td>
+      <td><span className="lp-sk" style={{ width: '75%' }} /></td>
+      <td><span className="lp-sk" style={{ width: '65%' }} /></td>
+      <td><span className="lp-sk lp-sk--pill" /></td>
+      <td><span className="lp-sk" style={{ width: '70%' }} /></td>
+      <td><span className="lp-sk" style={{ width: '55%' }} /></td>
+      <td><span className="lp-sk" style={{ width: '80%' }} /></td>
+      <td><span className="lp-sk" style={{ width: '60%' }} /></td>
+      <td><span className="lp-sk lp-sk--chk" /></td>
+    </tr>
+  ));
+}
+
+/** The same idea for the phone layout, where the rows are cards. */
+function LeadCardsSkeleton({ rows = 6 }) {
+  return Array.from({ length: rows }, (_, i) => (
+    <div key={`skc${i}`} className="lp-mobile-card lp-sk-card" aria-hidden="true">
+      <span className="lp-sk" style={{ width: '45%' }} />
+      <span className="lp-sk lp-sk--sm" style={{ width: '35%' }} />
+      <span className="lp-sk lp-sk--pill" style={{ marginTop: 8 }} />
+    </div>
+  ));
+}
 
 // ── Avatar helpers ────────────────────────────────────────────────────────────
 const AVATAR_STYLES = [
@@ -632,533 +694,533 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
         </div>
 
         <div className={`lp-vp-split lp-vp-split--${paneTab}`}>
-        <div className="lp-modal-body lp-vm-body lp-vp-main">
-          {loading && <div className="lp-loading">Loading…</div>}
-          {error && <div className="lp-error"><AlertCircle size={14} /> {error}</div>}
-          {lead && (
-            <div className="lp-vm-grid">
+          <div className="lp-modal-body lp-vm-body lp-vp-main">
+            {loading && <div className="lp-loading">Loading…</div>}
+            {error && <div className="lp-error"><AlertCircle size={14} /> {error}</div>}
+            {lead && (
+              <div className="lp-vm-grid">
 
-              {/* ── Customer card ── */}
-              <div className="lp-vm-card lp-vm-card--customer">
-                <div className="lp-vm-card-hd"><User size={13} /> Customer</div>
-                <div className="lp-vm-customer-main">
-                  <div className="lp-vm-avatar">{initials}</div>
-                  <div className="lp-vm-customer-info">
-                    <div className="lp-vm-customer-name">
-                      {lead.name || <span className="lp-muted">No name</span>}
-                    </div>
-                    <div className="lp-vm-customer-mobile">
-                      <Phone size={12} /> {lead.mobile}
-                    </div>
-                    {lead.whatsapp && lead.whatsapp !== lead.mobile && (
-                      <div className="lp-vm-customer-mobile">
-                        <MessageCircle size={12} /> {lead.whatsapp}
-                        <span className="lp-vm-wa-label">WhatsApp</span>
+                {/* ── Customer card ── */}
+                <div className="lp-vm-card lp-vm-card--customer">
+                  <div className="lp-vm-card-hd"><User size={13} /> Customer</div>
+                  <div className="lp-vm-customer-main">
+                    <div className="lp-vm-avatar">{initials}</div>
+                    <div className="lp-vm-customer-info">
+                      <div className="lp-vm-customer-name">
+                        {lead.name || <span className="lp-muted">No name</span>}
                       </div>
-                    )}
-                    {(lead.area_name || lead.city_name) && (
                       <div className="lp-vm-customer-mobile">
-                        <MapPin size={12} />
-                        {[lead.area_name, lead.city_name, lead.state_name].filter(Boolean).join(', ')}
+                        <Phone size={12} /> {lead.mobile}
                       </div>
-                    )}
+                      {lead.whatsapp && lead.whatsapp !== lead.mobile && (
+                        <div className="lp-vm-customer-mobile">
+                          <MessageCircle size={12} /> {lead.whatsapp}
+                          <span className="lp-vm-wa-label">WhatsApp</span>
+                        </div>
+                      )}
+                      {(lead.area_name || lead.city_name) && (
+                        <div className="lp-vm-customer-mobile">
+                          <MapPin size={12} />
+                          {[lead.area_name, lead.city_name, lead.state_name].filter(Boolean).join(', ')}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                {/* Action buttons */}
-                <div className="lp-vm-contact-btns">
-                  <a className="lp-vm-btn lp-vm-btn--call"
-                    href={`tel:${lead.mobile}`}>
-                    <Phone size={15} /> Call
-                  </a>
-                  {/* waTarget adds the country code, which this link was
+                  {/* Action buttons */}
+                  <div className="lp-vm-contact-btns">
+                    <a className="lp-vm-btn lp-vm-btn--call"
+                      href={`tel:${lead.mobile}`}>
+                      <Phone size={15} /> Call
+                    </a>
+                    {/* waTarget adds the country code, which this link was
                       missing entirely — wa.me/9876543210 resolves to nothing.
                       Returns null for numbers WhatsApp cannot reach, and the
                       button is then hidden rather than rendered broken. */}
-                  {waTarget(lead) && (
-                    <a className="lp-vm-btn lp-vm-btn--wa"
-                      href={waTarget(lead)}
-                      target="_blank" rel="noreferrer">
-                      <MessageCircle size={15} /> WhatsApp
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              {/* ── Vehicle card ── */}
-              <div className="lp-vm-card">
-                <div className="lp-vm-card-hd"><Car size={13} /> Vehicle</div>
-                {lead.vehicle_type_name || lead.make_name || lead.model_name || lead.body_type_name ? (
-                  <div className="lp-vm-info-list">
-                    {lead.vehicle_type_name && (
-                      <div className="lp-vm-info-row">
-                        <span className="lp-vm-info-label">Type</span>
-                        <span className="lp-vm-info-val">{lead.vehicle_type_name}</span>
-                      </div>
-                    )}
-                    {(lead.make_name || lead.model_name) && (
-                      <div className="lp-vm-info-row">
-                        <span className="lp-vm-info-label">Make / Model</span>
-                        <span className="lp-vm-info-val">{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</span>
-                      </div>
-                    )}
-                    {/* 4W: body type */}
-                    {lead.body_type_name && (
-                      <div className="lp-vm-info-row">
-                        <span className="lp-vm-info-label">Body</span>
-                        <span className="lp-vm-info-val">{lead.body_type_name}</span>
-                      </div>
-                    )}
-                    {/* Segment / Fuel Type */}
-                    {lead.segment_names?.length > 0 && (
-                      <div className="lp-vm-info-row">
-                        <span className="lp-vm-info-label">Fuel Type</span>
-                        <span className="lp-vm-info-val">{lead.segment_names.join(', ')}</span>
-                      </div>
-                    )}
-                    {/* 2W: engine CC */}
-                    {lead.engine_cc && (
-                      <div className="lp-vm-info-row">
-                        <span className="lp-vm-info-label">Engine CC</span>
-                        <span className="lp-vm-info-val">{lead.engine_cc} cc</span>
-                      </div>
-                    )}
-                    {/* 2W: CC category */}
-                    {lead.cc_category_name && (
-                      <div className="lp-vm-info-row">
-                        <span className="lp-vm-info-label">CC Category</span>
-                        <span className="lp-vm-info-val">{lead.cc_category_name}</span>
-                      </div>
+                    {waTarget(lead) && (
+                      <a className="lp-vm-btn lp-vm-btn--wa"
+                        href={waTarget(lead)}
+                        target="_blank" rel="noreferrer">
+                        <MessageCircle size={15} /> WhatsApp
+                      </a>
                     )}
                   </div>
-                ) : (
-                  <div className="lp-vm-empty-card">No vehicle info added</div>
-                )}
+                </div>
 
-                {/* ── Vehicle not in master at all (imported with note) ── */}
-                {!lead.make_id && lead.notes?.includes('[Vehicle not in master:') && (() => {
-                  const match = lead.notes.match(/\[Vehicle not in master: "([^"]+)"/);
-                  const vehicleText = match ? match[1] : 'this vehicle';
-                  return (
+                {/* ── Vehicle card ── */}
+                <div className="lp-vm-card">
+                  <div className="lp-vm-card-hd"><Car size={13} /> Vehicle</div>
+                  {lead.vehicle_type_name || lead.make_name || lead.model_name || lead.body_type_name ? (
+                    <div className="lp-vm-info-list">
+                      {lead.vehicle_type_name && (
+                        <div className="lp-vm-info-row">
+                          <span className="lp-vm-info-label">Type</span>
+                          <span className="lp-vm-info-val">{lead.vehicle_type_name}</span>
+                        </div>
+                      )}
+                      {(lead.make_name || lead.model_name) && (
+                        <div className="lp-vm-info-row">
+                          <span className="lp-vm-info-label">Make / Model</span>
+                          <span className="lp-vm-info-val">{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</span>
+                        </div>
+                      )}
+                      {/* 4W: body type */}
+                      {lead.body_type_name && (
+                        <div className="lp-vm-info-row">
+                          <span className="lp-vm-info-label">Body</span>
+                          <span className="lp-vm-info-val">{lead.body_type_name}</span>
+                        </div>
+                      )}
+                      {/* Segment / Fuel Type */}
+                      {lead.segment_names?.length > 0 && (
+                        <div className="lp-vm-info-row">
+                          <span className="lp-vm-info-label">Fuel Type</span>
+                          <span className="lp-vm-info-val">{lead.segment_names.join(', ')}</span>
+                        </div>
+                      )}
+                      {/* 2W: engine CC */}
+                      {lead.engine_cc && (
+                        <div className="lp-vm-info-row">
+                          <span className="lp-vm-info-label">Engine CC</span>
+                          <span className="lp-vm-info-val">{lead.engine_cc} cc</span>
+                        </div>
+                      )}
+                      {/* 2W: CC category */}
+                      {lead.cc_category_name && (
+                        <div className="lp-vm-info-row">
+                          <span className="lp-vm-info-label">CC Category</span>
+                          <span className="lp-vm-info-val">{lead.cc_category_name}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="lp-vm-empty-card">No vehicle info added</div>
+                  )}
+
+                  {/* ── Vehicle not in master at all (imported with note) ── */}
+                  {!lead.make_id && lead.notes?.includes('[Vehicle not in master:') && (() => {
+                    const match = lead.notes.match(/\[Vehicle not in master: "([^"]+)"/);
+                    const vehicleText = match ? match[1] : 'this vehicle';
+                    return (
+                      <div className="lp-vm-master-warn">
+                        <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                        <span>
+                          <strong>"{vehicleText}"</strong> is not in the Vehicle Master.
+                          Please add this make &amp; model to the Vehicle Master so correct pricing and services can be matched.
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── Vehicle Master warning — body type missing (4W only) ── */}
+                  {lead.vehicle_in_master === false && (
                     <div className="lp-vm-master-warn">
                       <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
                       <span>
-                        <strong>"{vehicleText}"</strong> is not in the Vehicle Master.
-                        Please add this make &amp; model to the Vehicle Master so correct pricing and services can be matched.
+                        <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — body type is missing.
+                        Please update the Vehicle Master so pricing and services can be matched correctly.
                       </span>
                     </div>
-                  );
-                })()}
+                  )}
 
-                {/* ── Vehicle Master warning — body type missing (4W only) ── */}
-                {lead.vehicle_in_master === false && (
-                  <div className="lp-vm-master-warn">
-                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                    <span>
-                      <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — body type is missing.
-                      Please update the Vehicle Master so pricing and services can be matched correctly.
-                    </span>
-                  </div>
-                )}
-
-                {/* ── Vehicle Master warning — CC category missing (2W only) ── */}
-                {lead.cc_missing === true && (
-                  <div className="lp-vm-master-warn">
-                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                    <span>
-                      <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — engine CC category is missing.
-                      Please update the Vehicle Master so the correct service pricing can be applied.
-                    </span>
-                  </div>
-                )}
-
-                {/* ── Segment missing warning (4W only) ── */}
-                {lead.make_id && !is2WType(lead.vehicle_type_name || '') && (!lead.segment_ids || lead.segment_ids.length === 0) && (
-                  <div className="lp-vm-master-warn">
-                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                    <span>
-                      <strong>Segment not set</strong> for this vehicle. Please add the segment (e.g. Petrol, Diesel, CNG) so the correct service pricing can be applied.
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Meta info card ── */}
-              <div className="lp-vm-card lp-vm-card--meta">
-                <div className="lp-vm-card-hd"><Tag size={13} /> Lead Info</div>
-                <div className="lp-vm-info-list">
-                  <div className="lp-vm-info-row">
-                    <span className="lp-vm-info-label">Created</span>
-                    <span className="lp-vm-info-val">
-                      {new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      {' · '}
-                      {new Date(lead.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  {lead.created_by_name && (
-                    <div className="lp-vm-info-row">
-                      <span className="lp-vm-info-label">By</span>
-                      <span className="lp-vm-info-val">{lead.created_by_name}</span>
+                  {/* ── Vehicle Master warning — CC category missing (2W only) ── */}
+                  {lead.cc_missing === true && (
+                    <div className="lp-vm-master-warn">
+                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>
+                        <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — engine CC category is missing.
+                        Please update the Vehicle Master so the correct service pricing can be applied.
+                      </span>
                     </div>
                   )}
-                  <div className="lp-vm-info-row">
-                    <span className="lp-vm-info-label">Assigned</span>
-                    <span className="lp-vm-info-val">
-                      {lead.assigned_to_name
-                        ? <span className="lp-assigned-badge"><UserCheck size={11} /> {lead.assigned_to_name}</span>
-                        : <span className="lp-muted">Unassigned</span>}
-                    </span>
-                  </div>
-                  {lead.lead_source && (
-                    <div className="lp-vm-info-row">
-                      <span className="lp-vm-info-label">Source</span>
-                      <span className="lp-vm-info-val">{lead.lead_source}</span>
-                    </div>
-                  )}
-                  {lead.lost_reason && (
-                    <div className="lp-vm-info-row">
-                      <span className="lp-vm-info-label">Lost Reason</span>
-                      <span className="lp-vm-info-val lp-lost-pill">{lead.lost_reason}</span>
+
+                  {/* ── Segment missing warning (4W only) ── */}
+                  {lead.make_id && !is2WType(lead.vehicle_type_name || '') && (!lead.segment_ids || lead.segment_ids.length === 0) && (
+                    <div className="lp-vm-master-warn">
+                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>
+                        <strong>Segment not set</strong> for this vehicle. Please add the segment (e.g. Petrol, Diesel, CNG) so the correct service pricing can be applied.
+                      </span>
                     </div>
                   )}
                 </div>
-              </div>
 
-              {/* ── Follow-ups — beside Lead Info ── */}
-              <div className="lp-vm-card">
-                <div className="lp-vm-card-hd"><Calendar size={13} /> Follow-ups</div>
-                {followUps.length === 0 ? (
-                  <div className="lp-vm-empty-row">No follow-ups scheduled.</div>
-                ) : (
-                  <div className="lp-fu-detail-wrap">
-                    <div className="lp-fu-detail-list">
-                      {followUps.map(fu => {
-                        const d = new Date(fu.due_date);
-                        const today = new Date(); today.setHours(0, 0, 0, 0);
-                        const diff = Math.round((d - today) / 86400000);
-                        const isOverdue = !fu.is_done && !isLeadLocked && diff < 0;
-                        const isToday = !fu.is_done && !isLeadLocked && diff === 0;
-                        const dateLabel = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-                        const timeLabel = fu.due_at
-                          ? new Date(fu.due_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-                          : null;
-                        return (
-                          <div key={fu.id} className={`lp-fu-detail-row${fu.is_done ? ' lp-fu-detail-row--done' : isOverdue ? ' lp-fu-detail-row--overdue' : ''}`}>
-                            <div className="lp-fu-detail-dot" style={{
-                              background: fu.is_done ? '#16a34a' : isOverdue ? '#dc2626' : isToday ? '#d97706' : '#2563eb'
-                            }} />
-                            <div className="lp-fu-detail-body">
-                              <div className="lp-fu-detail-date">
-                                {dateLabel}{timeLabel && ` · ${timeLabel}`}
-                                {fu.is_done && <span className="lp-fu-detail-done-tag">✓ Done</span>}
-                                {isOverdue && <span className="lp-fu-detail-overdue-tag">⚠ Overdue</span>}
-                                {isToday && <span className="lp-fu-detail-today-tag">Today</span>}
+                {/* ── Meta info card ── */}
+                <div className="lp-vm-card lp-vm-card--meta">
+                  <div className="lp-vm-card-hd"><Tag size={13} /> Lead Info</div>
+                  <div className="lp-vm-info-list">
+                    <div className="lp-vm-info-row">
+                      <span className="lp-vm-info-label">Created</span>
+                      <span className="lp-vm-info-val">
+                        {new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {' · '}
+                        {new Date(lead.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    {lead.created_by_name && (
+                      <div className="lp-vm-info-row">
+                        <span className="lp-vm-info-label">By</span>
+                        <span className="lp-vm-info-val">{lead.created_by_name}</span>
+                      </div>
+                    )}
+                    <div className="lp-vm-info-row">
+                      <span className="lp-vm-info-label">Assigned</span>
+                      <span className="lp-vm-info-val">
+                        {lead.assigned_to_name
+                          ? <span className="lp-assigned-badge"><UserCheck size={11} /> {lead.assigned_to_name}</span>
+                          : <span className="lp-muted">Unassigned</span>}
+                      </span>
+                    </div>
+                    {lead.lead_source && (
+                      <div className="lp-vm-info-row">
+                        <span className="lp-vm-info-label">Source</span>
+                        <span className="lp-vm-info-val">{lead.lead_source}</span>
+                      </div>
+                    )}
+                    {lead.lost_reason && (
+                      <div className="lp-vm-info-row">
+                        <span className="lp-vm-info-label">Lost Reason</span>
+                        <span className="lp-vm-info-val lp-lost-pill">{lead.lost_reason}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Follow-ups — beside Lead Info ── */}
+                <div className="lp-vm-card">
+                  <div className="lp-vm-card-hd"><Calendar size={13} /> Follow-ups</div>
+                  {followUps.length === 0 ? (
+                    <div className="lp-vm-empty-row">No follow-ups scheduled.</div>
+                  ) : (
+                    <div className="lp-fu-detail-wrap">
+                      <div className="lp-fu-detail-list">
+                        {followUps.map(fu => {
+                          const d = new Date(fu.due_date);
+                          const today = new Date(); today.setHours(0, 0, 0, 0);
+                          const diff = Math.round((d - today) / 86400000);
+                          const isOverdue = !fu.is_done && !isLeadLocked && diff < 0;
+                          const isToday = !fu.is_done && !isLeadLocked && diff === 0;
+                          const dateLabel = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                          const timeLabel = fu.due_at
+                            ? new Date(fu.due_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                            : null;
+                          return (
+                            <div key={fu.id} className={`lp-fu-detail-row${fu.is_done ? ' lp-fu-detail-row--done' : isOverdue ? ' lp-fu-detail-row--overdue' : ''}`}>
+                              <div className="lp-fu-detail-dot" style={{
+                                background: fu.is_done ? '#16a34a' : isOverdue ? '#dc2626' : isToday ? '#d97706' : '#2563eb'
+                              }} />
+                              <div className="lp-fu-detail-body">
+                                <div className="lp-fu-detail-date">
+                                  {dateLabel}{timeLabel && ` · ${timeLabel}`}
+                                  {fu.is_done && <span className="lp-fu-detail-done-tag">✓ Done</span>}
+                                  {isOverdue && <span className="lp-fu-detail-overdue-tag">⚠ Overdue</span>}
+                                  {isToday && <span className="lp-fu-detail-today-tag">Today</span>}
+                                </div>
+                                {fu.note && <div className="lp-fu-detail-note">{fu.note}</div>}
+                                <div className="lp-fu-detail-meta">Status: <strong>{fu.status_name || '—'}</strong></div>
+                                {!fu.is_done && !isLeadLocked && (
+                                  <button
+                                    style={{ marginTop: 6, fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}
+                                    onClick={() => setRescheduleId(fu.id)}
+                                  >
+                                    Reschedule
+                                  </button>
+                                )}
                               </div>
-                              {fu.note && <div className="lp-fu-detail-note">{fu.note}</div>}
-                              <div className="lp-fu-detail-meta">Status: <strong>{fu.status_name || '—'}</strong></div>
-                              {!fu.is_done && !isLeadLocked && (
-                                <button
-                                  style={{ marginTop: 6, fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}
-                                  onClick={() => setRescheduleId(fu.id)}
-                                >
-                                  Reschedule
-                                </button>
-                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Services (includes category-only interests) ── */}
+                {(lead.services?.length > 0 || lead.categories?.length > 0) && (
+                  <div className="lp-vm-card lp-vm-card--full">
+                    <div className="lp-vm-card-hd"><FileText size={13} /> Services</div>
+                    <table className="lp-svc-table">
+                      <thead>
+                        <tr><th>Category</th><th>Service</th><th className="text-right">Price</th></tr>
+                      </thead>
+                      <tbody>
+                        {/* Category-only rows — skip if a specific service from same category exists */}
+                        {lead.categories?.filter(c =>
+                          !lead.services?.some(s => s.category_name === c.category_name)
+                        ).map(c => (
+                          <tr key={`cat-${c.id}`}>
+                            <td className="lp-muted">{c.category_name}</td>
+                            <td style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</td>
+                            <td className="text-right" style={{ color: 'var(--text-muted)' }}>—</td>
+                          </tr>
+                        ))}
+                        {/* Specific service rows */}
+                        {lead.services?.map(s => (
+                          <tr key={s.id}>
+                            <td className="lp-muted">{s.category_name}</td>
+                            <td>{s.service_name}</td>
+                            <td className="text-right">₹{Number(s.price).toLocaleString('en-IN')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {lead.services?.length > 0 && (
+                      <div className="lp-vm-total-row">
+                        <span>Total</span>
+                        <span className="lp-vm-total-val">₹{Number(lead.total_price).toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Notes — strip internal [Vehicle not in master:...] tag before display ── */}
+                {lead.notes && lead.notes.replace(/\[Vehicle not in master:[^\]]+\]/g, '').trim() && (
+                  <div className="lp-vm-card lp-vm-card--full">
+                    <div className="lp-vm-card-hd"><FileText size={13} /> Notes</div>
+                    <p className="lp-notes-text">{lead.notes.replace(/\[Vehicle not in master:[^\]]+\]/g, '').trim()}</p>
+                  </div>
+                )}
+
+                {/* ── Notes & Activity Timeline ── */}
+                {/* ── Status History Timeline ── */}
+                <div className="lp-vm-card lp-vm-card--full">
+                  <div className="lp-vm-card-hd"><Clock size={13} /> Status History</div>
+                  {statusHistory.length === 0 ? (
+                    <div className="lp-vm-empty-card">No status changes recorded yet.</div>
+                  ) : (
+                    <div className="lp-sh-list">
+                      {statusHistory.map((item, idx) => {
+                        const isFirst = idx === statusHistory.length - 1;
+                        const isLatest = idx === 0;
+                        const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit',
+                        });
+                        return (
+                          <div key={item.id} className="lp-sh-item">
+                            <div className="lp-sh-left">
+                              <div className={`lp-sh-dot ${isLatest ? 'lp-sh-dot--latest' : ''}`} />
+                              {!isFirst && <div className="lp-sh-line" />}
+                            </div>
+                            <div className="lp-sh-body">
+                              <div className="lp-sh-top">
+                                {item.type === 'created' ? (
+                                  <span className="lp-sh-badge lp-sh-badge--created">Lead Created</span>
+                                ) : (
+                                  <div className="lp-sh-change">
+                                    {item.old_value
+                                      ? <span className="lp-sh-badge lp-sh-badge--old">{item.old_value}</span>
+                                      : <span className="lp-sh-badge lp-sh-badge--new-lead">New Lead</span>
+                                    }
+                                    <span className="lp-sh-arrow">→</span>
+                                    <span className="lp-sh-badge lp-sh-badge--new">{item.new_value}</span>
+                                  </div>
+                                )}
+                                {isLatest && <span className="lp-sh-current">current</span>}
+                              </div>
+                              <div className="lp-sh-meta">
+                                <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
+                                <span className="lp-sh-dot-sep">·</span>
+                                <span className="lp-sh-time">{timeStr}</span>
+                                {stageDurations[item.id] != null && (
+                                  <>
+                                    <span className="lp-sh-dot-sep">·</span>
+                                    <span className="lp-sh-duration">
+                                      {isLatest ? '⏱ ' : ''}
+                                      {formatDuration(stageDurations[item.id])}
+                                      {isLatest ? ' so far' : ' here'}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Services (includes category-only interests) ── */}
-              {(lead.services?.length > 0 || lead.categories?.length > 0) && (
-                <div className="lp-vm-card lp-vm-card--full">
-                  <div className="lp-vm-card-hd"><FileText size={13} /> Services</div>
-                  <table className="lp-svc-table">
-                    <thead>
-                      <tr><th>Category</th><th>Service</th><th className="text-right">Price</th></tr>
-                    </thead>
-                    <tbody>
-                      {/* Category-only rows — skip if a specific service from same category exists */}
-                      {lead.categories?.filter(c =>
-                        !lead.services?.some(s => s.category_name === c.category_name)
-                      ).map(c => (
-                        <tr key={`cat-${c.id}`}>
-                          <td className="lp-muted">{c.category_name}</td>
-                          <td style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</td>
-                          <td className="text-right" style={{ color: 'var(--text-muted)' }}>—</td>
-                        </tr>
-                      ))}
-                      {/* Specific service rows */}
-                      {lead.services?.map(s => (
-                        <tr key={s.id}>
-                          <td className="lp-muted">{s.category_name}</td>
-                          <td>{s.service_name}</td>
-                          <td className="text-right">₹{Number(s.price).toLocaleString('en-IN')}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {lead.services?.length > 0 && (
-                    <div className="lp-vm-total-row">
-                      <span>Total</span>
-                      <span className="lp-vm-total-val">₹{Number(lead.total_price).toLocaleString('en-IN')}</span>
-                    </div>
                   )}
                 </div>
-              )}
 
-              {/* ── Notes — strip internal [Vehicle not in master:...] tag before display ── */}
-              {lead.notes && lead.notes.replace(/\[Vehicle not in master:[^\]]+\]/g, '').trim() && (
-                <div className="lp-vm-card lp-vm-card--full">
-                  <div className="lp-vm-card-hd"><FileText size={13} /> Notes</div>
-                  <p className="lp-notes-text">{lead.notes.replace(/\[Vehicle not in master:[^\]]+\]/g, '').trim()}</p>
-                </div>
-              )}
-
-              {/* ── Notes & Activity Timeline ── */}
-              {/* ── Status History Timeline ── */}
-              <div className="lp-vm-card lp-vm-card--full">
-                <div className="lp-vm-card-hd"><Clock size={13} /> Status History</div>
-                {statusHistory.length === 0 ? (
-                  <div className="lp-vm-empty-card">No status changes recorded yet.</div>
-                ) : (
-                  <div className="lp-sh-list">
-                    {statusHistory.map((item, idx) => {
-                      const isFirst = idx === statusHistory.length - 1;
-                      const isLatest = idx === 0;
-                      const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                        hour: '2-digit', minute: '2-digit',
-                      });
-                      return (
-                        <div key={item.id} className="lp-sh-item">
-                          <div className="lp-sh-left">
-                            <div className={`lp-sh-dot ${isLatest ? 'lp-sh-dot--latest' : ''}`} />
-                            {!isFirst && <div className="lp-sh-line" />}
-                          </div>
-                          <div className="lp-sh-body">
-                            <div className="lp-sh-top">
-                              {item.type === 'created' ? (
-                                <span className="lp-sh-badge lp-sh-badge--created">Lead Created</span>
-                              ) : (
+                {/* ── Assignment History ── */}
+                <div className="lp-vm-card">
+                  <div className="lp-vm-card-hd"><UserCheck size={13} /> Assignment History</div>
+                  {assignHistory.length === 0 ? (
+                    <div className="lp-vm-empty-card">No assignment changes recorded yet.</div>
+                  ) : (
+                    <div className="lp-sh-list">
+                      {assignHistory.map((item, idx) => {
+                        const isFirst = idx === assignHistory.length - 1;
+                        const isLatest = idx === 0;
+                        const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit',
+                        });
+                        return (
+                          <div key={item.id} className="lp-sh-item">
+                            <div className="lp-sh-left">
+                              <div className={`lp-sh-dot lp-sh-dot--assign ${isLatest ? 'lp-sh-dot--latest' : ''}`} />
+                              {!isFirst && <div className="lp-sh-line" />}
+                            </div>
+                            <div className="lp-sh-body">
+                              <div className="lp-sh-top">
                                 <div className="lp-sh-change">
                                   {item.old_value
                                     ? <span className="lp-sh-badge lp-sh-badge--old">{item.old_value}</span>
-                                    : <span className="lp-sh-badge lp-sh-badge--new-lead">New Lead</span>
+                                    : <span className="lp-sh-badge lp-sh-badge--new-lead">Unassigned</span>
                                   }
                                   <span className="lp-sh-arrow">→</span>
-                                  <span className="lp-sh-badge lp-sh-badge--new">{item.new_value}</span>
+                                  {item.new_value
+                                    ? <span className="lp-sh-badge lp-sh-badge--new">{item.new_value}</span>
+                                    : <span className="lp-sh-badge lp-sh-badge--old">Unassigned</span>
+                                  }
                                 </div>
-                              )}
-                              {isLatest && <span className="lp-sh-current">current</span>}
-                            </div>
-                            <div className="lp-sh-meta">
-                              <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
-                              <span className="lp-sh-dot-sep">·</span>
-                              <span className="lp-sh-time">{timeStr}</span>
-                              {stageDurations[item.id] != null && (
-                                <>
-                                  <span className="lp-sh-dot-sep">·</span>
-                                  <span className="lp-sh-duration">
-                                    {isLatest ? '⏱ ' : ''}
-                                    {formatDuration(stageDurations[item.id])}
-                                    {isLatest ? ' so far' : ' here'}
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* ── Assignment History ── */}
-              <div className="lp-vm-card">
-                <div className="lp-vm-card-hd"><UserCheck size={13} /> Assignment History</div>
-                {assignHistory.length === 0 ? (
-                  <div className="lp-vm-empty-card">No assignment changes recorded yet.</div>
-                ) : (
-                  <div className="lp-sh-list">
-                    {assignHistory.map((item, idx) => {
-                      const isFirst = idx === assignHistory.length - 1;
-                      const isLatest = idx === 0;
-                      const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                        hour: '2-digit', minute: '2-digit',
-                      });
-                      return (
-                        <div key={item.id} className="lp-sh-item">
-                          <div className="lp-sh-left">
-                            <div className={`lp-sh-dot lp-sh-dot--assign ${isLatest ? 'lp-sh-dot--latest' : ''}`} />
-                            {!isFirst && <div className="lp-sh-line" />}
-                          </div>
-                          <div className="lp-sh-body">
-                            <div className="lp-sh-top">
-                              <div className="lp-sh-change">
-                                {item.old_value
-                                  ? <span className="lp-sh-badge lp-sh-badge--old">{item.old_value}</span>
-                                  : <span className="lp-sh-badge lp-sh-badge--new-lead">Unassigned</span>
-                                }
-                                <span className="lp-sh-arrow">→</span>
-                                {item.new_value
-                                  ? <span className="lp-sh-badge lp-sh-badge--new">{item.new_value}</span>
-                                  : <span className="lp-sh-badge lp-sh-badge--old">Unassigned</span>
-                                }
+                                {isLatest && <span className="lp-sh-current">current</span>}
                               </div>
-                              {isLatest && <span className="lp-sh-current">current</span>}
-                            </div>
-                            <div className="lp-sh-meta">
-                              <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
-                              <span className="lp-sh-dot-sep">·</span>
-                              <span className="lp-sh-time">{timeStr}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* ── Service History ── */}
-              <div className="lp-vm-card">
-                <div className="lp-vm-card-hd"><Wrench size={13} /> Service History</div>
-                {serviceHistory.length === 0 ? (
-                  <div className="lp-vm-empty-card">No service changes recorded yet.</div>
-                ) : (
-                  <div className="lp-sh-list">
-                    {serviceHistory.map((item, idx) => {
-                      const isFirst = idx === serviceHistory.length - 1;
-                      const isAdded = item.type === 'service_added';
-                      const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                        hour: '2-digit', minute: '2-digit',
-                      });
-                      return (
-                        <div key={item.id} className="lp-sh-item">
-                          <div className="lp-sh-left">
-                            <div className={`lp-sh-dot ${isAdded ? 'lp-sh-dot--svc-add' : 'lp-sh-dot--svc-rem'}`} />
-                            {!isFirst && <div className="lp-sh-line" />}
-                          </div>
-                          <div className="lp-sh-body">
-                            <div className="lp-sh-top">
-                              <div className="lp-sh-change">
-                                <span className={`lp-sh-badge ${isAdded ? 'lp-sh-badge--svc-add' : 'lp-sh-badge--svc-rem'}`}>
-                                  {isAdded ? '+ Added' : '− Removed'}
-                                </span>
-                                <span className="lp-sh-badge lp-sh-badge--new">
-                                  {isAdded ? item.new_value : item.old_value}
-                                </span>
+                              <div className="lp-sh-meta">
+                                <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
+                                <span className="lp-sh-dot-sep">·</span>
+                                <span className="lp-sh-time">{timeStr}</span>
                               </div>
                             </div>
-                            <div className="lp-sh-meta">
-                              <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
-                              <span className="lp-sh-dot-sep">·</span>
-                              <span className="lp-sh-time">{timeStr}</span>
-                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="lp-vm-card lp-vm-card--full lp-timeline-card">
-                <div className="lp-vm-card-hd"><MessageSquare size={13} /> Notes</div>
-
-                {/* Notes list — chat bubble style */}
-                <div className="lp-chat-list">
-                  {timeline.length === 0 ? (
-                    <div className="lp-timeline-empty">No notes added yet.</div>
-                  ) : (
-                    timeline.map((item) => {
-                      const isMine = Number(item.created_by) === Number(currentUser?.id);
-                      const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
-                        day: '2-digit', month: 'short',
-                        hour: '2-digit', minute: '2-digit',
-                      });
-                      return (
-                        <div key={item.id} style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: isMine ? 'flex-end' : 'flex-start',
-                          marginBottom: 12,
-                          padding: '0 4px',
-                        }}>
-                          {!isMine && (
-                            <span style={{
-                              fontSize: 11, fontWeight: 600,
-                              color: 'var(--primary, #00b09b)',
-                              marginBottom: 3, marginLeft: 6,
-                            }}>
-                              {item.created_by_name || 'Unknown'}
-                            </span>
-                          )}
-                          <div style={{
-                            maxWidth: '75%',
-                            background: isMine ? 'var(--primary, #00b09b)' : '#f1f0f0',
-                            color: isMine ? '#fff' : 'var(--text-main, #1a1a1a)',
-                            borderRadius: isMine ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                            padding: '8px 12px',
-                            fontSize: 13,
-                            lineHeight: 1.5,
-                            wordBreak: 'break-word',
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-                          }}>
-                            {item.note}
-                          </div>
-                          <span style={{
-                            fontSize: 10, color: 'var(--text-muted)',
-                            marginTop: 4,
-                            marginLeft: isMine ? 0 : 6,
-                            marginRight: isMine ? 6 : 0,
-                          }}>
-                            {timeStr}
-                          </span>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+                    </div>
                   )}
-                  <div ref={timelineEndRef} />
                 </div>
 
-                {/* Add note form — only for users who can edit leads */}
-                {canEdit && (
-                  <form className="lp-add-note-form" onSubmit={handleAddNote}>
-                    {noteError && <div className="lp-note-error"><AlertCircle size={12} /> {noteError}</div>}
-                    <div className="lp-add-note-row">
-                      <textarea
-                        className="lp-add-note-input"
-                        rows={2}
-                        placeholder="Add a note…"
-                        value={noteText}
-                        onChange={e => setNoteText(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddNote(e); }
-                        }}
-                        disabled={noteSaving}
-                      />
-                      <button type="submit" className="lp-add-note-btn" disabled={noteSaving || !noteText.trim()}>
-                        {noteSaving ? <Clock size={14} /> : <Send size={14} />}
-                      </button>
+                {/* ── Service History ── */}
+                <div className="lp-vm-card">
+                  <div className="lp-vm-card-hd"><Wrench size={13} /> Service History</div>
+                  {serviceHistory.length === 0 ? (
+                    <div className="lp-vm-empty-card">No service changes recorded yet.</div>
+                  ) : (
+                    <div className="lp-sh-list">
+                      {serviceHistory.map((item, idx) => {
+                        const isFirst = idx === serviceHistory.length - 1;
+                        const isAdded = item.type === 'service_added';
+                        const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit',
+                        });
+                        return (
+                          <div key={item.id} className="lp-sh-item">
+                            <div className="lp-sh-left">
+                              <div className={`lp-sh-dot ${isAdded ? 'lp-sh-dot--svc-add' : 'lp-sh-dot--svc-rem'}`} />
+                              {!isFirst && <div className="lp-sh-line" />}
+                            </div>
+                            <div className="lp-sh-body">
+                              <div className="lp-sh-top">
+                                <div className="lp-sh-change">
+                                  <span className={`lp-sh-badge ${isAdded ? 'lp-sh-badge--svc-add' : 'lp-sh-badge--svc-rem'}`}>
+                                    {isAdded ? '+ Added' : '− Removed'}
+                                  </span>
+                                  <span className="lp-sh-badge lp-sh-badge--new">
+                                    {isAdded ? item.new_value : item.old_value}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="lp-sh-meta">
+                                <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
+                                <span className="lp-sh-dot-sep">·</span>
+                                <span className="lp-sh-time">{timeStr}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <span className="lp-add-note-hint">Enter to send · Shift+Enter for new line</span>
-                  </form>
-                )}
+                  )}
+                </div>
+
+                <div className="lp-vm-card lp-vm-card--full lp-timeline-card">
+                  <div className="lp-vm-card-hd"><MessageSquare size={13} /> Notes</div>
+
+                  {/* Notes list — chat bubble style */}
+                  <div className="lp-chat-list">
+                    {timeline.length === 0 ? (
+                      <div className="lp-timeline-empty">No notes added yet.</div>
+                    ) : (
+                      timeline.map((item) => {
+                        const isMine = Number(item.created_by) === Number(currentUser?.id);
+                        const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
+                          day: '2-digit', month: 'short',
+                          hour: '2-digit', minute: '2-digit',
+                        });
+                        return (
+                          <div key={item.id} style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: isMine ? 'flex-end' : 'flex-start',
+                            marginBottom: 12,
+                            padding: '0 4px',
+                          }}>
+                            {!isMine && (
+                              <span style={{
+                                fontSize: 11, fontWeight: 600,
+                                color: 'var(--primary, #00b09b)',
+                                marginBottom: 3, marginLeft: 6,
+                              }}>
+                                {item.created_by_name || 'Unknown'}
+                              </span>
+                            )}
+                            <div style={{
+                              maxWidth: '75%',
+                              background: isMine ? 'var(--primary, #00b09b)' : '#f1f0f0',
+                              color: isMine ? '#fff' : 'var(--text-main, #1a1a1a)',
+                              borderRadius: isMine ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                              padding: '8px 12px',
+                              fontSize: 13,
+                              lineHeight: 1.5,
+                              wordBreak: 'break-word',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+                            }}>
+                              {item.note}
+                            </div>
+                            <span style={{
+                              fontSize: 10, color: 'var(--text-muted)',
+                              marginTop: 4,
+                              marginLeft: isMine ? 0 : 6,
+                              marginRight: isMine ? 6 : 0,
+                            }}>
+                              {timeStr}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                    <div ref={timelineEndRef} />
+                  </div>
+
+                  {/* Add note form — only for users who can edit leads */}
+                  {canEdit && (
+                    <form className="lp-add-note-form" onSubmit={handleAddNote}>
+                      {noteError && <div className="lp-note-error"><AlertCircle size={12} /> {noteError}</div>}
+                      <div className="lp-add-note-row">
+                        <textarea
+                          className="lp-add-note-input"
+                          rows={2}
+                          placeholder="Add a note…"
+                          value={noteText}
+                          onChange={e => setNoteText(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddNote(e); }
+                          }}
+                          disabled={noteSaving}
+                        />
+                        <button type="submit" className="lp-add-note-btn" disabled={noteSaving || !noteText.trim()}>
+                          {noteSaving ? <Clock size={14} /> : <Send size={14} />}
+                        </button>
+                      </div>
+                      <span className="lp-add-note-hint">Enter to send · Shift+Enter for new line</span>
+                    </form>
+                  )}
+                </div>
+
               </div>
+            )}
+          </div>
 
-            </div>
-          )}
-        </div>
-
-        {/* ── WhatsApp rail ────────────────────────────────────────────────
+          {/* ── WhatsApp rail ────────────────────────────────────────────────
             Beside the detail, not inside it. Keyed by the NUMBER rather than
             the lead id: the thread is one continuous exchange with a person
             that happens to touch this lead. whatsapp first, mobile as the
@@ -1168,19 +1230,19 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
             the Edit modal is open on top, which is the whole reason this is a
             page: you can read what the customer asked for while you fill the
             form in. */}
-        {lead && (
-          <aside className="lp-vp-rail">
-            <WhatsAppThread
-              mobile={lead.whatsapp || lead.mobile}
-              /* This page already knows the lead, so the template button in the
-                 closed bar does not have to wait for the thread request to tell
-                 it. The Customer page has no such id and falls back to the
-                 conversation's resolved lead. */
-              entityType="lead"
-              entityId={lead.id}
-            />
-          </aside>
-        )}
+          {lead && (
+            <aside className="lp-vp-rail">
+              <WhatsAppThread
+                mobile={lead.whatsapp || lead.mobile}
+                /* This page already knows the lead, so the template button in the
+                   closed bar does not have to wait for the thread request to tell
+                   it. The Customer page has no such id and falls back to the
+                   conversation's resolved lead. */
+                entityType="lead"
+                entityId={lead.id}
+              />
+            </aside>
+          )}
         </div>
       </div>
       {rescheduleId && (
@@ -3381,6 +3443,14 @@ export default function LeadsPage() {
 
   const [leads, setLeads] = useState([]);
   const [leadsScope, setLeadsScope] = useState('all');
+  /* What the server says about the WHOLE result, not the page in `leads`.
+     Held separately because that is exactly the distinction the old code did
+     not have to make — `leads` was everything, so a count over it was a count
+     over everything. It is now ten rows, and a chip counting those would read
+     "Follow-Up 3" on a pipeline of four hundred. */
+  const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState({ status: {}, assignee: {}, source: {} });
+  const [totalValue, setTotalValue] = useState(0);
   const [statusList, setStatusList] = useState([]);
   const [leadSources, setLeadSources] = useState(LEAD_SOURCES); // default to const; overridden by API
   const [stageStats, setStageStats] = useState([]);
@@ -3440,7 +3510,7 @@ export default function LeadsPage() {
   // name from the Advanced dropdown — the two answer different questions and
   // combining them into one control would lose the narrow one.
   const [sourceChip, setSourceChip] = useState(ls.sourceChip ?? 'all');
-  const [ownerChip, setOwnerChip]   = useState(ls.ownerChip ?? 'all');
+  const [ownerChip, setOwnerChip] = useState(ls.ownerChip ?? 'all');
 
   // Persist whenever any of these change
   useEffect(() => {
@@ -3449,7 +3519,7 @@ export default function LeadsPage() {
       dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip,
     });
   }, [page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
-      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip]);
+    dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip]);
 
   useListScrollRestore('sp_leads_list_v1', !loading);
 
@@ -3670,6 +3740,18 @@ export default function LeadsPage() {
     if (!vTypes.length) api('/api/vehicles/types').then(r => setVTypes(r.items || [])).catch(() => { });
   }, [showAdv]); // eslint-disable-line
 
+  /* Escape closes the filters modal.
+     It stopped being a dropdown, and a dropdown is dismissed by clicking
+     anywhere — a modal covers the page, so the only ways out are the ones we
+     provide. The backdrop and the two buttons are two of them; this is the
+     third, and it is the one people reach for without thinking. */
+  useEffect(() => {
+    if (!showAdv) return;
+    const onKey = e => { if (e.key === 'Escape') setShowAdv(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showAdv]);
+
   // Cascading: state → cities
   useEffect(() => {
     if (!fState) { setAdvCities([]); setFCity(''); setAdvAreas([]); setFArea(''); return; }
@@ -3708,19 +3790,73 @@ export default function LeadsPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  /**
+   * One page, from the server.
+   *
+   * This used to be `api('/api/leads')` — every lead the user could see, in one
+   * response, with the browser doing the filtering, the counting and the paging
+   * on the array it was handed. At four thousand leads that is six to ten
+   * megabytes on every visit and every refresh, to show ten rows.
+   *
+   * So the filters travel INSTEAD of the leads. Every piece of state below is
+   * something the browser used to compare in JavaScript and now sends as a
+   * query parameter; the response carries the page, the total, and the chip
+   * counts — which have to come from the server because a count taken from ten
+   * rows is a number out of ten, rendered with total confidence.
+   *
+   * Arrays are joined rather than repeated as `status=a&status=b`: Express
+   * hands a repeated key back as an array only SOMETIMES (once for one value,
+   * an array for two), and a server that has to check which it got is a server
+   * that will one day get it wrong.
+   */
   const loadLeads = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api('/api/leads');
-      setLeads(r.items);
+      const qs = new URLSearchParams();
+      qs.set('page', String(page));
+      qs.set('page_size', String(pageSize));
+
+      if (search) qs.set('search', search);
+      if (statusFilters.length) qs.set('status', statusFilters.join(','));
+      if (assigneeFilters.length) qs.set('assignee', assigneeFilters.join(','));
+      if (creatorFilter) qs.set('creator', creatorFilter);
+      if (dateFrom) qs.set('date_from', dateFrom);
+      if (dateTo) qs.set('date_to', dateTo);
+      if (fState) qs.set('state', fState);
+      if (fCity) qs.set('city', fCity);
+      if (fArea) qs.set('area', fArea);
+      if (fVType) qs.set('vehicle_type', fVType);
+      if (fMake) qs.set('make', fMake);
+      if (fModel) qs.set('model', fModel);
+      // The dropdown is an exact stored name; the chip is a GROUP of names.
+      // Two parameters because they are two different questions and can both
+      // be asked at once.
+      if (fSource) qs.set('source_exact', fSource);
+      if (sourceChip && sourceChip !== 'all') qs.set('source', sourceChip);
+      if (ownerChip && ownerChip !== 'all') qs.set('owner', ownerChip);
+
+      const r = await api(`/api/leads?${qs.toString()}`);
+      setLeads(r.items || []);
+      setTotal(r.total ?? 0);
+      setCounts(r.counts || { status: {}, assignee: {}, source: {}, owner: {} });
+      setAssignees(r.assignees || []);
+      setTotalValue(r.total_value ?? 0);
       setLeadsScope(r.scope || 'all');
+      // Selection is per page now. Carrying ids across a page change would let
+      // a bulk action hit rows nobody can currently see.
       setSelectedLeads(new Set());
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+    /* Every filter is a dependency, which is what makes the effect below the
+       ONLY place a refetch is triggered. The alternative — calling loadLeads()
+       from each filter's onChange — is fifteen call sites to keep in step, and
+       the one that gets forgotten is a filter that silently does nothing. */
+  }, [page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
+    dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource,
+    sourceChip, ownerChip]);
 
   useEffect(() => { loadLeads(); }, [loadLeads]);
   useEffect(() => {
@@ -3728,14 +3864,12 @@ export default function LeadsPage() {
     return () => window.removeEventListener('lead-created', loadLeads);
   }, [loadLeads]);
 
-  // Unique assignees for dropdown
-  const assignees = useMemo(() => {
-    const map = {};
-    for (const l of leads) {
-      if (l.assigned_to && l.assigned_to_name) map[l.assigned_to] = l.assigned_to_name;
-    }
-    return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [leads]);
+  /* The assignee dropdown's options come from the server now.
+     Derived from `leads` they were derived from ONE PAGE — the dropdown would
+     offer whoever happened to appear on page one and silently hide everybody
+     else, so filtering by an agent stopped being possible the moment they had
+     no recent lead. */
+  const [assignees, setAssignees] = useState([]);
 
   const creators = useMemo(() => {
     const map = {};
@@ -3764,49 +3898,16 @@ export default function LeadsPage() {
     return assigneeFilters.includes(String(l.assigned_to));
   }
 
-  // Client-side filter — all criteria combined
-  const filtered = leads.filter(l => {
-    const q = search.toLowerCase();
-    if (!q || !(l.name || '').toLowerCase().includes(q) && !l.mobile.includes(q)) {
-      if (q) return false;
-    }
-    if (statusFilters.length) {
-      const isNew = !l.status;
-      const matchesNew = statusFilters.includes('__new__') && isNew;
-      const matchesStatus = l.status && statusFilters.includes(l.status);
-      if (!matchesNew && !matchesStatus) return false;
-    }
-    if (!matchesAssigneeFilter(l)) return false;
-    if (creatorFilter && String(l.created_by_id) !== creatorFilter) return false;
+  /* ── The filtering used to happen HERE ──────────────────────────────────
+     A fifteen-condition `leads.filter(...)` ran on every render over the whole
+     array. It is gone: the same fifteen conditions are now query parameters,
+     and `leads` IS the page the server chose.
 
-    // Date range
-    if (dateFrom || dateTo) {
-      const d = new Date(l.created_at);
-      const from = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
-      const to = dateTo ? new Date(dateTo + 'T23:59:59') : null;
-      if (from && d < from) return false;
-      if (to && d > to) return false;
-    }
-
-    // Location
-    if (fState && String(l.state_id) !== fState) return false;
-    if (fCity && String(l.city_id) !== fCity) return false;
-    if (fArea && String(l.area_id) !== fArea) return false;
-
-    // Vehicle
-    if (fVType && String(l.vehicle_type_id) !== fVType) return false;
-    if (fMake && String(l.make_id) !== fMake) return false;
-    if (fModel && String(l.model_id) !== fModel) return false;
-
-    // Source
-    if (fSource && l.lead_source !== fSource) return false;
-    if (!matchesSourceChip(l.lead_source, sourceChip)) return false;
-
-    // Owner
-    if (!matchesOwnerChip(l, ownerChip, currentUser?.id)) return false;
-
-    return true;
-  });
+     Keeping a client-side pass "just in case" would be worse than either
+     option alone — two implementations of one rule, disagreeing on the day
+     somebody edits one of them, with the browser silently hiding rows the
+     server counted. */
+  const paginated = leads;
 
   // Reset to page 1 whenever filters change — but not on the initial mount,
   // otherwise this would immediately stomp on a page number just restored
@@ -3817,19 +3918,27 @@ export default function LeadsPage() {
     setPage(1);
   }, [search, statusFilters, assigneeFilters, creatorFilter, dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip]);
 
-  // Status counts — scoped to selected assignee(s) if any are active
-  const leadsForCounts = assigneeFilters.length
-    ? leads.filter(matchesAssigneeFilter)
-    : leads;
-  const newLeadCount = leadsForCounts.filter(l => !l.status).length;
-  const counts = leadsForCounts.reduce((acc, l) => { if (l.status) { acc[l.status] = (acc[l.status] || 0) + 1; } return acc; }, {});
+  /* Counts come from the response. All three sets, plus the value.
 
-  // Total value of filtered leads
-  const totalValue = filtered.reduce((sum, l) => sum + Number(l.total_price || 0), 0);
+     They deliberately have different bases, mirroring what this page always
+     did: the status counts follow the assignee filter (picking an agent
+     re-counts their statuses — that is the point of the combination), while
+     the source and assignee counts ignore the current filter entirely, because
+     they are the way IN to a filter and would otherwise show zero on every
+     chip you have not already clicked. */
+  /* "No leads yet" and "nothing matches" are different sentences, and the old
+     code told them apart with `leads.length === 0` — which was the whole set.
+     It is now the page, so an empty page would always claim the business has no
+     leads at all. The filters themselves are the honest test. */
+  const hasAnyFilter = Boolean(
+    search || statusFilters.length || assigneeFilters.length || creatorFilter ||
+    dateFrom || dateTo || fState || fCity || fArea || fVType || fMake || fModel ||
+    fSource || (sourceChip && sourceChip !== 'all') || (ownerChip && ownerChip !== 'all')
+  );
 
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const newLeadCount = counts.status?.__new__ || 0;
+  const statusCounts = counts.status || {};
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Active filter tag helpers
   const stateName = states.find(s => String(s.id) === fState)?.name;
@@ -3973,13 +4082,13 @@ export default function LeadsPage() {
       // explanation is the thing that makes people stop trusting bulk actions.
       const bits = [];
       bits.push(`${r.updated} lead${r.updated !== 1 ? 's' : ''} moved to ${r.status}`);
-      if (r.unchanged)         bits.push(`${r.unchanged} already there`);
-      if (r.skipped_locked)    bits.push(`${r.skipped_locked} locked`);
+      if (r.unchanged) bits.push(`${r.unchanged} already there`);
+      if (r.skipped_locked) bits.push(`${r.skipped_locked} locked`);
       if (r.skipped_converted) bits.push(`${r.skipped_converted} already converted`);
       // Counted from the RESPONSE, not from what was asked for. A follow-up is
       // only written for leads that actually moved, so saying "12 scheduled"
       // because twelve were ticked would be a number nobody could reconcile.
-      if (r.follow_ups)        bits.push(`follow-up set for ${r.follow_up_date}`);
+      if (r.follow_ups) bits.push(`follow-up set for ${r.follow_up_date}`);
       showToast(bits.join(' · '), r.updated ? 'success' : 'warning');
     } catch (e) {
       showToast(e.message || 'Could not change the status.', 'error');
@@ -4056,52 +4165,22 @@ export default function LeadsPage() {
           your team members". The scope now shows only in the breadcrumb, so it
           is carried on the count instead (see lb-count below). */}
 
-      {/* ── Follow-ups bar ── */}
-      <div className="lp-fu-bar">
-        {/* Follow-ups label + count — acts as a "tab" with blue underline */}
-        <button
-          className="lp-fu-tab-item lp-fu-tab-item--label"
-          onClick={() => setFuDrawerOpen(true)}
-        >
-          <Bell size={13} />
-          <span>Follow-ups</span>
-          {visibleEvents.length > 0 && (
-            <span className="lp-fu-tab-badge">{visibleEvents.length}</span>
-          )}
-        </button>
+      {/* ── Follow-ups ──────────────────────────────────────────────────────
+          The bar that used to live here — a full-width card carrying the label,
+          four date tabs and a "View all" link — is gone. It is now the single
+          "Follow-up (n)" button in the chip strip below.
 
-        {/* Divider */}
-        <span className="lp-fu-sep" />
+          Nothing was lost with it. Today / Tomorrow / This Week / Custom still
+          exist, inside the drawer, which is where they were always the more
+          useful control: on the bar, pressing one of them OPENED the drawer
+          anyway (see the old onClick — every tab called setFuDrawerOpen(true)),
+          so the bar was a second copy of a switch you could only see the result
+          of somewhere else. "View all" went the same way: it opened the drawer,
+          which is exactly what the label already did.
 
-        {/* Date filter tabs */}
-        {[
-          { key: 'today', label: 'Today' },
-          { key: 'tomorrow', label: 'Tomorrow' },
-          { key: 'week', label: 'This Week' },
-          { key: 'custom', label: 'Custom' },
-        ].map((tab, i, arr) => (
-          <Fragment key={tab.key}>
-            <button
-              className={`lp-fu-tab-item${fuFilter === tab.key ? ' lp-fu-tab-item--active' : ''}`}
-              onClick={e => {
-                e.stopPropagation();
-                setFuFilter(tab.key);
-                setShowCustom(tab.key === 'custom');
-                setEventsDone({});
-                setFuDrawerOpen(true);
-              }}
-            >
-              {tab.label}
-            </button>
-            {i < arr.length - 1 && <span className="lp-fu-sep" />}
-          </Fragment>
-        ))}
-
-        {/* Right: View all */}
-        <button className="lp-fu-viewall" onClick={() => setFuDrawerOpen(true)}>
-          View all →
-        </button>
-      </div>
+          The count on the button is today's outstanding follow-ups — fuFilter
+          still defaults to 'today' — so the number means the same thing it did
+          on the old badge. */}
 
       {/* ── Follow-ups Drawer ── */}
       <AnimatePresence>
@@ -4252,6 +4331,161 @@ export default function LeadsPage() {
                     </div>
                   );
                 })}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── Advanced filters modal ──────────────────────────────────────────
+          Rendered HERE rather than next to the button that opens it. The
+          button lives inside .lb-list > .lp-filters, and a position:fixed
+          child is only fixed to the viewport while no ancestor creates a
+          containing block — one transform, filter or will-change anywhere up
+          that chain and the overlay is positioned against the card instead,
+          which looks like a layout bug and is very hard to trace back. The
+          follow-ups drawer above already proves this spot works, so the modal
+          shares it.
+
+          Modal, not the panel that used to expand inline: with nine fields
+          across three groups the panel pushed the table off screen on a
+          laptop, so choosing a filter meant losing sight of the thing you
+          were filtering. */}
+      <AnimatePresence>
+        {showAdv && (
+          <>
+            <motion.div
+              className="lp-adv-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              onClick={() => setShowAdv(false)}
+            />
+            <motion.div
+              className="lp-adv-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Filters"
+              initial={{ opacity: 0, scale: 0.97, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 10 }}
+              transition={{ duration: 0.16 }}
+            >
+              <div className="lp-adv-modal-hdr">
+                <div className="lp-adv-modal-title">
+                  <SlidersHorizontal size={15} />
+                  Filters
+                  {advCount > 0 && <span className="lp-adv-count">{advCount}</span>}
+                </div>
+                <button
+                  type="button"
+                  className="lp-adv-modal-x"
+                  onClick={() => setShowAdv(false)}
+                  aria-label="Close filters"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="lp-adv-modal-body">
+                {/* Date */}
+                <div className="lp-adv-section">
+                  <div className="lp-adv-section-label"><Calendar size={12} /> Date Range</div>
+                  <div className="lp-adv-row">
+                    <div className="lp-adv-field">
+                      <label>From</label>
+                      <input type="date" className="lp-adv-input" value={dateFrom}
+                        max={dateTo || undefined}
+                        onChange={e => setDateFrom(e.target.value)} />
+                    </div>
+                    <div className="lp-adv-field">
+                      <label>To</label>
+                      <input type="date" className="lp-adv-input" value={dateTo}
+                        min={dateFrom || undefined}
+                        onChange={e => setDateTo(e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Location */}
+                <div className="lp-adv-section">
+                  <div className="lp-adv-section-label"><MapPin size={12} /> Location</div>
+                  <div className="lp-adv-row">
+                    <div className="lp-adv-field">
+                      <label>State</label>
+                      <select className="lp-adv-input" value={fState} onChange={e => setFState(e.target.value)}>
+                        <option value="">All states</option>
+                        {states.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="lp-adv-field">
+                      <label>City</label>
+                      <select className="lp-adv-input" value={fCity} onChange={e => setFCity(e.target.value)} disabled={!fState}>
+                        <option value="">All cities</option>
+                        {advCities.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="lp-adv-field">
+                      <label>Area</label>
+                      <select className="lp-adv-input" value={fArea} onChange={e => setFArea(e.target.value)} disabled={!fCity}>
+                        <option value="">All areas</option>
+                        {advAreas.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Vehicle */}
+                <div className="lp-adv-section">
+                  <div className="lp-adv-section-label"><Car size={12} /> Vehicle</div>
+                  <div className="lp-adv-row">
+                    <div className="lp-adv-field">
+                      <label>Type</label>
+                      <select className="lp-adv-input" value={fVType} onChange={e => setFVType(e.target.value)}>
+                        <option value="">All types</option>
+                        {vTypes.map(v => <option key={v.id} value={String(v.id)}>{v.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="lp-adv-field">
+                      <label>Make</label>
+                      <select className="lp-adv-input" value={fMake} onChange={e => setFMake(e.target.value)} disabled={!fVType}>
+                        <option value="">All makes</option>
+                        {advMakes.map(m => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="lp-adv-field">
+                      <label>Model</label>
+                      <select className="lp-adv-input" value={fModel} onChange={e => setFModel(e.target.value)} disabled={!fMake}>
+                        <option value="">All models</option>
+                        {advModels.map(m => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Every field applies the moment it changes — there is no Apply
+                  button and there was not one before, so "Done" only dismisses.
+                  Clear stays disabled at zero rather than hidden: a control
+                  that appears and disappears under the cursor is worse than
+                  one that is visibly unavailable. */}
+              <div className="lp-adv-modal-ftr">
+                <button
+                  type="button"
+                  className="lp-adv-modal-clear"
+                  onClick={clearAdvanced}
+                  disabled={advCount === 0}
+                >
+                  <X size={13} /> Clear filters
+                </button>
+                <button
+                  type="button"
+                  className="lp-adv-modal-done"
+                  onClick={() => setShowAdv(false)}
+                >
+                  Done
+                </button>
               </div>
             </motion.div>
           </>
@@ -4411,7 +4645,7 @@ export default function LeadsPage() {
             >
               {c.label}
               <span className="lp-src-chip-n">
-                {c.key === 'all' ? leads.length : leads.filter(l => matchesSourceChip(l.lead_source, c.key)).length}
+                {counts.source?.[c.key] ?? 0}
               </span>
             </button>
           ))}
@@ -4434,12 +4668,30 @@ export default function LeadsPage() {
             >
               {c.label}
               <span className="lp-src-chip-n">
-                {leads.filter(l =>
-                  matchesSourceChip(l.lead_source, sourceChip) &&
-                  matchesOwnerChip(l, c.key, currentUser?.id)).length}
+                {counts.owner?.[c.key] ?? 0}
               </span>
             </button>
           ))}
+
+          {/* ── Follow-up ────────────────────────────────────────────────
+              Pushed to the far right by margin-left:auto, and deliberately
+              NOT styled as one more chip. The chips filter the list you are
+              looking at; this opens a different view entirely. Same row
+              because it is the same altitude of decision — "which slice of
+              leads am I working right now" — but a filled button rather than
+              an outlined pill, so nothing suggests it toggles alongside them.
+
+              It also must not read as a chip in the ON state: two of these
+              lit at once, one blue-filled chip and one blue-filled button,
+              would look like a single filter selection. */}
+          <button
+            type="button"
+            className="lp-fu-pill"
+            onClick={() => setFuDrawerOpen(true)}
+          >
+            <Bell size={13} />
+            Follow-up ({visibleEvents.length})
+          </button>
         </div>
 
         {/* ── Filters ── */}
@@ -4453,7 +4705,7 @@ export default function LeadsPage() {
               other lists this one filters CLIENT-side, so nothing here is about
               query load — it is purely so the same control sits in the same
               place on every screen. */}
-          <div className="lb-toolbar">
+          <div className="lb-toolbar" >
             {/* Status multi-select dropdown */}
             <div className="lp-status-dd-wrap" ref={statusDDRef}>
               <button
@@ -4500,7 +4752,7 @@ export default function LeadsPage() {
                         } />
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
                         <span className="lp-status-dd-name">{s.name}</span>
-                        {counts[s.name] ? <span className="lp-status-dd-count">{counts[s.name]}</span> : null}
+                        {statusCounts[s.name] ? <span className="lp-status-dd-count">{statusCounts[s.name]}</span> : null}
                       </label>
                     );
                   })}
@@ -4544,7 +4796,7 @@ export default function LeadsPage() {
                     </div>
                     {(() => {
                       const checked = assigneeFilters.includes('unassigned');
-                      const unassignedCount = leads.filter(l => !l.assigned_to).length;
+                      const unassignedCount = counts.assignee?.unassigned || 0;
                       return (
                         <label className={`lp-status-dd-item${checked ? ' lp-status-dd-item--checked' : ''}`}>
                           <input type="checkbox" checked={checked} onChange={() =>
@@ -4557,7 +4809,7 @@ export default function LeadsPage() {
                     })()}
                     {assignees.map(a => {
                       const checked = assigneeFilters.includes(String(a.id));
-                      const count = leads.filter(l => String(l.assigned_to) === String(a.id)).length;
+                      const count = a.count || 0;
                       return (
                         <label key={a.id} className={`lp-status-dd-item${checked ? ' lp-status-dd-item--checked' : ''}`}>
                           <input type="checkbox" checked={checked} onChange={() =>
@@ -4607,8 +4859,8 @@ export default function LeadsPage() {
               {/* Carries the scope the deleted subtitle used to state — "12 of
                   my leads" reads as clearly as a heading did, and in less room. */}
               <span className="lb-count">
-                {filtered.length}{' '}
-                {leadsScope === 'own' ? 'of my leads' : leadsScope === 'team' ? 'team leads' : `lead${filtered.length !== 1 ? 's' : ''}`}
+                {total}{' '}
+                {leadsScope === 'own' ? 'of my leads' : leadsScope === 'team' ? 'team leads' : `lead${total !== 1 ? 's' : ''}`}
               </span>
               {canExport && (
                 <button type="button" className="lb-control" onClick={handleExport} title="Export CSV">
@@ -4627,85 +4879,11 @@ export default function LeadsPage() {
             </div>
           </div>
 
-          {/* Advanced filter panel */}
-          {showAdv && (
-            <div className="lp-adv-panel">
-              {/* Date */}
-              <div className="lp-adv-section">
-                <div className="lp-adv-section-label"><Calendar size={12} /> Date Range</div>
-                <div className="lp-adv-row">
-                  <div className="lp-adv-field">
-                    <label>From</label>
-                    <input type="date" className="lp-adv-input" value={dateFrom}
-                      max={dateTo || undefined}
-                      onChange={e => setDateFrom(e.target.value)} />
-                  </div>
-                  <div className="lp-adv-field">
-                    <label>To</label>
-                    <input type="date" className="lp-adv-input" value={dateTo}
-                      min={dateFrom || undefined}
-                      onChange={e => setDateTo(e.target.value)} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Location */}
-              <div className="lp-adv-section">
-                <div className="lp-adv-section-label"><MapPin size={12} /> Location</div>
-                <div className="lp-adv-row">
-                  <div className="lp-adv-field">
-                    <label>State</label>
-                    <select className="lp-adv-input" value={fState} onChange={e => setFState(e.target.value)}>
-                      <option value="">All states</option>
-                      {states.map(s => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="lp-adv-field">
-                    <label>City</label>
-                    <select className="lp-adv-input" value={fCity} onChange={e => setFCity(e.target.value)} disabled={!fState}>
-                      <option value="">All cities</option>
-                      {advCities.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="lp-adv-field">
-                    <label>Area</label>
-                    <select className="lp-adv-input" value={fArea} onChange={e => setFArea(e.target.value)} disabled={!fCity}>
-                      <option value="">All areas</option>
-                      {advAreas.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Vehicle */}
-              <div className="lp-adv-section">
-                <div className="lp-adv-section-label"><Car size={12} /> Vehicle</div>
-                <div className="lp-adv-row">
-                  <div className="lp-adv-field">
-                    <label>Type</label>
-                    <select className="lp-adv-input" value={fVType} onChange={e => setFVType(e.target.value)}>
-                      <option value="">All types</option>
-                      {vTypes.map(v => <option key={v.id} value={String(v.id)}>{v.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="lp-adv-field">
-                    <label>Make</label>
-                    <select className="lp-adv-input" value={fMake} onChange={e => setFMake(e.target.value)} disabled={!fVType}>
-                      <option value="">All makes</option>
-                      {advMakes.map(m => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="lp-adv-field">
-                    <label>Model</label>
-                    <select className="lp-adv-input" value={fModel} onChange={e => setFModel(e.target.value)} disabled={!fMake}>
-                      <option value="">All models</option>
-                      {advModels.map(m => <option key={m.id} value={String(m.id)}>{m.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* The advanced filters used to expand here, in the flow, pushing the
+              whole table down. They are a modal now — see lp-adv-modal near the
+              follow-ups drawer, rendered at the top of the tree so it shares a
+              containing block with the other overlays rather than inheriting
+              one from the card. */}
 
           {/* Active filter tags */}
           {(advCount > 0 || statusFilters.length > 0) && (
@@ -4913,11 +5091,17 @@ export default function LeadsPage() {
               </tr>
             </thead>
             <tbody>
-              {loading && leads.length === 0 ? (
-                <tr><td colSpan="12" className="lp-empty">Loading leads…</td></tr>
-              ) : filtered.length === 0 ? (
+              {/* `loading` alone, not `loading && leads.length === 0`.
+                  Every page change is now a request, so the old condition
+                  showed the skeleton once on first load and then left the
+                  PREVIOUS page on screen while the next one fetched — pressing
+                  "next" appeared to do nothing for a second, and the row you
+                  clicked was still the row you were looking at. */}
+              {loading ? (
+                <LeadRowsSkeleton rows={Math.min(pageSize, 10)} />
+              ) : total === 0 ? (
                 <tr><td colSpan="12" className="lp-empty">
-                  {leads.length === 0 ? 'No leads yet. Capture your first lead!' : 'No leads match your filters.'}
+                  {hasAnyFilter ? 'No leads match your filters.' : 'No leads yet. Capture your first lead!'}
                 </td></tr>
               ) : paginated.map(l => (
                 <tr key={l.id} className={`lp-row${selectedLeads.has(l.id) ? ' lp-row--selected' : ''}`} onClick={() => openLead(l)}>
@@ -5092,15 +5276,13 @@ export default function LeadsPage() {
 
         {/* ── Mobile card list ── */}
         <div className="lp-mobile-list">
-          {loading && leads.length === 0 && (
-            <div className="lp-empty">Loading leads…</div>
-          )}
-          {!loading && filtered.length === 0 && (
+          {loading && <LeadCardsSkeleton rows={Math.min(pageSize, 6)} />}
+          {!loading && total === 0 && (
             <div className="lp-empty">
-              {leads.length === 0 ? 'No leads yet. Capture your first lead!' : 'No leads match your filters.'}
+              {hasAnyFilter ? 'No leads match your filters.' : 'No leads yet. Capture your first lead!'}
             </div>
           )}
-          {paginated.map(l => (
+          {!loading && paginated.map(l => (
             <div key={l.id} className="lp-mobile-card" onClick={() => openLead(l)}>
               <div className="lp-mc-top">
                 <div className="lp-mc-customer">
@@ -5178,11 +5360,11 @@ export default function LeadsPage() {
         </div>
 
         {/* ── Pagination footer ── */}
-        {filtered.length > 0 && (
+        {total > 0 && (
           <div className="lp-pagination-bar">
             {/* Left: count info */}
             <span className="lp-pg-info">
-              Showing <strong>{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)}</strong> of <strong>{filtered.length}</strong> lead{filtered.length !== 1 ? 's' : ''}
+              Showing <strong>{(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)}</strong> of <strong>{total}</strong> lead{total !== 1 ? 's' : ''}
               {totalValue > 0 && (
                 <span className="lp-pg-value"><IndianRupee size={11} />{totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
               )}

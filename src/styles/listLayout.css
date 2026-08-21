@@ -95,7 +95,9 @@
   gap: 8px;
   flex-wrap: wrap;
   padding: 20px;
-  overflow: visible;   /* dropdowns and popovers escape this box */
+  padding-top: 0px;
+  overflow: visible;
+  /* dropdowns and popovers escape this box */
 }
 
 .lb-toolbar-right {
@@ -140,7 +142,9 @@ button.lb-control {
   white-space: nowrap;
 }
 
-button.lb-control:hover { border-color: var(--text-muted); }
+button.lb-control:hover {
+  border-color: var(--text-muted);
+}
 
 button.lb-control.lb-primary {
   background: var(--primary);
@@ -148,7 +152,9 @@ button.lb-control.lb-primary {
   color: #fff;
 }
 
-button.lb-control.lb-primary:hover { filter: brightness(1.08); }
+button.lb-control.lb-primary:hover {
+  filter: brightness(1.08);
+}
 
 /* Icon-only: square inside the pill so the glyph stays centred. */
 .lb-icon-btn {
@@ -231,9 +237,15 @@ button.lb-control.lb-primary:hover { filter: brightness(1.08); }
   display: block;
 }
 
-.lb-pop-row { display: flex; align-items: center; gap: 6px; }
+.lb-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
-.lb-pop .lb-control { width: 100%; }
+.lb-pop .lb-control {
+  width: 100%;
+}
 
 .lb-pop-foot {
   display: flex;
@@ -255,7 +267,9 @@ button.lb-control.lb-primary:hover { filter: brightness(1.08); }
   color: var(--text);
 }
 
-.lb-pop-item:hover { background: var(--bg-soft); }
+.lb-pop-item:hover {
+  background: var(--bg-soft);
+}
 
 /* ── Table ─────────────────────────────────────────────────────────────────
    No card, no outer border, no radius. Horizontal dividers only; every vertical
@@ -399,7 +413,9 @@ button.lb-control.lb-primary:hover { filter: brightness(1.08); }
   border-bottom: 1px solid var(--border);
 }
 
-.lb-list table tbody tr:hover { background: var(--bg-soft); }
+.lb-list table tbody tr:hover {
+  background: var(--bg-soft);
+}
 
 .lb-empty {
   padding: 56px 20px;
@@ -432,8 +448,15 @@ button.lb-control.lb-primary:hover { filter: brightness(1.08); }
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.lb-viewbtn + .lb-viewbtn { border-left: 1px solid var(--border); }
-.lb-viewbtn:hover { color: var(--text); }
+
+.lb-viewbtn+.lb-viewbtn {
+  border-left: 1px solid var(--border);
+}
+
+.lb-viewbtn:hover {
+  color: var(--text);
+}
+
 .lb-viewbtn--on {
   background: var(--primary);
   color: #fff;
