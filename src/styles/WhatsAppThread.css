@@ -822,3 +822,14 @@
   font-size: 10px;
   color: var(--text-muted);
 }
+
+/* Monospace runs inside a message bubble. Same class the settings preview
+   uses, so a ```code``` block cannot look like two different things in the two
+   places it is read. */
+.wa-fmt-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .92em;
+  background: rgba(0, 0, 0, .06);
+  border-radius: 4px;
+  padding: 0 3px;
+}

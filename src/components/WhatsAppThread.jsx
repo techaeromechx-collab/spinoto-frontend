@@ -15,6 +15,10 @@ import {
   Paperclip, X, Image as ImageIcon, Zap,
 } from 'lucide-react';
 import WhatsAppSendMenu from './WhatsAppSendMenu.jsx';
+// *bold*, _italic_, ~strike~ and ```mono``` shown the way the customer sees
+// them. Display only — the markers stay in the text that is stored and sent,
+// because those characters ARE the formatting.
+import WaText from './WaText.jsx';
 // The '/' matcher lives in its own module so it can be tested against the
 // inputs nobody types on purpose — a pasted URL, a slash mid-word, a caret
 // moved back into finished text. See waShortcut.js.
@@ -790,10 +794,17 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
                       that know nothing about media, and showing both would
                       print the caption twice with an emoji before one copy. */}
                   {m.message_type === 'image' && m.media_url ? (
-                    m.caption ? <span className="wat-body wat-cap">{m.caption}</span> : null
+                    m.caption
+                      ? <span className="wat-body wat-cap"><WaText text={m.caption} /></span>
+                      : null
                   ) : (
                     <span className="wat-body">
-                      {m.body_rendered || <em className="wat-nobody">(no text)</em>}
+                      {/* Inbound messages too, not just ours: customers use
+                          formatting, and a bold word in their question is
+                          them emphasising something. */}
+                      {m.body_rendered
+                        ? <WaText text={m.body_rendered} />
+                        : <em className="wat-nobody">(no text)</em>}
                     </span>
                   )}
 
@@ -1022,7 +1033,7 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
                           <code>{qr.shortcut}</code>
                           <strong>{qr.title}</strong>
                         </span>
-                        <span className="wat-sugg-msg">{qr.message}</span>
+                        <span className="wat-sugg-msg"><WaText text={qr.message} /></span>
                       </button>
                     ))}
                     <div className="wat-sugg-foot">
@@ -1110,7 +1121,7 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
                                   <strong>{qr.title}</strong>
                                   {qr.shortcut && <code>{qr.shortcut}</code>}
                                 </span>
-                                <span className="wat-lib-qr-msg">{qr.message}</span>
+                                <span className="wat-lib-qr-msg"><WaText text={qr.message} /></span>
                               </button>
                             ))}
                           </div>

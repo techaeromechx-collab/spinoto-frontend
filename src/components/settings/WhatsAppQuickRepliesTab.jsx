@@ -1,8 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../api/client.js';
 import {
   Loader2, Plus, Trash2, Info, AlertTriangle, Check, X, Pencil, Save, Zap,
+  Bold, Italic, Strikethrough, Code,
 } from 'lucide-react';
+import WaText from '../WaText.jsx';
+import { toggleMark } from '../../utils/waFormat.js';
 
 /**
  * Settings → WhatsApp → Quick Replies.
@@ -25,6 +28,97 @@ import {
  * actually asked, and a one-tap send would put the opening hours in front of
  * somebody who asked what a clutch job costs.
  */
+/**
+ * The message box, its formatting buttons, and a preview of what the customer
+ * will actually see.
+ *
+ * ── WHY A PREVIEW AND NOT JUST BUTTONS ──────────────────────────────────────
+ *
+ * WhatsApp formatting is plain characters — `*bold*` is an asterisk, the word,
+ * an asterisk — so the box can only ever show the markers. Without a preview
+ * the first person to find out whether the asterisks landed correctly is the
+ * customer, and a misplaced one arrives as an asterisk rather than as anything
+ * that looks like a mistake.
+ *
+ * ── ONE COMPONENT FOR BOTH FORMS ────────────────────────────────────────────
+ *
+ * The add form and the edit form each have one of these. Written inline twice,
+ * the pair that drifts is always the second one — the edit box that never got
+ * the buttons, found months later by somebody wondering why formatting only
+ * works on new replies.
+ */
+function MessageField({ value, onChange, autoFocus = false }) {
+  const ref = useRef(null);
+
+  /* The selection is read from the DOM at the moment of the click, not tracked
+     in state. A textarea's caret moves on every keystroke, click and arrow
+     press; mirroring that into React is a second copy of a thing the browser
+     already knows exactly, and the copy is wrong for one render after every
+     change. */
+  function mark(m) {
+    const el = ref.current;
+    if (!el) return;
+    const next = toggleMark(value, el.selectionStart, el.selectionEnd, m);
+    onChange(next.value);
+    // After React has repainted, or the selection is set on the old text and
+    // then thrown away.
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(next.start, next.end);
+    });
+  }
+
+  const BUTTONS = [
+    { m: '*',   Icon: Bold,          label: 'Bold' },
+    { m: '_',   Icon: Italic,        label: 'Italic' },
+    { m: '~',   Icon: Strikethrough, label: 'Strikethrough' },
+    { m: '```', Icon: Code,          label: 'Monospace' },
+  ];
+
+  return (
+    <>
+      <div className="waq-fmt">
+        {BUTTONS.map(({ m, Icon, label }) => (
+          <button
+            key={m}
+            type="button"
+            className="waq-fmt-btn"
+            title={`${label} — wraps the selected text in ${m}`}
+            /* Keeps the textarea's selection alive. A plain click blurs it
+               first, and toggleMark would then wrap an empty selection at
+               position zero. */
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => mark(m)}
+          >
+            <Icon size={13} />
+          </button>
+        ))}
+        <span className="waq-fmt-hint">
+          Select text, then press a button. WhatsApp reads the symbols — they are
+          part of the message.
+        </span>
+      </div>
+
+      <textarea
+        ref={ref}
+        rows={5}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={'We are open Monday to Saturday, 9:30 am to 7 pm.\nSunday closed.'}
+        maxLength={4096}
+        autoFocus={autoFocus}
+      />
+
+      {value.trim() && (
+        <div className="waq-preview">
+          <span className="waq-preview-lbl">What the customer sees</span>
+          <div className="waq-preview-bubble"><WaText text={value} /></div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function WhatsAppQuickRepliesTab() {
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(true);
@@ -147,6 +241,8 @@ export default function WhatsAppQuickRepliesTab() {
           workshop address, what a service includes. Picking one puts the text in the
           reply box — <em>it is not sent</em>. The advisor reads it, edits it if the
           customer asked something slightly different, and presses Send.
+          Use the <strong>B</strong> <strong>I</strong> buttons for bold and italic —
+          the preview below each box shows exactly what will arrive.
         </div>
       </div>
 
@@ -186,19 +282,16 @@ export default function WhatsAppQuickRepliesTab() {
 
           <div className="waq-f">
             <label>Message</label>
-            <textarea
-              rows={4}
+            <MessageField
               value={draft.message}
-              onChange={e => setDraft(d => ({ ...d, message: e.target.value }))}
-              placeholder={'We are open Monday to Saturday, 9:30 am to 7 pm.\nSunday closed.'}
-              maxLength={4096}
+              onChange={v => setDraft(d => ({ ...d, message: v }))}
             />
             {/* No variable syntax here, and that is deliberate: nothing on this
                 screen fills in a customer's name. A '{{name}}' typed in hope
                 would be delivered to the customer exactly as written. */}
             <em>
-              Typed exactly as the customer will read it — {draft.message.length}/4096 characters.
-              Line breaks are kept.
+              {draft.message.length}/4096 characters. Line breaks and emojis are kept
+              exactly as typed.
             </em>
           </div>
 
@@ -266,11 +359,9 @@ export default function WhatsAppQuickRepliesTab() {
                   </div>
                   <div className="waq-f">
                     <label>Message</label>
-                    <textarea
-                      rows={4}
+                    <MessageField
                       value={edit.message}
-                      onChange={e => setEdit(d => ({ ...d, message: e.target.value }))}
-                      maxLength={4096}
+                      onChange={v => setEdit(d => ({ ...d, message: v }))}
                     />
                   </div>
                   <div className="waq-form-acts">
@@ -332,7 +423,7 @@ export default function WhatsAppQuickRepliesTab() {
                       admin typed are part of the message the customer reads,
                       and a preview that flattens them hides a formatting
                       mistake until it has already been sent. */}
-                  <div className="waq-msg">{it.message}</div>
+                  <div className="waq-msg"><WaText text={it.message} /></div>
                 </>
               )}
             </div>

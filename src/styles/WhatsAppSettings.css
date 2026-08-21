@@ -1447,3 +1447,68 @@
 /* The ghost Add-by-address button lines up with the inputs, not the labels,
    exactly as the primary one does. */
 .wai-add--url .wai-add-btn { margin-top: 19px; }
+
+/* ── Formatting buttons and the customer's-eye preview ────────────────────
+   WhatsApp formatting is plain characters, so the box can only ever show the
+   markers. The preview is the only place anybody can check the asterisks
+   landed where they meant — without it the first reader of a mistake is the
+   customer. */
+.waq-fmt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.waq-fmt-btn {
+  display: inline-grid; place-items: center;
+  width: 26px; height: 26px; padding: 0;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg, #fff); color: var(--text-muted); cursor: pointer;
+}
+.waq-fmt-btn:hover { background: var(--bg-soft); color: var(--text); }
+.waq-fmt-btn:active { background: var(--border); }
+.waq-fmt-hint {
+  margin-left: 4px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.waq-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+.waq-preview-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* Deliberately shaped like the outgoing bubble in the chat panel — same green,
+   same corner, same pre-wrap. The preview is a claim about what the customer
+   will see, and it should look like the thing it is claiming. */
+.waq-preview-bubble {
+  padding: 8px 10px;
+  border-radius: 10px 10px 10px 4px;
+  background: #d9fdd3;
+  color: #111b21;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow-y: auto;
+}
+[data-theme="dark"] .waq-preview-bubble { background: #005c4b; color: #e9edef; }
+
+/* Shared by the preview and the saved-reply list. */
+.wa-fmt-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .92em;
+  background: rgba(0, 0, 0, .06);
+  border-radius: 4px;
+  padding: 0 3px;
+}
