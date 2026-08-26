@@ -2032,3 +2032,115 @@
   .wat-toast-bar { animation: none; }
   .wat-toast { animation: none; }
 }
+
+/* ── Mobile search ───────────────────────────────────────────────────────────
+   .topbar-center is display:none under 768px (see the block above), which left
+   every list page with no search at all on a phone. This is its replacement —
+   the same store, a second input, shown only where the first one is not.
+
+   Hidden by default rather than shown-then-hidden: the desktop is the common
+   case and should not paint a row it is about to remove. */
+.mobile-search {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-search {
+    display: block;
+    flex-shrink: 0;
+    padding: 8px 12px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0 12px;
+    /* 42px, not the top bar's 34px. This is a touch target, and the iOS
+       guideline floor is 44 including the padding around it. */
+    height: 42px;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+
+  .mobile-search-wrap:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(22, 185, 148, 0.12);
+    background: var(--bg);
+  }
+
+  .mobile-search-icon {
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .mobile-search-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    /* 16px is not a style choice. Mobile Safari zooms the whole page in when a
+       focused input's font-size is below 16px, and it does not zoom back out —
+       the user is left on a list they now have to pan sideways to read. Every
+       other size here is chosen; this one is a constraint. */
+    font-size: 16px;
+    line-height: 1.2;
+    font-family: inherit;
+  }
+
+  .mobile-search-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  /* WebKit draws its own clear button inside a type="search" field. Removed so
+     it does not sit next to ours, at a different size, doing the same job. */
+  .mobile-search-input::-webkit-search-decoration,
+  .mobile-search-input::-webkit-search-cancel-button,
+  .mobile-search-input::-webkit-search-results-button,
+  .mobile-search-input::-webkit-search-results-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .mobile-search-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    /* Its own 28px target inside the row. A 15px glyph is a 15px tap area
+       otherwise, and clearing a search is the thing people do with a thumb. */
+    width: 28px;
+    height: 28px;
+    margin-right: -6px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-search-clear:active {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  .mobile-search-hint {
+    display: block;
+    margin: 6px 2px 0;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-search-wrap { transition: none; }
+}

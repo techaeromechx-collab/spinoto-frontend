@@ -1968,14 +1968,30 @@
 
 .lp-adv-modal {
   position: fixed;
-  /* Centred with translate rather than flex on the backdrop: the backdrop is a
-     separate sibling so it can fade on its own timing, and nesting the dialog
-     inside it would make every backdrop click land on the dialog's padding
-     box — closing the modal when the user meant to reach a field. */
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  /* Centred with auto margins against a full-viewport inset, NOT with
+     `top:50%; left:50%; transform:translate(-50%,-50%)`.
+     ────────────────────────────────────────────────────────────────────────
+     That was the bug: this dialog is a framer-motion element, and its
+     animation writes `transform` into the inline style. An inline transform
+     beats a stylesheet one, so the moment the open animation ran, the
+     centring translate was overwritten by `scale(1) translateY(0)` — leaving
+     the box's top-left corner sitting at the middle of the screen, which put
+     the whole dialog in the bottom-right quadrant.
+
+     Auto margins do not touch `transform`, so the animation can own that
+     property outright and the two can never fight again.
+
+     The dialog is still a SIBLING of the backdrop rather than a child, for
+     the reason below: nesting it would make every backdrop click land on the
+     dialog's own padding box and close the modal when the user was reaching
+     for a field. */
+  inset: 0;
+  margin: auto;
   width: min(720px, calc(100vw - 32px));
+  /* A definite height is what lets `margin: auto` centre vertically — with
+     `height: auto` the auto margins resolve to zero and the box pins to the
+     top. max-content sizes it to its own content, then max-height caps it. */
+  height: max-content;
   max-height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;
@@ -2104,6 +2120,31 @@
 .lp-adv-section {
   padding: 14px 16px;
   background: var(--panel, #fff);
+}
+
+/* One grid cell holding more than one section, stacked.
+   The body's dividers are its 1px gap showing the border colour through, which
+   only draws lines BETWEEN cells — so two sections sharing a cell need their
+   own rule between them. */
+.lp-adv-col {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel, #fff);
+  min-width: 0;
+}
+
+.lp-adv-col .lp-adv-section + .lp-adv-section {
+  border-top: 1px solid var(--border);
+}
+
+/* Stacked sections would otherwise carry a full 14px above and below the join,
+   making the pair visibly taller than the single-section columns beside it. */
+.lp-adv-col .lp-adv-section:not(:last-child) {
+  padding-bottom: 12px;
+}
+
+.lp-adv-col .lp-adv-section + .lp-adv-section {
+  padding-top: 12px;
 }
 
 .lp-adv-section-label {
@@ -2756,17 +2797,58 @@
   text-overflow: ellipsis;
 }
 
+/* The Assigned row's trigger. Deliberately borderless and transparent until
+   hovered: the row reads as information, and only reveals itself as editable
+   under the cursor — the same restraint the rest of the info card uses. */
+.lp-assign-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.lp-assign-trigger:hover:not(:disabled) {
+  background: var(--bg-soft, #f1f5f9);
+}
+
+.lp-assign-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .lp-assigned-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.6;
   color: #2563eb;
   background: #eff6ff;
   border: 1px solid #bfdbfe;
-  padding: 2px 8px;
+  padding: 1px 9px;
   border-radius: 999px;
+  /* A pill is one line by definition. The info column is narrow and a
+     two-word name was breaking across two — "Raj" above "Patel" — which turned
+     a chip into a tall block and threw the row's baseline out. The name is
+     never broken and never clipped; if it does not fit beside the label, the
+     row wraps and the whole pill moves down a line. */
+  white-space: nowrap;
+}
+
+/* The name is its own element so the nowrap applies to it directly rather than
+   to an anonymous text node the flex container would not honour. Deliberately
+   NOT truncated: an assignee half-shown ("Raj Pat…") is worse than a row that
+   grew — you cannot tell two colleagues apart from a clipped first name. */
+.lp-assigned-name {
+  white-space: nowrap;
 }
 
 .lp-opt {
@@ -3016,13 +3098,14 @@
     flex-shrink: 0;
   }
 
-  /* Mobile card: stack status badge below name so name never breaks */
-  .lp-mc-top {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-  }
+  /* The card used to stack .lp-mc-top into a column here so a long name could
+     not squeeze the status badge. It solved that and created a worse one: the
+     badge landed BELOW the Call and WhatsApp buttons, three rows under the name
+     it belongs to, and at a different height on every card depending on whether
+     the WhatsApp button rendered.
 
+     A wrapping name and a non-shrinking badge do the same job without moving
+     anything — see .lp-mc-top in the base block. */
   .lp-mc-customer {
     min-width: 0;
     width: 100%;
@@ -3032,10 +3115,6 @@
     word-break: break-word;
     overflow-wrap: anywhere;
     white-space: normal;
-  }
-
-  .lp-mc-right {
-    align-self: flex-start;
   }
 
   /* View modal: single column on mobile */
@@ -3669,6 +3748,11 @@
   font-size: 13px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
+  /* When a value cannot fit beside its label it moves BELOW it, whole. The
+     card is one of two narrow columns, so something has to give; giving the
+     row a second line keeps every value readable in full, where shrinking the
+     value would cut a name in half. */
+  flex-wrap: wrap;
 }
 
 .lp-vm-info-row:last-child {
@@ -5670,6 +5754,19 @@
 /* ── Header ───────────────────────────────────────────────────────────────── */
 .lp-vp-header {
   flex-shrink: 0;
+  /* Line the header's contents up with the card grid underneath it.
+     .lp-vm-header ships 24px of horizontal padding, sized for the Edit/Convert
+     modals that share the class; the body below is .lp-modal-body at 12px. In
+     those modals nothing sits under the header to line up WITH, so the
+     mismatch never showed. Here it does: the Edit and X buttons stopped 12px
+     short of the Vehicle card's right edge, and the back arrow sat 12px inside
+     the Customer card's left edge — close enough to look like a mistake rather
+     than a margin.
+
+     Overridden on .lp-vp-header rather than .lp-vm-header so the modals that
+     share the class keep the padding they were designed with. */
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 .lp-vp-back {
@@ -5755,6 +5852,18 @@
   align-items: stretch;
 }
 
+/* Everything that is not the chat: header, mobile tabs, and the scrolling card
+   area — stacked, and occupying only the width left over by the rail. This
+   wrapper is what confines the header to the left column, which is what lets
+   the rail start at the very top of the panel. */
+.lp-vp-left {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 /* min-width:0 or a long unbroken value in a card pushes the whole column wider
    and the rail off the screen. */
 .lp-vp-main {
@@ -5787,9 +5896,23 @@
 }
 
 /* The rail owns the height here, so the component's own cap has to go or the
-   chat stops halfway down a tall screen. */
+   chat stops halfway down a tall screen.
+
+   min-height raised from the component's own 140px: that floor is sized for
+   the thread appearing as a small card elsewhere, and in this full-height rail
+   it let the conversation collapse to a few visible messages whenever the
+   detail column beside it was short. 520px keeps roughly a dozen messages in
+   view; `flex: 1 1 auto` on .wat-scroll still lets it grow past that on a tall
+   screen, so this is a floor, not a size.
+
+   Capped with min() against the viewport rather than set to a flat 520px: the
+   panel's own container is roughly viewport-height, and a floor taller than
+   the container would push the composer below the clipping edge of .lp-vp
+   (overflow:hidden) on a short laptop screen — trading a small chat for an
+   unreachable reply box. 60vh can never do that. */
 .lp-vp-rail .wat-scroll {
   max-height: none;
+  min-height: min(520px, 60vh);
   overscroll-behavior: contain;
 }
 
@@ -5838,12 +5961,26 @@
     border-bottom-color: var(--primary);
   }
 
+  /* Side by side is a desktop arrangement. On a phone the split runs
+     top-to-bottom, so the left column keeps the header and the tab bar at the
+     top and whichever pane the tabs selected fills the rest. */
+  .lp-vp-split {
+    flex-direction: column;
+  }
+
   .lp-vp-split--details .lp-vp-rail {
     display: none;
   }
 
   .lp-vp-split--chat .lp-vp-main {
     display: none;
+  }
+
+  /* On the chat tab the left column is nothing but the header and the tabs.
+     Without this it would still claim its share of the leftover height as a
+     flex:1 child and push the conversation into a strip at the bottom. */
+  .lp-vp-split--chat .lp-vp-left {
+    flex: 0 0 auto;
   }
 
   .lp-vp-rail {
@@ -6087,4 +6224,329 @@
    moves; the shape is what does the actual work, so it stays. */
 @media (prefers-reduced-motion: reduce) {
   .lp-sk { animation: none; background: var(--bg-soft); }
+}
+
+/* ── The row rail ────────────────────────────────────────────────────────────
+   A 3px strip down the left edge of a row that needs attention today.
+
+   ── One rail, three tones, in priority order ────────────────────────────────
+   A lead can be overdue AND due for retargeting, and there is only one strip.
+   rowRailTone() in LeadsPage.jsx picks, in the order somebody should deal with
+   them: overdue (a promise already broken) → today (one about to be) →
+   retarget (an opportunity, which keeps).
+
+   ── A future follow-up gets no rail, deliberately ───────────────────────────
+   Most leads in a worked pipeline have a follow-up booked for some future date.
+   Railing those means most rows are striped, and a marker on most rows marks
+   nothing — it becomes texture, and the overdue ones stop standing out, which
+   is the whole job. The green badge in the Next Follow-up column already says
+   "in hand".
+
+   ── Why a box-shadow and not a border ───────────────────────────────────────
+   An inset shadow on the first cell paints INSIDE the row's box, so it does not
+   change the table's column widths and cannot shift a layout by 3px. It also
+   survives the selected-row background, which owns the actual background colour
+   — two backgrounds fighting would make a selected overdue row unreadable. */
+
+.lp-row--rail > td:first-child {
+  box-shadow: inset 3px 0 0 var(--rail);
+}
+
+.lp-mobile-card--rail {
+  border-left: 3px solid var(--rail);
+}
+
+/* Red: the follow-up date has passed. The strongest tone on the screen, for
+   the only state that is somebody's fault. */
+.lp-row--rail-overdue,
+.lp-mobile-card--rail-overdue {
+  --rail: #dc2626;
+}
+
+/* Amber: due today. Not a failure yet — the same amber the Today badge uses,
+   so the rail and the badge on one row are visibly the same fact. */
+.lp-row--rail-today,
+.lp-mobile-card--rail-today {
+  --rail: #d97706;
+}
+
+/* Orange: the vehicle is due for service again after a competitor did the last
+   one. Orange rather than red because nothing is late — this is an opportunity,
+   and red on this screen already means locked, and means stop. */
+.lp-row--rail-retarget,
+.lp-mobile-card--rail-retarget {
+  --rail: #f97316;
+}
+
+/* The caption under the customer name, in both the table and the card. Sized
+   and spaced to match .lp-lost-reason-sub directly above it — a lost lead can
+   show both, and two sub-lines of different sizes look like a bug. */
+.lp-retarget-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 650;
+  color: #c2410c;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .lp-retarget-sub {
+  color: #fdba74;
+}
+
+/* "Comes Back — 10 Jun 2026" in the lead's own panel. A pill rather than plain
+   text because it is a date something will HAPPEN on, not a date something
+   did — the same distinction .lp-lost-pill draws next to it. */
+.lp-retarget-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+[data-theme="dark"] .lp-retarget-pill {
+  background: #3a2310;
+  color: #fdba74;
+}
+
+/* The follow-up badge on the mobile card. Smaller than the table's
+   .lp-followup-badge because it sits inline in a dot-separated line rather than
+   alone in a column. */
+.lp-mc-fu {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ── Mobile lead card ────────────────────────────────────────────────────────
+   Rewritten because the old one spent about 150px per lead and made you look in
+   four places to read one. Name at the top, the Call/WhatsApp pair beneath it,
+   the status pill below THOSE, and the date stranded at the very bottom next to
+   a bare "—" and the overflow menu.
+
+   The order now follows what somebody scanning a list actually asks:
+   who is this and where are they up to → how do I reach them and when did they
+   come in → anything special about them → what can I do about it.
+
+   Everything below is scoped to the card's own classes, which render only
+   inside .lp-mobile-list — the table is a separate tree and is untouched. */
+
+.lp-mc-top {
+  /* Row, not column. The badge does not shrink and the name wraps under it. */
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.lp-mc-right {
+  flex-shrink: 0;
+}
+
+/* Number · date · value, one line, dot-separated. */
+.lp-mc-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.lp-mc-line .lp-mc-mobile {
+  margin-top: 0;
+  /* Tabular figures so the numbers line up down the list instead of jittering
+     — the column of phone numbers is read by shape as much as by digit. */
+  font-variant-numeric: tabular-nums;
+}
+
+.lp-mc-line .lp-mc-date {
+  display: inline;
+  flex: none;
+}
+
+.lp-mc-line .lp-mc-value {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.lp-mc-dot {
+  color: var(--border);
+  font-weight: 700;
+}
+
+/* Converted / lost reason / retarget — the exceptions, on their own line so
+   they are not competing with the ordinary facts above. */
+.lp-mc-flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.lp-mc-conv {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ecfdf5;
+  color: #059669;
+  border: 1.5px solid #6ee7b7;
+  border-radius: 20px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .lp-mc-conv {
+  background: #052e23;
+  border-color: #059669;
+}
+
+.lp-mc-meta:empty {
+  display: none;
+}
+
+/* ── The action row ── */
+.lp-mc-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lp-mc-bottom .lp-mc-actions {
+  /* Equal halves rather than content-width pills: a bigger thumb target, and
+     the buttons line up down the list instead of ending at a different x on
+     every card. */
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.lp-mc-bottom .lp-mc-action-btn {
+  flex: 1;
+  justify-content: center;
+  /* 36px — a real target. The old 6px padding gave about 28px, which is under
+     every touch guideline there is. */
+  min-height: 36px;
+  padding: 6px 10px;
+}
+
+.lp-mc-bottom .lp-icon-btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  /* Tighter than the 14px/16px base: on a 360px screen the padding is competing
+     with the content for the width. */
+  .lp-mobile-card {
+    padding: 12px 14px;
+  }
+}
+
+/* ── Mobile toolbar: give the list back its screen ───────────────────────────
+   On a 360px phone the controls above the first lead came to roughly 250px —
+   search, four source chips, three owner chips, the Follow-up button on a line
+   of its own, four dropdowns over two rows, then the count and two buttons.
+   Two thirds of the viewport spent before a single lead.
+
+   Nothing is removed or hidden here. The rows that WRAP on a phone are turned
+   into rows that SCROLL sideways instead, which is the same content in one
+   line each, and the two buttons stop spelling out labels the icons already
+   carry. Everything is still reachable; it just stops stacking. */
+@media (max-width: 768px) {
+
+  /* ── The chip strip: one scrolling line, not three stacked ── */
+  .lp-src-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    /* Momentum scrolling, and no scrollbar gutter eating a row's height. */
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    /* Each chip is a destination — the strip settles on one rather than
+       stopping mid-chip and half-hiding a count. */
+    scroll-snap-type: x proximity;
+    padding-bottom: 2px;
+  }
+
+  .lp-src-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lp-src-chip {
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+
+  .lp-fu-pill {
+    flex-shrink: 0;
+    /* margin-left:auto pushes it to the far right, which in a nowrap scroll
+       container means "off the end of the scrollable width" — reachable only
+       by scrolling past everything. It sits inline after the chips instead:
+       still visibly not a chip (filled red against outlined pills), just no
+       longer exiled to its own row. */
+    margin-left: 4px;
+  }
+
+  /* ── The dropdown row: same treatment ── */
+  .leads-page.lb-page .lp-filters .lb-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .leads-page.lb-page .lp-filters .lb-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .leads-page.lb-page .lp-filters .lb-control,
+  .leads-page.lb-page .lp-filters .lp-status-dd-btn {
+    flex-shrink: 0;
+  }
+
+  /* ── Count and actions ── */
+  .leads-page.lb-page .lb-toolbar-right {
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  /* "85 leads" is already the first thing the chip strip says — All 85 — so on
+     a phone it is the same number twice, one of them costing width the buttons
+     need. Hidden, not deleted: on desktop it carries the scope wording ("12 of
+     my leads") that the removed page subtitle used to. */
+  .leads-page.lb-page .lb-count {
+    display: none;
+  }
+
+  /* Export is an icon button here. The download glyph is unambiguous, and the
+     word was pushing "Capture New Lead" — the thing people actually press — off
+     the row. Capture keeps its full label for exactly that reason. */
+  .leads-page.lb-page .lb-toolbar-right .lb-control:not(.lb-primary) {
+    font-size: 0;
+    gap: 0;
+    padding: 8px 10px;
+  }
+
+  .leads-page.lb-page .lb-toolbar-right .lb-control:not(.lb-primary) svg {
+    font-size: 15px;
+  }
 }

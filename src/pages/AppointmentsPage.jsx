@@ -14,6 +14,7 @@ import { useFlipPopup } from '../hooks/useFlipPopup.js';
 import AppointmentCalendar from '../components/AppointmentCalendar.jsx';
 import { istToday, monthOf } from '../lib/istDate.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
+import useSync from '../hooks/useSync.js';
 import { waTarget } from '../lib/phone.js';
 import '../styles/listLayout.css';
 import {
@@ -21,7 +22,7 @@ import {
   ChevronLeft, ChevronRight, Clock, Car, Bike, Network,
   User, Phone, MapPin, Wrench, IndianRupee, ChevronDown,
   FileText, MessageCircle, Plus, Pencil, Copy, Check, Trash2,
-  SlidersHorizontal, ArrowDown,
+  SlidersHorizontal, ArrowDown, Gauge,
   List as ListIcon, CalendarDays,
 } from 'lucide-react';
 import '../styles/AppointmentsPage.css';
@@ -779,6 +780,19 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onD
                 <div className="apptv-sched-sub-lbl"><User size={10} /> Assigned to</div>
                 <div className="apptv-sched-sub-val" style={!appt.assigned_to_name ? { color: 'var(--text-muted)', fontWeight: 400 } : {}}>
                   {appt.assigned_to_name || '—'}
+                </div>
+              </div>
+              {/* The reading was enterable in the edit form but shown nowhere,
+                  so the only way to check it was to reopen the form you might
+                  then accidentally save. It is also what a KM-based warranty is
+                  validated against, which makes it worth reading at a glance.
+
+                  `!= null` rather than a truthy test — 0 km is a real reading
+                  on a new vehicle. */}
+              <div className="apptv-sched-sub-item">
+                <div className="apptv-sched-sub-lbl"><Gauge size={10} /> Odometer</div>
+                <div className="apptv-sched-sub-val" style={appt.odometer_km == null ? { color: 'var(--text-muted)', fontWeight: 400 } : {}}>
+                  {appt.odometer_km != null ? `${Number(appt.odometer_km).toLocaleString('en-IN')} km` : '—'}
                 </div>
               </div>
             </div>
@@ -2910,6 +2924,7 @@ export default function AppointmentsPage() {
   const [statusList, setStatusList] = useState([]);
   const [hubs, setHubs] = useState([]);
   const [usersList, setUsersList] = useState([]);
+  const [vTypeList, setVTypeList] = useState([]);
 
   // Remember page/pageSize/filters across a full navigation away and back —
   // sessionStorage survives the unmount a route change to a different page
@@ -2957,8 +2972,13 @@ export default function AppointmentsPage() {
     q.set('view', 'calendar'); q.set('month', ym);
     navigate(`${P.appointments}?${q}`, { replace: true });
   }
-  // "+N more" drops into the list filtered to that single day — one control
-  // doing one thing, and it reuses the filtering that already exists.
+  /* "+N more" drops into the list filtered to that single day — one control
+     doing one thing, and it reuses the filtering that already exists.
+
+     NOT the same as toggleDayFilter further down, which the Today/Tomorrow
+     chips use: this one NAVIGATES, carrying the day in the URL because it is
+     called from the calendar view and has to switch view as well as filter.
+     That one flips the filter state in place. */
   function pickDay(ymd) {
     const q = new URLSearchParams();
     q.set('date_from', ymd); q.set('date_to', ymd);
@@ -2978,14 +2998,19 @@ export default function AppointmentsPage() {
     }
   }, [dateFromParam, dateToParam]);
   const [filterCreatedBy, setFilterCreatedBy] = useState(ls.filterCreatedBy ?? '');
+  /* Vehicle type — Two-Wheeler / Four-Wheeler / Commercial, whatever Master
+     Data holds. Stored as the type's id, never its name: the names are
+     editable on the Vehicles page, and a filter that matched on "Two-Wheeler"
+     would quietly stop matching the day somebody shortened it to "2W". */
+  const [filterVType, setFilterVType] = useState(ls.filterVType ?? '');
   const [page, setPage] = useState(ls.page ?? 1);
   const [pageSize, setPageSize] = useState(ls.pageSize ?? 10);
 
   // Persist whenever any of these change
   useEffect(() => {
     // searchInput, not search: restore the box exactly as they left it, even mid-word.
-    writeListState('sp_appointments_list_v1', { search: searchInput, page, pageSize, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy });
-  }, [page, pageSize, searchInput, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy]);
+    writeListState('sp_appointments_list_v1', { search: searchInput, page, pageSize, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType });
+  }, [page, pageSize, searchInput, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType]);
 
   useListScrollRestore('sp_appointments_list_v1', !loading);
 
@@ -3001,8 +3026,42 @@ export default function AppointmentsPage() {
 
   // How many of the filters hidden behind the funnel are actually on. A date
   // range counts as one thing, not two — that is how a person thinks of it.
+  /* A day, as the 'YYYY-MM-DD' the two date inputs and the API speak.
+     Built from the LOCAL parts, never toISOString().slice(0,10) — that is UTC,
+     and India is UTC+5:30, so any time after 05:30 IST it returns yesterday's
+     date. A "Today" button that shows yesterday's appointments for nineteen
+     hours a day is worse than no button.
+
+     The offset goes through the Date constructor rather than adding 86400000 to
+     a timestamp, so month ends and DST both land correctly: new Date(y, m, 32)
+     is the 1st of the next month, which is exactly what is wanted on the 31st. */
+  const dayStr = (offset = 0) => {
+    const d = new Date();
+    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + offset);
+    const p = n => String(n).padStart(2, '0');
+    return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`;
+  };
+  const todayStr    = dayStr(0);
+  const tomorrowStr = dayStr(1);
+
+  // Both ends on one day = that day is the range. Read rather than stored, so a
+  // chip lights up for a range somebody set by hand in the funnel too — it
+  // reflects the filter, it does not own it.
+  const isDayOnly   = day => dateFrom === day && dateTo === day;
+  const isTodayOnly = isDayOnly(todayStr);
+
+  /* Sets the range to a single day, or clears it when that day is already the
+     range — so every chip is a toggle and none of them needs the funnel to
+     undo it. Shared by both chips rather than written twice: two copies of
+     "set both ends, reset the page" is two places for them to diverge. */
+  const toggleDayFilter = day => {
+    if (isDayOnly(day)) { setDateFrom(''); setDateTo(''); }
+    else { setDateFrom(day); setDateTo(day); }
+    setPage(1);
+  };
+
   const hiddenFilterCount =
-    (filterCreatedBy ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0);
+    (filterCreatedBy ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0) + (filterVType ? 1 : 0);
 
   // Starts CLOSED. `true` was right when this drove a filter ROW that expanded
   // in place; it now drives the funnel popover, and a popover open on arrival
@@ -3021,11 +3080,13 @@ export default function AppointmentsPage() {
       api('/api/appointment-statuses'),
       api('/api/hubs?is_active=true&limit=200'),
       api('/api/users/assignable'),
+      api('/api/vehicles/types'),
     ])
-      .then(([sr, hr, ur]) => {
+      .then(([sr, hr, ur, vr]) => {
         setStatusList(sr.items || []);
         setHubs(hr.items || []);
         setUsersList(ur.items || []);
+        setVTypeList(vr.items || []);
       })
       .catch(() => { });
   }, []);
@@ -3040,6 +3101,7 @@ export default function AppointmentsPage() {
       if (dateFrom) qs.set('date_from', dateFrom);
       if (dateTo) qs.set('date_to', dateTo);
       if (filterCreatedBy) qs.set('created_by_id', filterCreatedBy);
+      if (filterVType) qs.set('vehicle_type_id', filterVType);
       const r = await api(`/api/appointments?${qs}`);
       setAppts(r.items || []);
       setTotal(r.total || 0);
@@ -3048,9 +3110,26 @@ export default function AppointmentsPage() {
       setStatusCounts(counts);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, page, pageSize]);
+  }, [search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
+
+  /* ── Stays current without a refresh ─────────────────────────────────────
+     This page subscribed to nothing, so an appointment that advanced because
+     of something happening ELSEWHERE — the hub marking work complete, the
+     customer approving or rejecting on their phone, an invoice being paid —
+     kept showing its old status until somebody reloaded.
+
+     Both topics, because the appointment's own status is driven by the
+     estimate: `advanceAppointmentStatus` is called from the estimates
+     controller on submit, approve and work-complete, and from the customer's
+     public decision route. An 'estimates' event therefore means this list may
+     have moved too.
+
+     `load` closes over the filters and the page number, so this only works
+     because useSync now calls the CURRENT callback rather than the one it
+     captured on first render — see the ref in hooks/useSync.js. */
+  useSync(['appointments', 'estimates'], load);
 
   const resolvedTokenRef = useRef(null);
   // Flips true the instant the user explicitly closes the modal. Guards
@@ -3206,6 +3285,56 @@ export default function AppointmentsPage() {
           and the funnel — would be two buttons doing nearly the same thing, so
           the funnel wins and the toggle is gone. */}
       <div className="lb-toolbar">
+        {/* ── Today ──
+            The single most-asked question on this screen — "what is in today?"
+            — needed four actions to answer: open the funnel, set From, set To,
+            close it. And the two date inputs are hidden behind that funnel, so
+            it did not look like the screen could answer it at all.
+
+            A toggle rather than a one-way button: pressing it again clears the
+            range instead of leaving you to reopen the funnel and empty two
+            fields to get back to the full list.
+
+            It writes the SAME dateFrom/dateTo the funnel writes rather than
+            carrying a mode of its own, so the two controls cannot disagree —
+            set the range by hand to today and the chip lights up; press the
+            chip and the funnel shows today in both boxes. */}
+        <button
+          type="button"
+          className={`lb-control appt-today-chip${isTodayOnly ? ' appt-today-chip--on' : ''}`}
+          aria-pressed={isTodayOnly}
+          title={isTodayOnly ? 'Show all dates' : "Show only today's appointments"}
+          onClick={() => toggleDayFilter(todayStr)}
+        >
+          <Calendar size={14} />
+          Today
+        </button>
+
+        {/* ── Tomorrow, hub portal only ──
+            The hub portal renders this same component (see the route in
+            HubDashboardPage), so `isHubUser` is what separates the two views —
+            there is no second appointments screen to put this on.
+
+            Only the hub gets it because only the hub is asked to prepare for
+            it. A workshop's evening question is "what is coming in tomorrow"
+            — bays, parts, who is on. Spinoto staff work today's list and book
+            forward through the calendar, and a second chip on that toolbar
+            would be one more control on a row that already scrolls on a phone.
+
+            No icon, unlike Today. Two calendar glyphs side by side read as one
+            control split in half; the label is doing the work here. */}
+        {isHubUser && (
+          <button
+            type="button"
+            className={`lb-control appt-today-chip${isDayOnly(tomorrowStr) ? ' appt-today-chip--on' : ''}`}
+            aria-pressed={isDayOnly(tomorrowStr)}
+            title={isDayOnly(tomorrowStr) ? 'Show all dates' : "Show only tomorrow's appointments"}
+            onClick={() => toggleDayFilter(tomorrowStr)}
+          >
+            Tomorrow
+          </button>
+        )}
+
         {!isHubUser && (
           <div style={{ position: 'relative', flex: '0 0 auto' }}>
             <button
@@ -3319,6 +3448,23 @@ export default function AppointmentsPage() {
                   </select>
                 </div>
 
+                {/* Vehicle type. Options come from Master Data rather than a
+                    hardcoded 2W/4W pair, so a workshop that adds Commercial —
+                    or renames either of the two — gets a filter that still
+                    matches what the rest of the app calls them. */}
+                <div>
+                  <label className="lb-pop-label" htmlFor="lb-appt-vtype">Vehicle type</label>
+                  <select
+                    id="lb-appt-vtype"
+                    className="lb-control"
+                    value={filterVType}
+                    onChange={e => { setFilterVType(e.target.value); setPage(1); }}
+                  >
+                    <option value="">All vehicle types</option>
+                    {vTypeList.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+
                 <div>
                   <label className="lb-pop-label">Date range</label>
                   <div className="lb-pop-row">
@@ -3342,7 +3488,7 @@ export default function AppointmentsPage() {
                     className="btn btn-ghost"
                     style={{ padding: '6px 10px', fontSize: 13 }}
                     disabled={hiddenFilterCount === 0}
-                    onClick={() => { setFilterCreatedBy(''); setDateFrom(''); setDateTo(''); setPage(1); }}
+                    onClick={() => { setFilterCreatedBy(''); setDateFrom(''); setDateTo(''); setFilterVType(''); setPage(1); }}
                   >
                     Clear
                   </button>
@@ -3468,7 +3614,7 @@ export default function AppointmentsPage() {
                       <Calendar size={36} style={{ opacity: .2, marginBottom: 10 }} />
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>No appointments found</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo || filterCreatedBy
+                        {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo || filterCreatedBy || filterVType
                           ? 'Try adjusting your filters.'
                           : 'Appointments appear here when leads are converted.'}
                       </div>
@@ -3512,8 +3658,11 @@ export default function AppointmentsPage() {
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 13 }} className="appt-cust-name">{a.customer_name || '—'}</div>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{a.mobile}</div>
+                          {/* Suppressed for a hub, where this same tag now IS
+                              the Schedule column — shown in both places it
+                              reads as two different facts about the row. */}
                           {(() => {
-                            const tag = getScheduleTag(a.scheduled_date);
+                            const tag = isHubUser ? null : getScheduleTag(a.scheduled_date);
                             return tag ? (
                               <div style={{ marginTop: 4 }}>
                                 <span style={{
@@ -3551,7 +3700,29 @@ export default function AppointmentsPage() {
                       )}
                     </td>
                     <td>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtDate(a.scheduled_date)}</div>
+                      {/* ── Hub portal: the word, not the date ──
+                          A hub works a bench, not a calendar. "Today" answers
+                          the question in one glance where "24 Aug 2026" makes
+                          you check what today is first — and on a list of ten
+                          rows that is ten small calculations.
+
+                          Hub only: Spinoto staff look across weeks and need the
+                          real date to compare rows against each other. And only
+                          for today and tomorrow — getScheduleTag returns null
+                          beyond that, so every other row keeps its date and the
+                          two that matter stand out by being different.
+
+                          The exact date is not lost: it is on the appointment
+                          itself, one tap away. */}
+                      {(() => {
+                        const tag = isHubUser ? getScheduleTag(a.scheduled_date) : null;
+                        return tag
+                          ? <span style={{
+                              fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 20,
+                              background: tag.bg, color: tag.color, display: 'inline-block',
+                            }}>{tag.text}</span>
+                          : <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtDate(a.scheduled_date)}</div>;
+                      })()}
                       {a.scheduled_time && (
                         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, display: 'flex', alignItems: 'center', gap: 3 }}>
                           <Clock size={10} /> {fmtTime(a.scheduled_time)}
@@ -3654,8 +3825,10 @@ export default function AppointmentsPage() {
             return (
               <div key={a.id} className="appt-card" onClick={() => openAppt(a)}>
                 <div className="appt-card-left">
+                  {/* Same suppression as the table: on the hub's card the tag
+                      has moved down to the date row. */}
                   {(() => {
-                    const tag = getScheduleTag(a.scheduled_date);
+                    const tag = isHubUser ? null : getScheduleTag(a.scheduled_date);
                     return tag ? (
                       <span style={{
                         fontSize: 8, fontWeight: 850, padding: '2px 4px', borderRadius: 4,
@@ -3678,7 +3851,13 @@ export default function AppointmentsPage() {
                   <div className="appt-card-meta">
                     <div className="appt-card-meta-row"><MapPin size={11} /> {a.hub_name || '—'}</div>
                     <div className="appt-card-meta-row">
-                      <Calendar size={11} /> {fmtDate(a.scheduled_date) || '—'}
+                      <Calendar size={11} />
+                      {(() => {
+                        const tag = isHubUser ? getScheduleTag(a.scheduled_date) : null;
+                        return tag
+                          ? <strong style={{ color: tag.color }}>{tag.text}</strong>
+                          : (fmtDate(a.scheduled_date) || '—');
+                      })()}
                       {a.scheduled_time && (
                         <span className="appt-card-time"><Clock size={11} /> {fmtTime(a.scheduled_time)}</span>
                       )}

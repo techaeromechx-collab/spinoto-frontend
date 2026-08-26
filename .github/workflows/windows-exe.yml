@@ -1,0 +1,103 @@
+# Builds the Windows installer (.exe) for Spinoto CRM.
+#
+# ── WHERE THIS FILE LIVES, AND WHY IT MATTERS ────────────────────────────────
+#
+# This belongs in the spinoto-FRONTEND repo, at .github/workflows/windows-exe.yml
+#
+# The first version of this file was written into the Spinoto/ parent folder,
+# which is NOT a git repository — only Spinoto/backend and Spinoto/frontend are,
+# and they are two separate repos. A workflow in the parent folder is a file on
+# one laptop: it never reaches GitHub, so GitHub never runs it, and nothing
+# reports an error because from GitHub's side the file simply does not exist.
+#
+# Every path below is relative to the FRONTEND REPO ROOT — package.json,
+# src-tauri and package-lock.json all sit at the top level there. No
+# `working-directory: frontend`, which is what the monorepo version had.
+#
+# ── WHY A GITHUB RUNNER AND NOT THE MACBOOK ──────────────────────────────────
+#
+# Tauri cannot cross-compile a Windows binary from macOS. Not "it is awkward" —
+# the Windows target links against the MSVC toolchain and bundles with NSIS, and
+# neither of those exists on a Mac. `npm run tauri:build` there produces a .app
+# and a .dmg, which is a different product. So the Windows build happens on a
+# Windows machine, and this is the cheapest one available: a runner that exists
+# for the few minutes it takes and then disappears.
+#
+# ── HOW TO USE IT ────────────────────────────────────────────────────────────
+#
+#   1. Commit and push this file to spinoto-frontend.
+#   2. github.com/techaeromechx-collab/spinoto-frontend
+#        → Settings → Secrets and variables → Actions → New repository secret
+#        Name:  VITE_API_URL
+#        Value: https://your-live-api-domain.com      (NO trailing slash)
+#   3. Actions tab → "Windows installer" → Run workflow → Run workflow.
+#   4. When it goes green, open the run and download the artifact
+#      "spinoto-windows-installer". Inside is:
+#        Spinoto CRM_0.1.0_x64-setup.exe
+#
+# Pushing a tag like v0.1.0 triggers it too, so cutting a release produces an
+# installer without anybody pressing a button.
+
+name: Windows installer
+
+on:
+  workflow_dispatch:        # the "Run workflow" button
+  push:
+    tags: ['v*']            # and any version tag
+
+jobs:
+  build:
+    # windows-latest is the entire point of this file. Do not "simplify" it to
+    # ubuntu-latest or macos-latest — the job will run, go green, and produce
+    # nothing a Windows user can install.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Rust is not preinstalled in a usable state on the runner.
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The slow part is compiling the Rust dependencies — several minutes, and
+      # identical every run until src-tauri/Cargo.lock changes (which IS
+      # committed, so the cache actually hits). Second run onward: ~2 minutes.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the installer
+        env:
+          # THE line that decides whether the .exe works at all.
+          #
+          # Vite bakes VITE_* variables into the bundle at BUILD time; there is
+          # no runtime config to correct afterwards. Leave this unset and the
+          # app falls back to http://localhost:4000 (src/lib/socket.js), so it
+          # installs cleanly, opens cleanly, and every single request fails on
+          # any machine that is not running the backend locally. That reads as
+          # a broken app rather than a missing setting, which is why it is worth
+          # being loud about.
+          #
+          # The backend's CORS_ORIGIN must also include tauri://localhost and
+          # https://tauri.localhost, or the requests are refused at the far end
+          # instead.
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: npm run tauri:build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spinoto-windows-installer
+          # tauri.conf.json sets bundle.targets to ["nsis"], so the NSIS
+          # installer is the only bundle produced. Add msi/*.msi here as well
+          # if that ever changes.
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          # Fail loudly rather than uploading an empty artifact — a green run
+          # with nothing in it is the worst outcome, because it looks finished.
+          if-no-files-found: error

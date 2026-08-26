@@ -357,6 +357,8 @@
   display: block;
   width: 100%;
   min-width: 0;
+  /* resize:none stays. The box sizes itself to the text now (the effect in
+     WhatsAppThread.jsx), so a drag handle would only fight it. */
   resize: none;
   border: 0;
   padding: 2px 2px 4px;
@@ -365,6 +367,16 @@
   line-height: 1.45;
   color: var(--text);
   background: transparent;
+
+  /* Eight lines, then scroll. 1.45em is one line at this element's own
+     font-size, and 6px is the padding above and below — written as the sum of
+     its parts so changing the line count means changing the 8.
+
+     The cap is the whole point: the reply box shares its height with the
+     conversation above it, and an uncapped box would let one pasted paragraph
+     take the entire panel. */
+  max-height: calc(1.45em * 8 + 6px);
+  overflow-y: auto;
 }
 .wat-input:focus { outline: none; }
 

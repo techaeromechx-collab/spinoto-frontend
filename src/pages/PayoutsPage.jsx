@@ -89,7 +89,17 @@ const PSTATUS = {
   pending:        { bg: '#f1f5f9', color: '#64748b', label: 'Unpaid'    },
   partially_paid: { bg: '#fef3c7', color: '#92400e', label: 'Part Paid' },
   paid:           { bg: '#dcfce7', color: '#166534', label: 'Paid'      },
+  // A nil invoice. Settled, but not paid — see migration 174 and the matching
+  // entry in PurchaseInvoicesPage. Slate rather than green: green here means
+  // money reached the hub.
+  not_required:   { bg: '#e2e8f0', color: '#475569', label: 'No Payment Due' },
 };
+
+/* Settled either way. Every `!== 'paid'` on this screen means "still owes
+   money" — which stopped being the same thing the day nil invoices got their
+   own label. Without this they would appear as selectable, payable rows in the
+   payout run, asking somebody to transfer ₹0. */
+const isSettled = st => st === 'paid' || st === 'not_required';
 const PayBadge = ({ status }) => {
   const m = PSTATUS[status] || PSTATUS.pending;
   return <span style={{ display:'inline-block', padding:'3px 10px', borderRadius:99, fontSize:11, fontWeight:700, background:m.bg, color:m.color }}>{m.label}</span>;
@@ -1443,7 +1453,7 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
 
   useEffect(()=>{ setPage(1); setTab('invoices'); setSelected(new Set()); }, [hubName]);
 
-  const unpaidInvoices   = sorted.filter(pi => pi.payment_status !== 'paid');
+  const unpaidInvoices   = sorted.filter(pi => !isSettled(pi.payment_status));
   const allPageSelected  = paginated.filter(pi=>pi.payment_status!=='paid').every(pi=>selected.has(pi.id));
   const somePageSelected = paginated.some(pi=>selected.has(pi.id));
   const selectedInvoices = sorted.filter(pi=>selected.has(pi.id));
@@ -1546,7 +1556,7 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                   const balance  = parseFloat(pi.grand_total)-parseFloat(pi.amount_paid||0);
                   const d        = pi.payout_due_date ? new Date(pi.payout_due_date) : null;
                   const isOverdue = d && d<today && pi.payment_status!=='paid';
-                  const isSelectable = pi.payment_status !== 'paid';
+                  const isSelectable = !isSettled(pi.payment_status);
                   return (
                     <tr key={pi.id} style={{ background: selected.has(pi.id)?'color-mix(in srgb, var(--primary) 5%, var(--bg))': isOverdue?'#fff5f5':undefined }} onMouseLeave={()=>setOpenMenu(null)}>
                       <td style={{ padding:'11px 10px 11px 14px', borderBottom:'1px solid var(--border)' }}>
@@ -1619,7 +1629,7 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
                                     an irreversible action next to a reversible
                                     one at the end of every row is asking for the
                                     wrong click. */}
-                                {bankReady && pi.payment_status !== 'paid' && (
+                                {bankReady && !isSettled(pi.payment_status) && (
                                   <button className="po-menu-item" onClick={()=>{ setBankModal([pi]); setOpenMenu(null); }}>
                                     <Landmark size={13}/> Pay by bank
                                   </button>
@@ -1857,6 +1867,7 @@ function MobilePayoutsView({ allInvoices, hubs, data, onPay, onViewPayments, loa
             <option value="">All Status</option>
             <option value="pending">Unpaid</option>
             <option value="partially_paid">Part Paid</option>
+            <option value="not_required">No Payment Due</option>
             <option value="paid">Paid</option>
           </select>
         </div>
@@ -2083,6 +2094,8 @@ export default function PayoutsPage() {
                 <option value="">All Status</option>
                 <option value="pending">Unpaid</option>
                 <option value="partially_paid">Part Paid</option>
+                <option value="not_required">No Payment Due</option>
+            <option value="not_required">No Payment Due</option>
                 <option value="paid">Paid</option>
               </select>
               {(search||statusFilter) && <button className="po-btn-ghost" style={{ padding:'7px 14px', fontSize:13 }} onClick={()=>{ setSearch(''); setStatusFilter(''); }}>Clear</button>}

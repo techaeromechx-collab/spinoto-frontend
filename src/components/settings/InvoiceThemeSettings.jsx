@@ -72,6 +72,7 @@ const THEME_FLAGS = [
 
 const HEADER_FIELDS = [
   { key: 'vehicle_number',  label: 'Vehicle Number' },
+  { key: 'odometer',        label: 'Odometer Reading' },
   { key: 'po_number',       label: 'PO Number' },
   { key: 'eway_bill',       label: 'E-way Bill Number' },
   { key: 'place_of_supply', label: 'Place of Supply (needed for IGST)' },

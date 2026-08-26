@@ -202,7 +202,23 @@ const PAYMENT_STATUS_META = {
   pending: { bg: '#f3f4f6', color: '#374151', label: 'Unpaid' },
   partially_paid: { bg: '#fef3c7', color: '#92400e', label: 'Part Paid' },
   paid: { bg: '#dcfce7', color: '#166534', label: 'Paid' },
+  /* A nil invoice — every line at 100% commission, or a hub-borne warranty
+     redo. Nothing was paid and nothing ever will be, and until migration 174
+     this said "Paid", which was simply untrue on a document somebody's
+     accountant reads.
+
+     Slate, not green. Green on this screen means money reached the hub. This
+     is settled, not paid, and the colour should not claim otherwise. */
+  not_required: { bg: '#e2e8f0', color: '#475569', label: 'No Payment Due' },
 };
+
+/* Settled — either the money arrived or there was none to send. The screen
+   asks this in four places; every one of them used to test `!== 'paid'` and
+   would have started offering payment actions on nil invoices the day 174
+   relabelled them. */
+function isSettled(status) {
+  return status === 'paid' || status === 'not_required';
+}
 
 function PaymentStatusBadge({ status }) {
   const m = PAYMENT_STATUS_META[status] || PAYMENT_STATUS_META.pending;
@@ -338,6 +354,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
   const [approving, setApproving] = useState(false);
   const [company, setCompany] = useState(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [payoutSchedule, setPayoutSchedule] = useState('lump_sum');
   const [recalculating, setRecalculating] = useState(false);
   const [approvalItemRates, setApprovalItemRates] = useState({}); // { [item_id]: rateStr }
@@ -464,6 +481,30 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
       showToast(err.message || 'Failed to reject purchase invoice approval.', 'error');
     } finally {
       setRejecting(false);
+    }
+  }
+
+  /* Cancel — void an invoice that should not exist.
+     Not a delete: approving claims a number from the hub's invoice series and
+     that series must not have holes. The row and the number survive; the
+     estimate is freed so a corrected invoice can be generated for it. */
+  async function handleCancelInvoice() {
+    if (!window.confirm(
+      'Cancel this purchase invoice?\n\n'
+      + 'It stays in the list marked Cancelled and keeps its invoice number, so the hub\'s '
+      + 'numbering has no gap. The estimate is released, so you can generate a corrected '
+      + 'invoice for it.\n\nThis cannot be undone.'
+    )) return;
+    setCancelling(true);
+    try {
+      const res = await api(`/api/purchase-invoices/${invoiceId}/cancel`, { method: 'POST' });
+      showToast('Purchase invoice cancelled.');
+      setInv(res.item);
+      onRefreshList();
+    } catch (err) {
+      showToast(err.message || 'Failed to cancel purchase invoice.', 'error');
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -638,7 +679,14 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
               they were buttons that could only ever fail, and "Edit Rates" on
               your own issued tax invoice reads as a promise the system does not
               keep. A hub does not edit its Sales Invoice at all. */}
-          {!isHubUser && inv && inv.status === 'approved' && parseFloat(inv.amount_paid ?? 0) === 0 && (
+          {/* Now open on pending_approval as well, because Cancel belongs there
+              most of all — a wrong invoice is usually spotted before anybody
+              approves it, and until now the only menu on this screen appeared
+              after approval. Edit Rates and Reject Approval keep their own
+              approved-only guards below, so nothing moved for them. */}
+          {!isHubUser && inv && inv.status !== 'cancelled'
+            && (inv.status === 'approved' || inv.status === 'pending_approval')
+            && parseFloat(inv.amount_paid ?? 0) === 0 && (
             <div style={{ position: 'relative' }}>
               {showKebab && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowKebab(false)} />
@@ -658,22 +706,38 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                   borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.13)',
                   minWidth: 170, zIndex: 1000, overflow: 'hidden',
                 }}>
+                  {inv.status === 'approved' && (
+                    <button
+                      style={{ width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                      onClick={() => { setShowKebab(false); openEditModal(); }}
+                    >
+                      <FileText size={14} /> Edit Rates
+                    </button>
+                  )}
+                  {inv.status === 'approved' && (
+                    <button
+                      style={{ width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-danger, #dc2626)', display: 'flex', alignItems: 'center', gap: 8, opacity: rejecting ? 0.6 : 1 }}
+                      disabled={rejecting}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                      onClick={() => { setShowKebab(false); handleRejectApproval(); }}
+                    >
+                      <XCircle size={14} /> {rejecting ? 'Rejecting…' : 'Reject Approval'}
+                    </button>
+                  )}
+                  {/* Last, and behind a divider: it is the only irreversible
+                      item in this menu. */}
+                  <div style={{ borderTop: '1px solid var(--border)' }} />
                   <button
-                    style={{ width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}
+                    style={{ width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-danger, #dc2626)', display: 'flex', alignItems: 'center', gap: 8, opacity: cancelling ? 0.6 : 1 }}
+                    disabled={cancelling}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                    onClick={() => { setShowKebab(false); openEditModal(); }}
+                    onClick={() => { setShowKebab(false); handleCancelInvoice(); }}
                   >
-                    <FileText size={14} /> Edit Rates
-                  </button>
-                  <button
-                    style={{ width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--text-danger, #dc2626)', display: 'flex', alignItems: 'center', gap: 8, opacity: rejecting ? 0.6 : 1 }}
-                    disabled={rejecting}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                    onClick={() => { setShowKebab(false); handleRejectApproval(); }}
-                  >
-                    <XCircle size={14} /> {rejecting ? 'Rejecting…' : 'Reject Approval'}
+                    <Trash2 size={14} /> {cancelling ? 'Cancelling…' : 'Cancel Invoice'}
                   </button>
                 </div>
               )}
@@ -1041,10 +1105,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                     <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>Due Date</div>
                     <div style={{
                       fontSize: 13, fontWeight: 700,
-                      color: isPastDue(inv.payout_due_date) && inv.payment_status !== 'paid' ? '#dc2626' : 'var(--text)',
+                      color: isPastDue(inv.payout_due_date) && !isSettled(inv.payment_status) ? '#dc2626' : 'var(--text)',
                     }}>
                       {fmtDate(inv.payout_due_date)}
-                      {isPastDue(inv.payout_due_date) && inv.payment_status !== 'paid' && (
+                      {isPastDue(inv.payout_due_date) && !isSettled(inv.payment_status) && (
                         <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, background: '#fee2e2', color: '#991b1b', padding: '2px 7px', borderRadius: 99 }}>OVERDUE</span>
                       )}
                     </div>
@@ -1213,7 +1277,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                           {/* The history stays visible to the hub — they need to
                               see what they have been paid. Deleting a payment is
                               Spinoto's record to change, not theirs. */}
-                          {!isHubUser && inv.payment_status !== 'paid' && (
+                          {!isHubUser && !isSettled(inv.payment_status) && (
                             <button
                               onClick={() => handleDeleteHubPayment(inv.id, pay.id)}
                               style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px', cursor: 'pointer', color: '#dc2626' }}
@@ -1236,7 +1300,7 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                   its own receipt would let the supplier mark its own bill paid.
                   The endpoint is staff-only anyway; this stops the form from
                   offering something that always 403s. */}
-              {!isHubUser && inv.payment_status !== 'paid' && (
+              {!isHubUser && !isSettled(inv.payment_status) && (
                 <HubPaymentForm
                   invoiceId={inv.id}
                   balance={Number(inv.grand_total ?? grandTotal) - Number(inv.amount_paid ?? 0)}

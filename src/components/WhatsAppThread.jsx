@@ -343,6 +343,26 @@ export default function WhatsAppThread({ mobile, onLeadResolved, entityType = 'l
     if (!loading) setTab(open ? 'reply' : 'templates');
   }, [open, loading]);
 
+  /* Grow the reply box to fit what is being typed, up to the 8-line cap in
+     .wat-input's max-height. Past that it scrolls, so a pasted paragraph can
+     never push the conversation off the screen.
+
+     Keyed on `draft` rather than done inside the textarea's onChange, because
+     onChange is only one of six places the draft changes: a quick reply
+     appends to it, a /shortcut replaces it, the emoji picker splices into it,
+     and sending clears it. Resizing in onChange alone would leave the box the
+     wrong height after any of the other five.
+
+     height must go to 'auto' first — scrollHeight reports the content height
+     only when the element is not already constrained to a smaller one, so
+     measuring without the reset makes the box grow and never shrink back. */
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft, tab, open]);
+
   useEffect(() => {
     if (pinned.current && scroller.current) {
       scroller.current.scrollTop = scroller.current.scrollHeight;

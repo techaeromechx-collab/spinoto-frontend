@@ -2007,3 +2007,30 @@
   opacity: 1;
   pointer-events: auto;
 }
+/* ── The Today chip ──────────────────────────────────────────────────────────
+   A .lb-control like the rest of the toolbar, so it inherits the shared height,
+   radius and focus ring and cannot drift out of alignment with the controls
+   beside it. Only the ON state is defined here.
+
+   Green fill, not an outline. Every other control on this row describes a
+   choice you can make; this one describes a choice you HAVE made, and the list
+   underneath is smaller because of it. A filter that is on and does not look on
+   is how somebody concludes the page has lost their appointments. */
+.appt-today-chip {
+  flex: 0 0 auto;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.appt-today-chip--on,
+.appt-today-chip--on:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+/* The default control's focus ring is drawn against the page background and
+   disappears on a filled chip. */
+.appt-today-chip--on:focus-visible {
+  box-shadow: 0 0 0 3px rgba(22, 185, 148, 0.35);
+}

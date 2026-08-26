@@ -95,7 +95,6 @@
   gap: 8px;
   flex-wrap: wrap;
   padding: 20px;
-  padding-top: 0px;
   overflow: visible;
   /* dropdowns and popovers escape this box */
 }

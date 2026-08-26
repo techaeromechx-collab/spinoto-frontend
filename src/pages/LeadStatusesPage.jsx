@@ -5,7 +5,7 @@ import { useCan } from '../auth/AuthContext.jsx';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import {
   Plus, Pencil, Trash2, X, AlertCircle, CheckCircle2,
-  GripVertical, Tag, Calendar, FileText, RefreshCw, Phone,
+  GripVertical, Tag, Calendar, FileText, RefreshCw, Phone, Ban, Building2,
 } from 'lucide-react';
 import '../styles/LeadStatusesPage.css';
 
@@ -136,6 +136,8 @@ function LeadStatusModal({ item, maxOrder, onClose, onSaved }) {
     is_closed:   item?.is_closed   ?? false,
     is_reenquiry:       item?.is_reenquiry       ?? false,
     is_repeat_customer: item?.is_repeat_customer ?? false,
+    needs_lost_reason:  item?.needs_lost_reason  ?? false,
+    is_retarget_target: item?.is_retarget_target ?? false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -265,6 +267,35 @@ function LeadStatusModal({ item, maxOrder, onClose, onSaved }) {
                   For somebody who has already had a job done — a past appointment, or an existing
                   customer record — coming back for the next one. Takes priority over re-enquiry
                   when both would apply. Only one status can hold this.
+                </span>
+              </div>
+            </label>
+
+            {/* Deliberately next to "Treat this status as closed" rather than
+                next to the lock: a reason is about WHY the lead ended, which is
+                the same conversation as whether it is finished. */}
+            <label className="ls-behaviour-row">
+              <input type="checkbox" checked={form.needs_lost_reason}
+                onChange={e => setForm(f => ({ ...f, needs_lost_reason: e.target.checked }))} />
+              <div>
+                <span className="ls-behaviour-label">Ask for a lost reason</span>
+                <span className="ls-behaviour-hint">
+                  When a lead is set to this status, a popup asks which reason from
+                  Master Data → Lost Reasons, and the lead cannot be saved without one.
+                  The reason shows under the lead's name and in its timeline.
+                </span>
+              </div>
+            </label>
+
+            <label className="ls-behaviour-row">
+              <input type="checkbox" checked={form.is_retarget_target}
+                onChange={e => setForm(f => ({ ...f, is_retarget_target: e.target.checked }))} />
+              <div>
+                <span className="ls-behaviour-label">Retargeted leads land here</span>
+                <span className="ls-behaviour-hint">
+                  A lead lost to a competitor moves here by itself once the vehicle is due
+                  for service again, and appears in that day's follow-up list. Only one status
+                  can hold this — ticking it here clears it wherever it was.
                 </span>
               </div>
             </label>
@@ -427,6 +458,8 @@ function LeadStatusPanel({ canManage }) {
               <th>Pipeline</th>
               <th>Logs Call</th>
               <th>Locked</th>
+              <th>Lost Reason</th>
+              <th>↺ Retarget</th>
               <th>Closed</th>
               <th>Returning</th>
               <th>Active</th>
@@ -435,9 +468,9 @@ function LeadStatusPanel({ canManage }) {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan="10" style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>Loading…</td></tr>
+              <tr><td colSpan="16" style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>Loading…</td></tr>
             ) : statuses.length === 0 ? (
-              <tr><td colSpan="10" style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>No statuses yet.</td></tr>
+              <tr><td colSpan="16" style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>No statuses yet.</td></tr>
             ) : statuses.map((s, idx) => (
               <tr key={s.id}
                 draggable={canManage}
@@ -500,6 +533,16 @@ function LeadStatusPanel({ canManage }) {
                 <td>
                   {s.is_locked
                     ? <span className="ls-flag-badge ls-flag-badge--red">🔒 Locked</span>
+                    : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                </td>
+                <td>
+                  {s.needs_lost_reason
+                    ? <span className="ls-flag-badge ls-flag-badge--red">Lost Reason</span>
+                    : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                </td>
+                <td>
+                  {s.is_retarget_target
+                    ? <span className="ls-flag-badge ls-flag-badge--amber">↺ Retarget</span>
                     : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                 </td>
                 <td>
@@ -567,6 +610,8 @@ function LeadStatusPanel({ canManage }) {
                   {s.logs_call && <span className="ls-flag-badge ls-flag-badge--purple">Call Log</span>}
                   {s.is_locked && <span className="ls-flag-badge ls-flag-badge--red">🔒 Locked</span>}
                   {s.is_closed && <span className="ls-flag-badge ls-flag-badge--slate">Closed</span>}
+                  {s.needs_lost_reason && <span className="ls-flag-badge ls-flag-badge--red">Lost Reason</span>}
+                  {s.is_retarget_target && <span className="ls-flag-badge ls-flag-badge--amber">↺ Retarget</span>}
                   {s.is_repeat_customer && <span className="ls-flag-badge ls-flag-badge--amber">Repeat</span>}
                   {s.is_reenquiry && <span className="ls-flag-badge ls-flag-badge--purple">Re-Enquiry</span>}
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 12, background: s.is_active ? '#dcfce7' : '#f3f4f6', color: s.is_active ? '#16a34a' : '#6b7280' }}>
@@ -592,6 +637,7 @@ function LeadStatusPanel({ canManage }) {
             {' · '}{statuses.filter(s => s.is_pipeline).length} count in pipeline
             {' · '}{statuses.filter(s => s.logs_call).length} log calls
             {' · '}{statuses.filter(s => s.is_locked).length} locked
+            {' · '}{statuses.filter(s => s.needs_lost_reason).length} ask a reason
           </div>
         )}
       </div>
@@ -1424,7 +1470,417 @@ function CallOutcomesPanel({ canManage }) {
   );
 }
 
-// MAIN PAGE — 3-tab layout
+/* ── One panel, two lists ────────────────────────────────────────────────────
+ *
+ * Lost Reasons and Competitors are the same screen: a short ordered list of
+ * names an admin owns, with an active toggle, drag-to-reorder, and a count of
+ * how many leads point at each row. Only the extra columns and the extra form
+ * fields differ, so those are the only things passed in.
+ *
+ * Written as one component rather than two copies because the two copies would
+ * be identical on the day they were written and would not stay that way — the
+ * drag handler, the delete-error handling and the empty state have all been
+ * fixed once already in CallOutcomesPanel and would each need fixing twice
+ * more. (That panel is left alone deliberately: it works, and folding it in
+ * would be a change to a screen nobody asked about.)
+ *
+ * The DELETE ERROR is rendered rather than swallowed, and that is the whole
+ * reason the dialog has an error slot: both APIs refuse a delete while leads
+ * still point at the row, and the message they return names the number. A
+ * silent failure here reads as a broken button.
+ */
+function MasterListPanel({
+  canManage, apiBase, topic, title, description, addLabel, nounSingular,
+  nameLabel, namePlaceholder, activeHint,
+  countLabel, columns = [], FormExtra = null, makeForm,
+}) {
+  const [items,    setItems]    = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [modal,    setModal]    = useState(null);   // { item }
+  const [delItem,  setDelItem]  = useState(null);
+  const [delErr,   setDelErr]   = useState('');
+  const [delBusy,  setDelBusy]  = useState(false);
+  const [dragOver, setDragOver] = useState(null);
+  const dragIdx = useRef(null);
+
+  useEscapeClose(() => setDelItem(null), !!delItem);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await api(`${apiBase}?all=true`);
+      setItems(r.items || []);
+    } catch { /* the empty state says it better than a toast would */ }
+    finally { setLoading(false); }
+  }, [apiBase]);
+
+  useEffect(() => { load(); }, [load]);
+  /* Two admins on this screen at once see each other's edits. CallOutcomesPanel
+     has no useSync and they do not, which is a small thing until one of them
+     deletes a row the other is editing. */
+  useSync(topic, load);
+
+  async function onDrop(toIdx) {
+    setDragOver(null);
+    const fromIdx = dragIdx.current;
+    if (fromIdx === null || fromIdx === toIdx) return;
+    const reordered = [...items];
+    const [moved]   = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    setItems(reordered);            // optimistic: dragging should feel instant
+    dragIdx.current = null;
+    try {
+      await api(`${apiBase}/reorder`, { method: 'POST', body: { ids: reordered.map(o => o.id) } });
+    } catch { load(); }             // and snap back if the server disagreed
+  }
+
+  async function handleDelete() {
+    if (!delItem) return;
+    setDelBusy(true); setDelErr('');
+    try {
+      await api(`${apiBase}/${delItem.id}`, { method: 'DELETE' });
+      setDelItem(null);
+      load();
+    } catch (err) { setDelErr(err.message || 'Failed to delete'); }
+    finally { setDelBusy(false); }
+  }
+
+  const colSpan = 3 + columns.length + (canManage ? 2 : 0);
+
+  return (
+    <div className="ls-panel">
+      <div className="ls-panel-hd">
+        <div>
+          <div className="ls-panel-title">{title}</div>
+          <div className="ls-panel-desc">{description}</div>
+        </div>
+        {canManage && (
+          <button className="button primary sm" onClick={() => setModal({ item: null })}>
+            <Plus size={14} /> {addLabel}
+          </button>
+        )}
+      </div>
+
+      <table className="data-table">
+        <thead>
+          <tr>
+            {canManage && <th style={{ width: 28 }} />}
+            <th>Name</th>
+            {columns.map(c => <th key={c.key}>{c.header}</th>)}
+            <th>{countLabel}</th>
+            <th>Active</th>
+            {canManage && <th />}
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? (
+            <tr><td colSpan={colSpan} style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>Loading…</td></tr>
+          ) : items.length === 0 ? (
+            <tr><td colSpan={colSpan} style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>
+              Nothing here yet. {canManage ? `Use "${addLabel}" to start the list.` : ''}
+            </td></tr>
+          ) : items.map((o, idx) => (
+            <tr key={o.id}
+              draggable={canManage}
+              onDragStart={() => { dragIdx.current = idx; }}
+              onDragOver={e => { e.preventDefault(); setDragOver(idx); }}
+              onDrop={() => onDrop(idx)}
+              onDragLeave={() => setDragOver(null)}
+              style={{
+                opacity: o.is_active ? 1 : 0.45,
+                background: dragOver === idx ? 'var(--bg-soft)' : '',
+                borderTop: dragOver === idx ? '2px solid var(--primary)' : '',
+                cursor: canManage ? 'grab' : 'default',
+              }}
+            >
+              {canManage && (
+                <td><GripVertical size={14} style={{ color: 'var(--text-muted)', cursor: 'grab' }} /></td>
+              )}
+              <td style={{ fontWeight: 500, fontSize: 14 }}>{o.name}</td>
+              {columns.map(c => <td key={c.key}>{c.render(o)}</td>)}
+              <td style={{ fontSize: 12, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                {o.lead_count ?? 0}
+              </td>
+              <td>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 20,
+                  background: o.is_active ? '#dcfce7' : '#f3f4f6',
+                  color: o.is_active ? '#16a34a' : '#6b7280',
+                }}>
+                  {o.is_active ? 'Active' : 'Inactive'}
+                </span>
+              </td>
+              {canManage && (
+                <td>
+                  <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                    <button className="ls-icon-btn" title="Edit" onClick={() => setModal({ item: o })}>
+                      <Pencil size={14} />
+                    </button>
+                    <button className="ls-icon-btn ls-icon-btn--danger" title="Delete" onClick={() => { setDelItem(o); setDelErr(''); }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {items.length > 0 && (
+        <div style={{ padding: '10px 20px', fontSize: 12, color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
+          {items.filter(o => o.is_active).length} active · {items.filter(o => !o.is_active).length} inactive
+          {' · '}{items.reduce((n, o) => n + (o.lead_count || 0), 0)} lead(s) accounted for
+        </div>
+      )}
+
+      {modal && (
+        <MasterListForm
+          item={modal.item}
+          apiBase={apiBase}
+          nounSingular={nounSingular}
+          nameLabel={nameLabel}
+          namePlaceholder={namePlaceholder}
+          activeHint={activeHint}
+          makeForm={makeForm}
+          FormExtra={FormExtra}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); load(); }}
+        />
+      )}
+
+      {delItem && (
+        <div className="ls-backdrop">
+          <div className="ls-modal ls-modal--sm" onClick={e => e.stopPropagation()}>
+            <div className="ls-modal-hdr">
+              <h3>Delete {nounSingular}</h3>
+              <button className="ls-icon-btn" onClick={() => setDelItem(null)}><X size={18} /></button>
+            </div>
+            <div className="ls-modal-body">
+              {delErr && <div className="ls-err"><AlertCircle size={13} /> {delErr}</div>}
+              <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6 }}>
+                Delete <strong>{delItem.name}</strong>? This cannot be undone.
+                {delItem.lead_count > 0 && (
+                  <>
+                    {' '}
+                    <span style={{ color: 'var(--danger)' }}>
+                      {delItem.lead_count} lead(s) point at it — deactivating keeps their history and
+                      stops it being offered on new ones.
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="ls-modal-ftr">
+              <button className="button secondary" onClick={() => setDelItem(null)} disabled={delBusy}>Cancel</button>
+              <button className="button danger" onClick={handleDelete} disabled={delBusy}>
+                {delBusy ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MasterListForm({ item, apiBase, nounSingular, nameLabel, namePlaceholder, activeHint, makeForm, FormExtra, onClose, onSaved }) {
+  const isEdit = !!item?.id;
+  useEscapeClose(onClose);
+  const [form, setForm]     = useState(() => makeForm(item));
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
+  const [note, setNote]     = useState('');
+
+  async function handleSubmit(e) {
+    e.preventDefault(); setError(''); setSaving(true);
+    try {
+      const r = isEdit
+        ? await api(`${apiBase}/${item.id}`, { method: 'PATCH', body: form })
+        : await api(apiBase, { method: 'POST', body: form });
+      /* The rename cascade reports how many leads came with it. Saying so is
+         the difference between "did my leads move?" and knowing they did —
+         lead_statuses does the same thing for the same reason. */
+      if (r.leads_relabelled) {
+        setNote(`Renamed — ${r.leads_relabelled} lead(s) updated.`);
+        setTimeout(() => onSaved(r.item), 900);
+        return;
+      }
+      onSaved(r.item);
+    } catch (err) {
+      setError(err.message || 'Failed to save');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="ls-backdrop">
+      <div className="ls-modal ls-modal--sm" onClick={e => e.stopPropagation()}>
+        <div className="ls-modal-hdr">
+          <h3>{isEdit ? `Edit ${nounSingular}` : `Add ${nounSingular}`}</h3>
+          <button className="ls-icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="ls-modal-body">
+            {error && <div className="ls-err"><AlertCircle size={13} /> {error}</div>}
+            {note && <div className="ls-ok"><CheckCircle2 size={13} /> {note}</div>}
+            <div className="ls-field">
+              <label className="ls-label">{nameLabel} *</label>
+              <input className="ls-input" value={form.name} required
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder={namePlaceholder} />
+            </div>
+            {FormExtra && <FormExtra form={form} setForm={setForm} />}
+            <div className="ls-field ls-field--row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.is_active}
+                  onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                {activeHint}
+              </label>
+            </div>
+          </div>
+          <div className="ls-modal-ftr">
+            <button type="button" className="button secondary" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="submit" className="button primary" disabled={saving}>
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : `Add ${nounSingular}`}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ── The two behaviour fields on a reason ────────────────────────────────────
+ * Both optional, and both off by default: a reason that does nothing but label
+ * a lost lead is the normal case, and the two that do more should look like
+ * the exception they are.
+ */
+function LostReasonExtra({ form, setForm }) {
+  return (
+    <div className="ls-behaviour-box">
+      <div className="ls-behaviour-title">What this reason does</div>
+
+      <label className="ls-behaviour-row">
+        <input type="checkbox" checked={form.requires_competitor}
+          onChange={e => setForm(f => ({ ...f, requires_competitor: e.target.checked }))} />
+        <div>
+          <span className="ls-behaviour-label">Ask which competitor took the job</span>
+          <span className="ls-behaviour-hint">
+            Picking this reason also asks for a competitor and the date they did the service.
+            Both are needed before the lead can be saved.
+          </span>
+        </div>
+      </label>
+
+      <div className="ls-field" style={{ marginBottom: 0 }}>
+        <label className="ls-label">Bring the lead back after</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input className="ls-input" type="number" min="1" max="60" style={{ width: 90 }}
+            value={form.retarget_after_months ?? ''}
+            placeholder="—"
+            onChange={e => setForm(f => ({
+              ...f,
+              // '' means never, and must reach the API as null rather than 0 —
+              // zero months would schedule the retarget for the same day.
+              retarget_after_months: e.target.value === '' ? null : Number(e.target.value),
+            }))} />
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>months</span>
+        </div>
+        <span className="ls-behaviour-hint" style={{ marginTop: 6, display: 'block' }}>
+          Counted from the competitor's service date, or from the day the lead was marked lost
+          when no date was captured. The lead moves to the retarget status by itself and appears
+          in that day's follow-up list. <strong>Leave blank for a reason that is never chased
+          again</strong> — a wrong number is not worth a call in three months.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function CompetitorExtra({ form, setForm }) {
+  return (
+    <div className="ls-field">
+      <label className="ls-label">Notes</label>
+      <textarea className="ls-input" rows={2} value={form.notes ?? ''}
+        placeholder="Where they are, what they undercut us on…"
+        style={{ resize: 'vertical', fontFamily: 'inherit' }}
+        onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+    </div>
+  );
+}
+
+function LostReasonsPanel({ canManage }) {
+  return (
+    <MasterListPanel
+      canManage={canManage}
+      apiBase="/api/lost-reasons"
+      topic="lost_reasons"
+      title="Lost Reasons"
+      description={'Offered when a lead is set to a status with "Ask for a lost reason" ticked. Drag to reorder — the first ones are the ones people reach for.'}
+      addLabel="Add Reason"
+      nounSingular="Reason"
+      nameLabel="Reason"
+      namePlaceholder="e.g. Price Too High, Competitor Service…"
+      activeHint="Active (offered when marking a lead lost)"
+      countLabel="Leads"
+      makeForm={item => ({
+        name: item?.name || '',
+        is_active: item?.is_active ?? true,
+        requires_competitor: item?.requires_competitor ?? false,
+        retarget_after_months: item?.retarget_after_months ?? null,
+      })}
+      FormExtra={LostReasonExtra}
+      columns={[{
+        key: 'behaviour',
+        header: 'Behaviour',
+        render: o => (
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {o.requires_competitor && <span className="ls-flag-badge ls-flag-badge--red">Asks competitor</span>}
+            {o.retarget_after_months
+              ? <span className="ls-flag-badge ls-flag-badge--amber">↺ {o.retarget_after_months} months</span>
+              : null}
+            {!o.requires_competitor && !o.retarget_after_months && (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>
+            )}
+          </div>
+        ),
+      }]}
+    />
+  );
+}
+
+function CompetitorsPanel({ canManage }) {
+  return (
+    <MasterListPanel
+      canManage={canManage}
+      apiBase="/api/competitors"
+      topic="competitors"
+      title="Competitors"
+      description="The workshops you lose jobs to. Offered by any lost reason that asks who took the job — and the count on the right is how much work each of them has taken."
+      addLabel="Add Competitor"
+      nounSingular="Competitor"
+      nameLabel="Workshop Name"
+      namePlaceholder="e.g. AutoZone Motors"
+      activeHint="Active (offered when marking a lead lost)"
+      countLabel="Jobs Lost"
+      makeForm={item => ({
+        name: item?.name || '',
+        notes: item?.notes || '',
+        is_active: item?.is_active ?? true,
+      })}
+      FormExtra={CompetitorExtra}
+      columns={[{
+        key: 'notes',
+        header: 'Notes',
+        render: o => o.notes
+          ? <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{o.notes}</span>
+          : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>,
+      }]}
+    />
+  );
+}
+
+// MAIN PAGE — tabbed layout
 // ══════════════════════════════════════════════════════════════════════════════
 
 const TABS = [
@@ -1432,6 +1888,8 @@ const TABS = [
   { key: 'appointment', label: 'Appointment Status', icon: Calendar },
   { key: 'invoice', label: 'Invoice Status', icon: FileText },
   { key: 'call_outcomes', label: 'Call Outcomes', icon: Phone },
+  { key: 'lost_reasons',  label: 'Lost Reasons',  icon: Ban },
+  { key: 'competitors',   label: 'Competitors',   icon: Building2 },
 ];
 
 export default function LeadStatusesPage() {
@@ -1485,6 +1943,12 @@ export default function LeadStatusesPage() {
         )}
         {activeTab === 'call_outcomes' && (
           <CallOutcomesPanel canManage={canManage} />
+        )}
+        {activeTab === 'lost_reasons' && (
+          <LostReasonsPanel canManage={canManage} />
+        )}
+        {activeTab === 'competitors' && (
+          <CompetitorsPanel canManage={canManage} />
         )}
       </div>
     </div>

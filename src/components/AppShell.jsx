@@ -419,6 +419,11 @@ export default function AppShell({ children }) {
   const crumbToken = crumbSegments.length === 2 ? crumbSegments[1] : null;
   const crumbLabel = useCrumbLabel(crumbToken);
   const searchRef  = useRef(null);
+  // The mobile bar is a second input bound to the same store, not the same
+  // element moved — one <input> cannot be in two places, and rendering it in
+  // one and repositioning it with CSS would mean the desktop layout's flex
+  // rules and the mobile row's fighting over the same node.
+  const mSearchRef = useRef(null);
 
   // ⌘K / Ctrl+K focuses it; Escape clears and blurs.
   useEffect(() => {
@@ -1221,6 +1226,69 @@ export default function AppShell({ children }) {
             </div>
           </div>
         </header>
+
+        {/* ── Mobile search ───────────────────────────────────────────────
+            .topbar-center is display:none under 768px, so every list page that
+            claims the top bar's search box — leads, appointments, estimates,
+            customer invoices, payments, customers, hubs, claims — simply had no
+            search at all on a phone. The box was not moved or shrunk; it was
+            hidden, and nothing replaced it.
+
+            Placed here rather than inside the pages for the same reason the
+            desktop box lives in the top bar: it is one control bound to one
+            store, and eight copies of it would be eight things to keep in step.
+            A page that has not claimed search still gets nothing, which is the
+            existing contract.
+
+            OUTSIDE .page-scroll, deliberately. The top bar is a fixed-height
+            flex row and the scrolling happens below it, so a sibling here stays
+            put while the list moves — no position:sticky, no z-index, no
+            stacking context to collide with the drawers and modals the list
+            pages open. */}
+        {pageSearch.active && (
+          <div className="mobile-search">
+            <form className="mobile-search-wrap" onSubmit={e => e.preventDefault()} role="search">
+              <svg className="mobile-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input
+                ref={mSearchRef}
+                className="mobile-search-input"
+                /* type="search" for the keyboard's own clear affordance and the
+                   search-shaped return key; enterKeyHint spells that out on
+                   Android, which does not infer it from the type. */
+                type="search"
+                inputMode="search"
+                enterKeyHint="search"
+                placeholder={pageSearch.placeholder}
+                value={pageSearch.value}
+                onChange={e => pageSearch.onChange?.(e.target.value)}
+                /* Phone keyboards capitalise and autocorrect by default, which
+                   is wrong for every one of these lists — they are searched by
+                   registration number, invoice code and mobile number, and
+                   "MH12" becoming "Mh12" or being helpfully corrected is a
+                   search that silently returns nothing. */
+                autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck="false"
+                aria-label={pageSearch.placeholder || 'Search'}
+              />
+              {pageSearch.value && (
+                <button
+                  type="button"
+                  className="mobile-search-clear"
+                  onClick={() => { pageSearch.onChange?.(''); mSearchRef.current?.focus(); }}
+                  aria-label="Clear search"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </form>
+            {/* Below the field rather than inside it. The desktop hint swaps
+                places with the ⌘K badge because there is room; here the field
+                needs its full width for the text being typed. */}
+            {pageSearch.hint && <span className="mobile-search-hint">{pageSearch.hint}</span>}
+          </div>
+        )}
 
         <div className="page-scroll">
           <section className="content">

@@ -737,7 +737,25 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   const hasDiscount = totalDiscount > 0;
 
   // Trust the database-stored header values directly to ensure 100% alignment
-  const subtotal = parseFloat(inv?.subtotal_ex_gst ?? 0);
+  /* …with one presentational exception. subtotal_ex_gst is stored AFTER the
+     discount — it is what actually got taxed, which is right for the GST maths
+     and wrong to print on a row that has a Discount row directly beneath it:
+     the reader subtracts the discount a second time and the column no longer
+     reaches the grand total.
+
+         shown    761.18 − 84.58 + 137.02 = 813.62
+         actual   Grand Total             = 898.20
+
+     Adding the discount back restores the pre-discount figure, so the printed
+     column is the arithmetic a customer can check by hand. No total moves —
+     only which of the two numbers this one row displays.
+
+     Correct in both discount modes: transaction-level is subtracted from the
+     stored subtotal by the shared calculator, and line-item discounts are
+     already baked into each line's rate before it is summed. Either way the
+     stored value is net and `totalDiscount` is what came off it. */
+  const storedSubtotalExGst = parseFloat(inv?.subtotal_ex_gst ?? 0);
+  const subtotal = hasDiscount ? r2(storedSubtotalExGst + totalDiscount) : storedSubtotalExGst;
   const totalGst = parseFloat(inv?.total_gst ?? 0);
   const grandTotal = parseFloat(inv?.grand_total ?? 0);
 
@@ -2514,6 +2532,27 @@ export default function CustomerInvoicesPage() {
   }, [search, hubFilter, statusFilter, vehicleTypeFilter, fromDate, toDate, page, pageSize, showToast, abortSignal]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+
+  /* ── The hub list the Hubs filter offers ─────────────────────────────────
+     This was missing entirely. `hubs` was declared, the dropdown was built
+     against it, and nothing ever called setHubs — so the menu opened empty on
+     every load, with no "Select All" either (it is guarded on hubs.length).
+     The filter worked perfectly; it simply had nothing to filter by.
+
+     Skipped for a hub login, which is pinned to its own hub and never sees the
+     dropdown (`!isHubUser` above) — asking for the full list would be a request
+     that can only be refused.
+
+     Swallowed rather than surfaced: /api/hubs is gated on hub and lead
+     permissions, none of which an invoices-only user necessarily holds. For
+     them the right outcome is the filter they already have — no hubs listed —
+     not a red toast on a page they opened to look at invoices. */
+  useEffect(() => {
+    if (isHubUser) return;
+    api('/api/hubs?is_active=true&limit=200')
+      .then(r => setHubs(r.items || []))
+      .catch(() => { });
+  }, [isHubUser]);
 
   // Filters for the rail, built from the SAME values the table uses so the two
   // can never disagree about what is being listed.

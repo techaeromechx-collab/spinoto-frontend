@@ -6,7 +6,8 @@ import { useCan, useAuth } from '../auth/AuthContext.jsx';
 import { useBodyLock } from '../hooks/useBodyLock.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
-import { waTarget } from '../lib/phone.js';
+import { waTarget, toNational } from '../lib/phone.js';
+import { usePageCrumb } from '../lib/pageCrumbStore.js';
 import WhatsAppThread from '../components/WhatsAppThread.jsx';
 
 /**
@@ -42,10 +43,10 @@ import WhatsAppThread from '../components/WhatsAppThread.jsx';
    click. Change `other` in leads.controller.js (sourceChipSql) if that trade
    ever stops being the right one. */
 const SOURCE_CHIPS = [
-  { key: 'all', label: 'All' },
+  { key: 'all',      label: 'All' },
   { key: 'whatsapp', label: 'WhatsApp' },
-  { key: 'manual', label: 'Manual' },
-  { key: 'other', label: 'Other' },
+  { key: 'manual',   label: 'Manual' },
+  { key: 'other',    label: 'Other' },
 ];
 
 /* ── Who owns it — a SEPARATE axis from where it came from ───────────────────
@@ -62,13 +63,13 @@ const SOURCE_CHIPS = [
 function activityLabel(row) {
   const to = (row.last_activity_new || '').trim();
   switch (row.last_activity_type) {
-    case 'status_changed': return to ? `Status → ${to}` : 'Status changed';
-    case 'assigned_changed': return to ? `Assigned to ${to}` : 'Unassigned';
+    case 'status_changed':      return to ? `Status → ${to}` : 'Status changed';
+    case 'assigned_changed':    return to ? `Assigned to ${to}` : 'Unassigned';
     case 'appointment_created': return 'Converted to appointment';
-    case 'service_added': return to ? `Service added: ${to}` : 'Service added';
-    case 'service_removed': return to ? `Service removed: ${to}` : 'Service removed';
-    case 'note_added': return to ? `Note: ${to}` : 'Note added';
-    case 'created': return 'Lead created';
+    case 'service_added':       return to ? `Service added: ${to}` : 'Service added';
+    case 'service_removed':     return to ? `Service removed: ${to}` : 'Service removed';
+    case 'note_added':          return to ? `Note: ${to}` : 'Note added';
+    case 'created':             return 'Lead created';
     default:
       return String(row.last_activity_type || '').replace(/_/g, ' ') || '';
   }
@@ -83,8 +84,8 @@ function timeAgo(v) {
   if (isNaN(then)) return '';
   const mins = Math.floor((Date.now() - then.getTime()) / 60000);
 
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1)    return 'just now';
+  if (mins < 60)   return `${mins}m ago`;
   if (mins < 1440) return `${Math.floor(mins / 60)}h ago`;
   if (mins < 2880) return 'yesterday';
 
@@ -96,29 +97,29 @@ function timeAgo(v) {
 }
 
 const OWNER_CHIPS = [
-  { key: 'all', label: 'Everyone' },
-  { key: 'mine', label: 'Mine' },
+  { key: 'all',        label: 'Everyone' },
+  { key: 'mine',       label: 'Mine' },
   { key: 'unassigned', label: 'Unassigned' },
 ];
 
 export function matchesOwnerChip(lead, chip, userId) {
   if (!chip || chip === 'all') return true;
-  if (chip === 'unassigned') return !lead.assigned_to;
-  if (chip === 'mine') return userId != null && Number(lead.assigned_to) === Number(userId);
+  if (chip === 'unassigned')   return !lead.assigned_to;
+  if (chip === 'mine')         return userId != null && Number(lead.assigned_to) === Number(userId);
   return true;
 }
 
-const META_SOURCES = ['meta ads', 'meta', 'facebook', 'instagram', 'facebook ads', 'instagram ads', 'social media'];
+const META_SOURCES   = ['meta ads', 'meta', 'facebook', 'instagram', 'facebook ads', 'instagram ads', 'social media'];
 const MANUAL_SOURCES = ['manual', 'walk-in', 'walk in', 'phone call', 'referral'];
 
 export function matchesSourceChip(leadSource, chip) {
   if (!chip || chip === 'all') return true;
   const s = (leadSource || '').trim().toLowerCase();
   if (chip === 'whatsapp') return s === 'whatsapp';
-  if (chip === 'website') return s === 'website';
+  if (chip === 'website')  return s === 'website';
   if (chip === 'meta ads') return META_SOURCES.includes(s);
-  if (chip === 'manual') return s === '' || MANUAL_SOURCES.includes(s);
-  if (chip === 'other') return s !== '' && !META_SOURCES.includes(s) && !MANUAL_SOURCES.includes(s) && s !== 'whatsapp' && s !== 'website';
+  if (chip === 'manual')   return s === '' || MANUAL_SOURCES.includes(s);
+  if (chip === 'other')    return s !== '' && !META_SOURCES.includes(s) && !MANUAL_SOURCES.includes(s) && s !== 'whatsapp' && s !== 'website';
   return s === chip;
 }
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
@@ -133,7 +134,7 @@ import {
   AlertCircle, Phone, MessageCircle, Tag, FileText,
   IndianRupee, ChevronDown, UserCheck, Wrench, Plus, Info,
   SlidersHorizontal, Bell, Clock, Send, MessageSquare, Activity, Download, Lock,
-  Copy, Check,
+  Copy, Check, RefreshCw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import '../styles/LeadsPage.css';
@@ -383,6 +384,75 @@ function SearchableSelect({
 
 // ── Status helpers (dynamic — loaded from API) ────────────────────────────────
 // Fallback for any status not yet in the loaded list
+/* Is this lead sitting on a status that records a lost reason?
+ *
+ * Replaces `status.toLowerCase().includes('lost')`, which was doing this job
+ * in three places and getting it wrong in a fourth. That test breaks the day
+ * somebody renames Lost on the Master Data screen — and it breaks silently,
+ * because a reason that stops rendering looks identical to a lead that never
+ * had one. */
+function isLostStatus(statusName, statusList = []) {
+  return !!statusList.find(s => s.name === statusName)?.needs_lost_reason;
+}
+
+/* Waiting to be called back because the car is due again — as opposed to
+ * waiting because a person promised to ring. Derived from an open retarget
+ * task rather than a stored flag, so it clears itself the moment somebody
+ * works the lead. The API computes it; this is just the read. */
+function isRetargetDue(lead) {
+  return !!lead?.has_open_retarget;
+}
+
+/* Where a lead's next follow-up stands, or null when it does not have one.
+ *
+ * Extracted from the Next Follow-up cell, which computed it inline and was the
+ * only thing that knew. Three callers now — that cell, the mobile card, and the
+ * row rail — and three copies of a date comparison is three chances for the
+ * badge to say Today while the rail says Overdue.
+ *
+ * The two guards are the cell's own and are load-bearing:
+ *   is_converted  the lead became an appointment; the follow-up belongs to that
+ *   is_locked     a Lost lead's retarget task is dated months out, and calling
+ *                 it a pending follow-up would put a green badge on every
+ *                 closed lead in the list
+ */
+function followUpState(lead, statusList = []) {
+  if (!lead?.next_follow_up_date || lead.is_converted) return null;
+  if (statusList.find(s => s.name === lead.status)?.is_locked) return null;
+  const d = new Date(lead.next_follow_up_date);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((d - today) / 86400000);
+  return { diff, isOverdue: diff < 0, isToday: diff === 0, isTomorrow: diff === 1, date: d };
+}
+
+/* The 3px rail down the left edge of a row.
+ *
+ * ── Why not one tone per condition ──────────────────────────────────────────
+ *
+ * There is one rail and a lead can satisfy several conditions at once, so this
+ * is a priority list rather than a set of independent flags. The order is the
+ * order somebody should deal with them:
+ *
+ *   overdue   a promise that has already been broken
+ *   today     a promise about to be
+ *   retarget  an opportunity, and one that keeps until somebody gets to it
+ *
+ * ── Why a future follow-up gets NO rail ─────────────────────────────────────
+ *
+ * Most leads in a worked pipeline have a follow-up scheduled for some future
+ * date. Railing those means most rows are striped, and a marker that appears on
+ * most rows marks nothing — it becomes background texture and the overdue ones
+ * stop standing out, which is the entire job. The green badge in the Next
+ * Follow-up column already says "this is in hand".
+ */
+function rowRailTone(lead, statusList = []) {
+  const fu = followUpState(lead, statusList);
+  if (fu?.isOverdue) return 'overdue';
+  if (fu?.isToday)   return 'today';
+  if (isRetargetDue(lead)) return 'retarget';
+  return null;
+}
+
 function getStatusCfg(statusName, statusList) {
   const found = statusList.find(s => s.name === statusName);
   return found
@@ -458,7 +528,7 @@ function ActionMenu({ lead, canEdit, canDelete, onView, onEdit, onDelete }) {
 }
 
 // ── View Lead Modal ───────────────────────────────────────────────────────────
-function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLeadLoaded, onOpenConvert }) {
+function ViewLeadModal({ leadId, onClose, onEdit, canEdit, canAssign, statusList = [], onLeadLoaded, onOpenConvert, crumbToken }) {
   // useBodyLock STAYS, but it is no longer what holds this still. The detail is
   // a layer over the LIST inside .content — not over the viewport — so the
   // thing that actually had to be stopped was .page-scroll, which is this
@@ -605,6 +675,37 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
     ? lead.name.trim().split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
     : (lead?.mobile?.slice(-2) ?? '??');
 
+  /* The topbar crumb would otherwise print the raw route token
+     ("Home › Leads › iiz1678qZI9yrA"), which identifies nothing to a human.
+     Publish the customer's mobile instead — the field this team actually
+     recognises a lead by. Same mechanism the invoice, estimate and customer
+     pages already use, so the crumb behaves identically across the app
+     (lib/pageCrumbStore.js).
+
+     toNational() strips whatever shape the number was stored in — 91-prefixed,
+     0-prefixed, spaced — so the crumb reads the same for every lead. An
+     unparseable number falls through to the raw string rather than showing
+     nothing, and a missing one leaves the token in place. */
+  /* The people this lead can be handed to. Fetched only when the viewer can
+     actually reassign — a caller without ASSIGN_LEAD would be asking the
+     server for a staff list it will never show. */
+  const [agents, setAgents] = useState([]);
+  useEffect(() => {
+    if (!canAssign) return;
+    let alive = true;
+    api('/api/users/assignable')
+      .then(r => { if (alive) setAgents(r.items || []); })
+      .catch(() => { /* the badge still renders; only the dropdown is empty */ });
+    return () => { alive = false; };
+  }, [canAssign]);
+
+  const crumbMobile = (() => {
+    const national = toNational(lead?.mobile);
+    if (national) return `+91 ${national}`;
+    return lead?.mobile || null;
+  })();
+  usePageCrumb(crumbToken, crumbMobile);
+
   return (
     <div className="lp-vp">
       <div className="lp-vp-inner">
@@ -618,6 +719,17 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
 
             What stays is what the topbar does NOT say: the way back, and the
             status. */}
+        {/* The split now starts ABOVE the header, not below it. The WhatsApp
+            rail is a full-height sidebar: it runs from the very top of the
+            panel down, and the header, tabs and cards are stacked inside the
+            left column beside it.
+
+            It used to be the other way round — header across the full width,
+            split underneath — which cost the conversation the header's height
+            and made the chat start lower than everything else on screen. */}
+        <div className={`lp-vp-split lp-vp-split--${paneTab}`}>
+        <div className="lp-vp-left">
+
         <div className="lp-vm-header lp-vp-header">
           <div className="lp-vm-header-left">
             <button className="lp-vp-back" onClick={onClose} title="Back to Leads">
@@ -693,534 +805,570 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
           </button>
         </div>
 
-        <div className={`lp-vp-split lp-vp-split--${paneTab}`}>
-          <div className="lp-modal-body lp-vm-body lp-vp-main">
-            {loading && <div className="lp-loading">Loading…</div>}
-            {error && <div className="lp-error"><AlertCircle size={14} /> {error}</div>}
-            {lead && (
-              <div className="lp-vm-grid">
+        <div className="lp-modal-body lp-vm-body lp-vp-main">
+          {loading && <div className="lp-loading">Loading…</div>}
+          {error && <div className="lp-error"><AlertCircle size={14} /> {error}</div>}
+          {lead && (
+            <div className="lp-vm-grid">
 
-                {/* ── Customer card ── */}
-                <div className="lp-vm-card lp-vm-card--customer">
-                  <div className="lp-vm-card-hd"><User size={13} /> Customer</div>
-                  <div className="lp-vm-customer-main">
-                    <div className="lp-vm-avatar">{initials}</div>
-                    <div className="lp-vm-customer-info">
-                      <div className="lp-vm-customer-name">
-                        {lead.name || <span className="lp-muted">No name</span>}
-                      </div>
-                      <div className="lp-vm-customer-mobile">
-                        <Phone size={12} /> {lead.mobile}
-                      </div>
-                      {lead.whatsapp && lead.whatsapp !== lead.mobile && (
-                        <div className="lp-vm-customer-mobile">
-                          <MessageCircle size={12} /> {lead.whatsapp}
-                          <span className="lp-vm-wa-label">WhatsApp</span>
-                        </div>
-                      )}
-                      {(lead.area_name || lead.city_name) && (
-                        <div className="lp-vm-customer-mobile">
-                          <MapPin size={12} />
-                          {[lead.area_name, lead.city_name, lead.state_name].filter(Boolean).join(', ')}
-                        </div>
-                      )}
+              {/* ── Customer card ── */}
+              <div className="lp-vm-card lp-vm-card--customer">
+                <div className="lp-vm-card-hd"><User size={13} /> Customer</div>
+                <div className="lp-vm-customer-main">
+                  <div className="lp-vm-avatar">{initials}</div>
+                  <div className="lp-vm-customer-info">
+                    <div className="lp-vm-customer-name">
+                      {lead.name || <span className="lp-muted">No name</span>}
                     </div>
+                    <div className="lp-vm-customer-mobile">
+                      <Phone size={12} /> {lead.mobile}
+                    </div>
+                    {lead.whatsapp && lead.whatsapp !== lead.mobile && (
+                      <div className="lp-vm-customer-mobile">
+                        <MessageCircle size={12} /> {lead.whatsapp}
+                        <span className="lp-vm-wa-label">WhatsApp</span>
+                      </div>
+                    )}
+                    {(lead.area_name || lead.city_name) && (
+                      <div className="lp-vm-customer-mobile">
+                        <MapPin size={12} />
+                        {[lead.area_name, lead.city_name, lead.state_name].filter(Boolean).join(', ')}
+                      </div>
+                    )}
                   </div>
-                  {/* Action buttons */}
-                  <div className="lp-vm-contact-btns">
-                    <a className="lp-vm-btn lp-vm-btn--call"
-                      href={`tel:${lead.mobile}`}>
-                      <Phone size={15} /> Call
-                    </a>
-                    {/* waTarget adds the country code, which this link was
+                </div>
+                {/* Action buttons */}
+                <div className="lp-vm-contact-btns">
+                  <a className="lp-vm-btn lp-vm-btn--call"
+                    href={`tel:${lead.mobile}`}>
+                    <Phone size={15} /> Call
+                  </a>
+                  {/* waTarget adds the country code, which this link was
                       missing entirely — wa.me/9876543210 resolves to nothing.
                       Returns null for numbers WhatsApp cannot reach, and the
                       button is then hidden rather than rendered broken. */}
-                    {waTarget(lead) && (
-                      <a className="lp-vm-btn lp-vm-btn--wa"
-                        href={waTarget(lead)}
-                        target="_blank" rel="noreferrer">
-                        <MessageCircle size={15} /> WhatsApp
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                {/* ── Vehicle card ── */}
-                <div className="lp-vm-card">
-                  <div className="lp-vm-card-hd"><Car size={13} /> Vehicle</div>
-                  {lead.vehicle_type_name || lead.make_name || lead.model_name || lead.body_type_name ? (
-                    <div className="lp-vm-info-list">
-                      {lead.vehicle_type_name && (
-                        <div className="lp-vm-info-row">
-                          <span className="lp-vm-info-label">Type</span>
-                          <span className="lp-vm-info-val">{lead.vehicle_type_name}</span>
-                        </div>
-                      )}
-                      {(lead.make_name || lead.model_name) && (
-                        <div className="lp-vm-info-row">
-                          <span className="lp-vm-info-label">Make / Model</span>
-                          <span className="lp-vm-info-val">{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</span>
-                        </div>
-                      )}
-                      {/* 4W: body type */}
-                      {lead.body_type_name && (
-                        <div className="lp-vm-info-row">
-                          <span className="lp-vm-info-label">Body</span>
-                          <span className="lp-vm-info-val">{lead.body_type_name}</span>
-                        </div>
-                      )}
-                      {/* Segment / Fuel Type */}
-                      {lead.segment_names?.length > 0 && (
-                        <div className="lp-vm-info-row">
-                          <span className="lp-vm-info-label">Fuel Type</span>
-                          <span className="lp-vm-info-val">{lead.segment_names.join(', ')}</span>
-                        </div>
-                      )}
-                      {/* 2W: engine CC */}
-                      {lead.engine_cc && (
-                        <div className="lp-vm-info-row">
-                          <span className="lp-vm-info-label">Engine CC</span>
-                          <span className="lp-vm-info-val">{lead.engine_cc} cc</span>
-                        </div>
-                      )}
-                      {/* 2W: CC category */}
-                      {lead.cc_category_name && (
-                        <div className="lp-vm-info-row">
-                          <span className="lp-vm-info-label">CC Category</span>
-                          <span className="lp-vm-info-val">{lead.cc_category_name}</span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="lp-vm-empty-card">No vehicle info added</div>
-                  )}
-
-                  {/* ── Vehicle not in master at all (imported with note) ── */}
-                  {!lead.make_id && lead.notes?.includes('[Vehicle not in master:') && (() => {
-                    const match = lead.notes.match(/\[Vehicle not in master: "([^"]+)"/);
-                    const vehicleText = match ? match[1] : 'this vehicle';
-                    return (
-                      <div className="lp-vm-master-warn">
-                        <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                        <span>
-                          <strong>"{vehicleText}"</strong> is not in the Vehicle Master.
-                          Please add this make &amp; model to the Vehicle Master so correct pricing and services can be matched.
-                        </span>
-                      </div>
-                    );
-                  })()}
-
-                  {/* ── Vehicle Master warning — body type missing (4W only) ── */}
-                  {lead.vehicle_in_master === false && (
-                    <div className="lp-vm-master-warn">
-                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      <span>
-                        <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — body type is missing.
-                        Please update the Vehicle Master so pricing and services can be matched correctly.
-                      </span>
-                    </div>
-                  )}
-
-                  {/* ── Vehicle Master warning — CC category missing (2W only) ── */}
-                  {lead.cc_missing === true && (
-                    <div className="lp-vm-master-warn">
-                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      <span>
-                        <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — engine CC category is missing.
-                        Please update the Vehicle Master so the correct service pricing can be applied.
-                      </span>
-                    </div>
-                  )}
-
-                  {/* ── Segment missing warning (4W only) ── */}
-                  {lead.make_id && !is2WType(lead.vehicle_type_name || '') && (!lead.segment_ids || lead.segment_ids.length === 0) && (
-                    <div className="lp-vm-master-warn">
-                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      <span>
-                        <strong>Segment not set</strong> for this vehicle. Please add the segment (e.g. Petrol, Diesel, CNG) so the correct service pricing can be applied.
-                      </span>
-                    </div>
+                  {waTarget(lead) && (
+                    <a className="lp-vm-btn lp-vm-btn--wa"
+                      href={waTarget(lead)}
+                      target="_blank" rel="noreferrer">
+                      <MessageCircle size={15} /> WhatsApp
+                    </a>
                   )}
                 </div>
+              </div>
 
-                {/* ── Meta info card ── */}
-                <div className="lp-vm-card lp-vm-card--meta">
-                  <div className="lp-vm-card-hd"><Tag size={13} /> Lead Info</div>
+              {/* ── Vehicle card ── */}
+              <div className="lp-vm-card">
+                <div className="lp-vm-card-hd"><Car size={13} /> Vehicle</div>
+                {lead.vehicle_type_name || lead.make_name || lead.model_name || lead.body_type_name ? (
                   <div className="lp-vm-info-list">
-                    <div className="lp-vm-info-row">
-                      <span className="lp-vm-info-label">Created</span>
-                      <span className="lp-vm-info-val">
-                        {new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        {' · '}
-                        {new Date(lead.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    {lead.created_by_name && (
+                    {lead.vehicle_type_name && (
                       <div className="lp-vm-info-row">
-                        <span className="lp-vm-info-label">By</span>
-                        <span className="lp-vm-info-val">{lead.created_by_name}</span>
+                        <span className="lp-vm-info-label">Type</span>
+                        <span className="lp-vm-info-val">{lead.vehicle_type_name}</span>
                       </div>
                     )}
-                    <div className="lp-vm-info-row">
-                      <span className="lp-vm-info-label">Assigned</span>
-                      <span className="lp-vm-info-val">
-                        {lead.assigned_to_name
-                          ? <span className="lp-assigned-badge"><UserCheck size={11} /> {lead.assigned_to_name}</span>
-                          : <span className="lp-muted">Unassigned</span>}
-                      </span>
-                    </div>
-                    {lead.lead_source && (
+                    {(lead.make_name || lead.model_name) && (
                       <div className="lp-vm-info-row">
-                        <span className="lp-vm-info-label">Source</span>
-                        <span className="lp-vm-info-val">{lead.lead_source}</span>
+                        <span className="lp-vm-info-label">Make / Model</span>
+                        <span className="lp-vm-info-val">{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</span>
                       </div>
                     )}
-                    {lead.lost_reason && (
+                    {/* 4W: body type */}
+                    {lead.body_type_name && (
                       <div className="lp-vm-info-row">
-                        <span className="lp-vm-info-label">Lost Reason</span>
-                        <span className="lp-vm-info-val lp-lost-pill">{lead.lost_reason}</span>
+                        <span className="lp-vm-info-label">Body</span>
+                        <span className="lp-vm-info-val">{lead.body_type_name}</span>
+                      </div>
+                    )}
+                    {/* Segment / Fuel Type */}
+                    {lead.segment_names?.length > 0 && (
+                      <div className="lp-vm-info-row">
+                        <span className="lp-vm-info-label">Fuel Type</span>
+                        <span className="lp-vm-info-val">{lead.segment_names.join(', ')}</span>
+                      </div>
+                    )}
+                    {/* 2W: engine CC */}
+                    {lead.engine_cc && (
+                      <div className="lp-vm-info-row">
+                        <span className="lp-vm-info-label">Engine CC</span>
+                        <span className="lp-vm-info-val">{lead.engine_cc} cc</span>
+                      </div>
+                    )}
+                    {/* 2W: CC category */}
+                    {lead.cc_category_name && (
+                      <div className="lp-vm-info-row">
+                        <span className="lp-vm-info-label">CC Category</span>
+                        <span className="lp-vm-info-val">{lead.cc_category_name}</span>
                       </div>
                     )}
                   </div>
-                </div>
+                ) : (
+                  <div className="lp-vm-empty-card">No vehicle info added</div>
+                )}
 
-                {/* ── Follow-ups — beside Lead Info ── */}
-                <div className="lp-vm-card">
-                  <div className="lp-vm-card-hd"><Calendar size={13} /> Follow-ups</div>
-                  {followUps.length === 0 ? (
-                    <div className="lp-vm-empty-row">No follow-ups scheduled.</div>
-                  ) : (
-                    <div className="lp-fu-detail-wrap">
-                      <div className="lp-fu-detail-list">
-                        {followUps.map(fu => {
-                          const d = new Date(fu.due_date);
-                          const today = new Date(); today.setHours(0, 0, 0, 0);
-                          const diff = Math.round((d - today) / 86400000);
-                          const isOverdue = !fu.is_done && !isLeadLocked && diff < 0;
-                          const isToday = !fu.is_done && !isLeadLocked && diff === 0;
-                          const dateLabel = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-                          const timeLabel = fu.due_at
-                            ? new Date(fu.due_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-                            : null;
-                          return (
-                            <div key={fu.id} className={`lp-fu-detail-row${fu.is_done ? ' lp-fu-detail-row--done' : isOverdue ? ' lp-fu-detail-row--overdue' : ''}`}>
-                              <div className="lp-fu-detail-dot" style={{
-                                background: fu.is_done ? '#16a34a' : isOverdue ? '#dc2626' : isToday ? '#d97706' : '#2563eb'
-                              }} />
-                              <div className="lp-fu-detail-body">
-                                <div className="lp-fu-detail-date">
-                                  {dateLabel}{timeLabel && ` · ${timeLabel}`}
-                                  {fu.is_done && <span className="lp-fu-detail-done-tag">✓ Done</span>}
-                                  {isOverdue && <span className="lp-fu-detail-overdue-tag">⚠ Overdue</span>}
-                                  {isToday && <span className="lp-fu-detail-today-tag">Today</span>}
-                                </div>
-                                {fu.note && <div className="lp-fu-detail-note">{fu.note}</div>}
-                                <div className="lp-fu-detail-meta">Status: <strong>{fu.status_name || '—'}</strong></div>
-                                {!fu.is_done && !isLeadLocked && (
-                                  <button
-                                    style={{ marginTop: 6, fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}
-                                    onClick={() => setRescheduleId(fu.id)}
-                                  >
-                                    Reschedule
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                {/* ── Vehicle not in master at all (imported with note) ── */}
+                {!lead.make_id && lead.notes?.includes('[Vehicle not in master:') && (() => {
+                  const match = lead.notes.match(/\[Vehicle not in master: "([^"]+)"/);
+                  const vehicleText = match ? match[1] : 'this vehicle';
+                  return (
+                    <div className="lp-vm-master-warn">
+                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>
+                        <strong>"{vehicleText}"</strong> is not in the Vehicle Master.
+                        Please add this make &amp; model to the Vehicle Master so correct pricing and services can be matched.
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                {/* ── Vehicle Master warning — body type missing (4W only) ── */}
+                {lead.vehicle_in_master === false && (
+                  <div className="lp-vm-master-warn">
+                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                      <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — body type is missing.
+                      Please update the Vehicle Master so pricing and services can be matched correctly.
+                    </span>
+                  </div>
+                )}
+
+                {/* ── Vehicle Master warning — CC category missing (2W only) ── */}
+                {lead.cc_missing === true && (
+                  <div className="lp-vm-master-warn">
+                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                      <strong>{[lead.make_name, lead.model_name].filter(Boolean).join(' ')}</strong> is not fully configured in the Vehicle Master — engine CC category is missing.
+                      Please update the Vehicle Master so the correct service pricing can be applied.
+                    </span>
+                  </div>
+                )}
+
+                {/* ── Segment missing warning (4W only) ── */}
+                {lead.make_id && !is2WType(lead.vehicle_type_name || '') && (!lead.segment_ids || lead.segment_ids.length === 0) && (
+                  <div className="lp-vm-master-warn">
+                    <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span>
+                      <strong>Segment not set</strong> for this vehicle. Please add the segment (e.g. Petrol, Diesel, CNG) so the correct service pricing can be applied.
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Meta info card ── */}
+              <div className="lp-vm-card lp-vm-card--meta">
+                <div className="lp-vm-card-hd"><Tag size={13} /> Lead Info</div>
+                <div className="lp-vm-info-list">
+                  <div className="lp-vm-info-row">
+                    <span className="lp-vm-info-label">Created</span>
+                    <span className="lp-vm-info-val">
+                      {new Date(lead.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      {' · '}
+                      {new Date(lead.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  {lead.created_by_name && (
+                    <div className="lp-vm-info-row">
+                      <span className="lp-vm-info-label">By</span>
+                      <span className="lp-vm-info-val">{lead.created_by_name}</span>
+                    </div>
+                  )}
+                  <div className="lp-vm-info-row">
+                    <span className="lp-vm-info-label">Assigned</span>
+                    <span className="lp-vm-info-val">
+                      {/* Reassign in place for anyone holding ASSIGN_LEAD.
+                          Everyone else — including people who can edit the
+                          lead — keeps the read-only badge. */}
+                      {canAssign ? (
+                        <AssigneeInlineSelect
+                          leadId={lead.id}
+                          current={lead.assigned_to ?? null}
+                          currentName={lead.assigned_to_name}
+                          agents={agents}
+                          onChange={reloadLead}
+                        />
+                      ) : lead.assigned_to_name
+                        ? <span className="lp-assigned-badge"><UserCheck size={11} /><span className="lp-assigned-name">{lead.assigned_to_name}</span></span>
+                        : <span className="lp-muted">Unassigned</span>}
+                    </span>
+                  </div>
+                  {lead.lead_source && (
+                    <div className="lp-vm-info-row">
+                      <span className="lp-vm-info-label">Source</span>
+                      <span className="lp-vm-info-val">{lead.lead_source}</span>
+                    </div>
+                  )}
+                  {lead.lost_reason && (
+                    <div className="lp-vm-info-row">
+                      <span className="lp-vm-info-label">Lost Reason</span>
+                      <span className="lp-vm-info-val lp-lost-pill">{lead.lost_reason}</span>
+                    </div>
+                  )}
+                  {lead.lost_competitor_name && (
+                    <div className="lp-vm-info-row">
+                      <span className="lp-vm-info-label">Lost To</span>
+                      <span className="lp-vm-info-val">
+                        {lead.lost_competitor_name}
+                        {lead.competitor_service_date && (
+                          <span className="lp-muted">
+                            {' · serviced '}{new Date(lead.competitor_service_date).toLocaleDateString()}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {/* The consequence, stated where somebody looking at the lead
+                      will see it. A status that quietly schedules something
+                      three months out is the kind of thing people find by
+                      accident. */}
+                  {lead.retarget_due_date && (
+                    <div className="lp-vm-info-row">
+                      <span className="lp-vm-info-label">Comes Back</span>
+                      <span className="lp-vm-info-val lp-retarget-pill">
+                        <RefreshCw size={11} /> {new Date(lead.retarget_due_date).toLocaleDateString()}
+                      </span>
                     </div>
                   )}
                 </div>
+              </div>
 
-                {/* ── Services (includes category-only interests) ── */}
-                {(lead.services?.length > 0 || lead.categories?.length > 0) && (
-                  <div className="lp-vm-card lp-vm-card--full">
-                    <div className="lp-vm-card-hd"><FileText size={13} /> Services</div>
-                    <table className="lp-svc-table">
-                      <thead>
-                        <tr><th>Category</th><th>Service</th><th className="text-right">Price</th></tr>
-                      </thead>
-                      <tbody>
-                        {/* Category-only rows — skip if a specific service from same category exists */}
-                        {lead.categories?.filter(c =>
-                          !lead.services?.some(s => s.category_name === c.category_name)
-                        ).map(c => (
-                          <tr key={`cat-${c.id}`}>
-                            <td className="lp-muted">{c.category_name}</td>
-                            <td style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</td>
-                            <td className="text-right" style={{ color: 'var(--text-muted)' }}>—</td>
-                          </tr>
-                        ))}
-                        {/* Specific service rows */}
-                        {lead.services?.map(s => (
-                          <tr key={s.id}>
-                            <td className="lp-muted">{s.category_name}</td>
-                            <td>{s.service_name}</td>
-                            <td className="text-right">₹{Number(s.price).toLocaleString('en-IN')}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {lead.services?.length > 0 && (
-                      <div className="lp-vm-total-row">
-                        <span>Total</span>
-                        <span className="lp-vm-total-val">₹{Number(lead.total_price).toLocaleString('en-IN')}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* ── Notes — strip internal [Vehicle not in master:...] tag before display ── */}
-                {lead.notes && lead.notes.replace(/\[Vehicle not in master:[^\]]+\]/g, '').trim() && (
-                  <div className="lp-vm-card lp-vm-card--full">
-                    <div className="lp-vm-card-hd"><FileText size={13} /> Notes</div>
-                    <p className="lp-notes-text">{lead.notes.replace(/\[Vehicle not in master:[^\]]+\]/g, '').trim()}</p>
-                  </div>
-                )}
-
-                {/* ── Notes & Activity Timeline ── */}
-                {/* ── Status History Timeline ── */}
-                <div className="lp-vm-card lp-vm-card--full">
-                  <div className="lp-vm-card-hd"><Clock size={13} /> Status History</div>
-                  {statusHistory.length === 0 ? (
-                    <div className="lp-vm-empty-card">No status changes recorded yet.</div>
-                  ) : (
-                    <div className="lp-sh-list">
-                      {statusHistory.map((item, idx) => {
-                        const isFirst = idx === statusHistory.length - 1;
-                        const isLatest = idx === 0;
-                        const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
-                          day: '2-digit', month: 'short', year: 'numeric',
-                          hour: '2-digit', minute: '2-digit',
-                        });
+              {/* ── Follow-ups — beside Lead Info ── */}
+              <div className="lp-vm-card">
+                <div className="lp-vm-card-hd"><Calendar size={13} /> Follow-ups</div>
+                {followUps.length === 0 ? (
+                  <div className="lp-vm-empty-row">No follow-ups scheduled.</div>
+                ) : (
+                  <div className="lp-fu-detail-wrap">
+                    <div className="lp-fu-detail-list">
+                      {followUps.map(fu => {
+                        const d = new Date(fu.due_date);
+                        const today = new Date(); today.setHours(0, 0, 0, 0);
+                        const diff = Math.round((d - today) / 86400000);
+                        const isOverdue = !fu.is_done && !isLeadLocked && diff < 0;
+                        const isToday = !fu.is_done && !isLeadLocked && diff === 0;
+                        const dateLabel = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                        const timeLabel = fu.due_at
+                          ? new Date(fu.due_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                          : null;
                         return (
-                          <div key={item.id} className="lp-sh-item">
-                            <div className="lp-sh-left">
-                              <div className={`lp-sh-dot ${isLatest ? 'lp-sh-dot--latest' : ''}`} />
-                              {!isFirst && <div className="lp-sh-line" />}
-                            </div>
-                            <div className="lp-sh-body">
-                              <div className="lp-sh-top">
-                                {item.type === 'created' ? (
-                                  <span className="lp-sh-badge lp-sh-badge--created">Lead Created</span>
-                                ) : (
-                                  <div className="lp-sh-change">
-                                    {item.old_value
-                                      ? <span className="lp-sh-badge lp-sh-badge--old">{item.old_value}</span>
-                                      : <span className="lp-sh-badge lp-sh-badge--new-lead">New Lead</span>
-                                    }
-                                    <span className="lp-sh-arrow">→</span>
-                                    <span className="lp-sh-badge lp-sh-badge--new">{item.new_value}</span>
-                                  </div>
-                                )}
-                                {isLatest && <span className="lp-sh-current">current</span>}
+                          <div key={fu.id} className={`lp-fu-detail-row${fu.is_done ? ' lp-fu-detail-row--done' : isOverdue ? ' lp-fu-detail-row--overdue' : ''}`}>
+                            <div className="lp-fu-detail-dot" style={{
+                              background: fu.is_done ? '#16a34a' : isOverdue ? '#dc2626' : isToday ? '#d97706' : '#2563eb'
+                            }} />
+                            <div className="lp-fu-detail-body">
+                              <div className="lp-fu-detail-date">
+                                {dateLabel}{timeLabel && ` · ${timeLabel}`}
+                                {fu.is_done && <span className="lp-fu-detail-done-tag">✓ Done</span>}
+                                {isOverdue && <span className="lp-fu-detail-overdue-tag">⚠ Overdue</span>}
+                                {isToday && <span className="lp-fu-detail-today-tag">Today</span>}
                               </div>
-                              <div className="lp-sh-meta">
-                                <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
-                                <span className="lp-sh-dot-sep">·</span>
-                                <span className="lp-sh-time">{timeStr}</span>
-                                {stageDurations[item.id] != null && (
-                                  <>
-                                    <span className="lp-sh-dot-sep">·</span>
-                                    <span className="lp-sh-duration">
-                                      {isLatest ? '⏱ ' : ''}
-                                      {formatDuration(stageDurations[item.id])}
-                                      {isLatest ? ' so far' : ' here'}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
+                              {fu.note && <div className="lp-fu-detail-note">{fu.note}</div>}
+                              <div className="lp-fu-detail-meta">Status: <strong>{fu.status_name || '—'}</strong></div>
+                              {!fu.is_done && !isLeadLocked && (
+                                <button
+                                  style={{ marginTop: 6, fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}
+                                  onClick={() => setRescheduleId(fu.id)}
+                                >
+                                  Reschedule
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
                       })}
                     </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Services (includes category-only interests) ── */}
+              {(lead.services?.length > 0 || lead.categories?.length > 0) && (
+                <div className="lp-vm-card lp-vm-card--full">
+                  <div className="lp-vm-card-hd"><FileText size={13} /> Services</div>
+                  <table className="lp-svc-table">
+                    <thead>
+                      <tr><th>Category</th><th>Service</th><th className="text-right">Price</th></tr>
+                    </thead>
+                    <tbody>
+                      {/* Category-only rows — skip if a specific service from same category exists */}
+                      {lead.categories?.filter(c =>
+                        !lead.services?.some(s => s.category_name === c.category_name)
+                      ).map(c => (
+                        <tr key={`cat-${c.id}`}>
+                          <td className="lp-muted">{c.category_name}</td>
+                          <td style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>—</td>
+                          <td className="text-right" style={{ color: 'var(--text-muted)' }}>—</td>
+                        </tr>
+                      ))}
+                      {/* Specific service rows */}
+                      {lead.services?.map(s => (
+                        <tr key={s.id}>
+                          <td className="lp-muted">{s.category_name}</td>
+                          <td>{s.service_name}</td>
+                          <td className="text-right">₹{Number(s.price).toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {lead.services?.length > 0 && (
+                    <div className="lp-vm-total-row">
+                      <span>Total</span>
+                      <span className="lp-vm-total-val">₹{Number(lead.total_price).toLocaleString('en-IN')}</span>
+                    </div>
                   )}
                 </div>
+              )}
 
-                {/* ── Assignment History ── */}
-                <div className="lp-vm-card">
-                  <div className="lp-vm-card-hd"><UserCheck size={13} /> Assignment History</div>
-                  {assignHistory.length === 0 ? (
-                    <div className="lp-vm-empty-card">No assignment changes recorded yet.</div>
-                  ) : (
-                    <div className="lp-sh-list">
-                      {assignHistory.map((item, idx) => {
-                        const isFirst = idx === assignHistory.length - 1;
-                        const isLatest = idx === 0;
-                        const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
-                          day: '2-digit', month: 'short', year: 'numeric',
-                          hour: '2-digit', minute: '2-digit',
-                        });
-                        return (
-                          <div key={item.id} className="lp-sh-item">
-                            <div className="lp-sh-left">
-                              <div className={`lp-sh-dot lp-sh-dot--assign ${isLatest ? 'lp-sh-dot--latest' : ''}`} />
-                              {!isFirst && <div className="lp-sh-line" />}
-                            </div>
-                            <div className="lp-sh-body">
-                              <div className="lp-sh-top">
+              {/* ── Notes — strip internal [Vehicle not in master:...] tag before display ── */}
+              {lead.notes && lead.notes.replace(/\[Vehicle not in master:[^\]]+\]/g, '').trim() && (
+                <div className="lp-vm-card lp-vm-card--full">
+                  <div className="lp-vm-card-hd"><FileText size={13} /> Notes</div>
+                  <p className="lp-notes-text">{lead.notes.replace(/\[Vehicle not in master:[^\]]+\]/g, '').trim()}</p>
+                </div>
+              )}
+
+              {/* ── Notes & Activity Timeline ── */}
+              {/* ── Status History Timeline ── */}
+              <div className="lp-vm-card lp-vm-card--full">
+                <div className="lp-vm-card-hd"><Clock size={13} /> Status History</div>
+                {statusHistory.length === 0 ? (
+                  <div className="lp-vm-empty-card">No status changes recorded yet.</div>
+                ) : (
+                  <div className="lp-sh-list">
+                    {statusHistory.map((item, idx) => {
+                      const isFirst = idx === statusHistory.length - 1;
+                      const isLatest = idx === 0;
+                      const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
+                        day: '2-digit', month: 'short', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      });
+                      return (
+                        <div key={item.id} className="lp-sh-item">
+                          <div className="lp-sh-left">
+                            <div className={`lp-sh-dot ${isLatest ? 'lp-sh-dot--latest' : ''}`} />
+                            {!isFirst && <div className="lp-sh-line" />}
+                          </div>
+                          <div className="lp-sh-body">
+                            <div className="lp-sh-top">
+                              {item.type === 'created' ? (
+                                <span className="lp-sh-badge lp-sh-badge--created">Lead Created</span>
+                              ) : (
                                 <div className="lp-sh-change">
                                   {item.old_value
                                     ? <span className="lp-sh-badge lp-sh-badge--old">{item.old_value}</span>
-                                    : <span className="lp-sh-badge lp-sh-badge--new-lead">Unassigned</span>
+                                    : <span className="lp-sh-badge lp-sh-badge--new-lead">New Lead</span>
                                   }
                                   <span className="lp-sh-arrow">→</span>
-                                  {item.new_value
-                                    ? <span className="lp-sh-badge lp-sh-badge--new">{item.new_value}</span>
-                                    : <span className="lp-sh-badge lp-sh-badge--old">Unassigned</span>
-                                  }
+                                  <span className="lp-sh-badge lp-sh-badge--new">{item.new_value}</span>
                                 </div>
-                                {isLatest && <span className="lp-sh-current">current</span>}
-                              </div>
-                              <div className="lp-sh-meta">
-                                <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
-                                <span className="lp-sh-dot-sep">·</span>
-                                <span className="lp-sh-time">{timeStr}</span>
-                              </div>
+                              )}
+                              {isLatest && <span className="lp-sh-current">current</span>}
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* ── Service History ── */}
-                <div className="lp-vm-card">
-                  <div className="lp-vm-card-hd"><Wrench size={13} /> Service History</div>
-                  {serviceHistory.length === 0 ? (
-                    <div className="lp-vm-empty-card">No service changes recorded yet.</div>
-                  ) : (
-                    <div className="lp-sh-list">
-                      {serviceHistory.map((item, idx) => {
-                        const isFirst = idx === serviceHistory.length - 1;
-                        const isAdded = item.type === 'service_added';
-                        const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
-                          day: '2-digit', month: 'short', year: 'numeric',
-                          hour: '2-digit', minute: '2-digit',
-                        });
-                        return (
-                          <div key={item.id} className="lp-sh-item">
-                            <div className="lp-sh-left">
-                              <div className={`lp-sh-dot ${isAdded ? 'lp-sh-dot--svc-add' : 'lp-sh-dot--svc-rem'}`} />
-                              {!isFirst && <div className="lp-sh-line" />}
-                            </div>
-                            <div className="lp-sh-body">
-                              <div className="lp-sh-top">
-                                <div className="lp-sh-change">
-                                  <span className={`lp-sh-badge ${isAdded ? 'lp-sh-badge--svc-add' : 'lp-sh-badge--svc-rem'}`}>
-                                    {isAdded ? '+ Added' : '− Removed'}
+                            <div className="lp-sh-meta">
+                              <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
+                              <span className="lp-sh-dot-sep">·</span>
+                              <span className="lp-sh-time">{timeStr}</span>
+                              {stageDurations[item.id] != null && (
+                                <>
+                                  <span className="lp-sh-dot-sep">·</span>
+                                  <span className="lp-sh-duration">
+                                    {isLatest ? '⏱ ' : ''}
+                                    {formatDuration(stageDurations[item.id])}
+                                    {isLatest ? ' so far' : ' here'}
                                   </span>
-                                  <span className="lp-sh-badge lp-sh-badge--new">
-                                    {isAdded ? item.new_value : item.old_value}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="lp-sh-meta">
-                                <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
-                                <span className="lp-sh-dot-sep">·</span>
-                                <span className="lp-sh-time">{timeStr}</span>
-                              </div>
+                                </>
+                              )}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div className="lp-vm-card lp-vm-card--full lp-timeline-card">
-                  <div className="lp-vm-card-hd"><MessageSquare size={13} /> Notes</div>
-
-                  {/* Notes list — chat bubble style */}
-                  <div className="lp-chat-list">
-                    {timeline.length === 0 ? (
-                      <div className="lp-timeline-empty">No notes added yet.</div>
-                    ) : (
-                      timeline.map((item) => {
-                        const isMine = Number(item.created_by) === Number(currentUser?.id);
-                        const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
-                          day: '2-digit', month: 'short',
-                          hour: '2-digit', minute: '2-digit',
-                        });
-                        return (
-                          <div key={item.id} style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: isMine ? 'flex-end' : 'flex-start',
-                            marginBottom: 12,
-                            padding: '0 4px',
-                          }}>
-                            {!isMine && (
-                              <span style={{
-                                fontSize: 11, fontWeight: 600,
-                                color: 'var(--primary, #00b09b)',
-                                marginBottom: 3, marginLeft: 6,
-                              }}>
-                                {item.created_by_name || 'Unknown'}
-                              </span>
-                            )}
-                            <div style={{
-                              maxWidth: '75%',
-                              background: isMine ? 'var(--primary, #00b09b)' : '#f1f0f0',
-                              color: isMine ? '#fff' : 'var(--text-main, #1a1a1a)',
-                              borderRadius: isMine ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                              padding: '8px 12px',
-                              fontSize: 13,
-                              lineHeight: 1.5,
-                              wordBreak: 'break-word',
-                              boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-                            }}>
-                              {item.note}
-                            </div>
-                            <span style={{
-                              fontSize: 10, color: 'var(--text-muted)',
-                              marginTop: 4,
-                              marginLeft: isMine ? 0 : 6,
-                              marginRight: isMine ? 6 : 0,
-                            }}>
-                              {timeStr}
-                            </span>
-                          </div>
-                        );
-                      })
-                    )}
-                    <div ref={timelineEndRef} />
+                        </div>
+                      );
+                    })}
                   </div>
+                )}
+              </div>
 
-                  {/* Add note form — only for users who can edit leads */}
-                  {canEdit && (
-                    <form className="lp-add-note-form" onSubmit={handleAddNote}>
-                      {noteError && <div className="lp-note-error"><AlertCircle size={12} /> {noteError}</div>}
-                      <div className="lp-add-note-row">
-                        <textarea
-                          className="lp-add-note-input"
-                          rows={2}
-                          placeholder="Add a note…"
-                          value={noteText}
-                          onChange={e => setNoteText(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddNote(e); }
-                          }}
-                          disabled={noteSaving}
-                        />
-                        <button type="submit" className="lp-add-note-btn" disabled={noteSaving || !noteText.trim()}>
-                          {noteSaving ? <Clock size={14} /> : <Send size={14} />}
-                        </button>
-                      </div>
-                      <span className="lp-add-note-hint">Enter to send · Shift+Enter for new line</span>
-                    </form>
+              {/* ── Assignment History ── */}
+              <div className="lp-vm-card">
+                <div className="lp-vm-card-hd"><UserCheck size={13} /> Assignment History</div>
+                {assignHistory.length === 0 ? (
+                  <div className="lp-vm-empty-card">No assignment changes recorded yet.</div>
+                ) : (
+                  <div className="lp-sh-list">
+                    {assignHistory.map((item, idx) => {
+                      const isFirst = idx === assignHistory.length - 1;
+                      const isLatest = idx === 0;
+                      const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
+                        day: '2-digit', month: 'short', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      });
+                      return (
+                        <div key={item.id} className="lp-sh-item">
+                          <div className="lp-sh-left">
+                            <div className={`lp-sh-dot lp-sh-dot--assign ${isLatest ? 'lp-sh-dot--latest' : ''}`} />
+                            {!isFirst && <div className="lp-sh-line" />}
+                          </div>
+                          <div className="lp-sh-body">
+                            <div className="lp-sh-top">
+                              <div className="lp-sh-change">
+                                {item.old_value
+                                  ? <span className="lp-sh-badge lp-sh-badge--old">{item.old_value}</span>
+                                  : <span className="lp-sh-badge lp-sh-badge--new-lead">Unassigned</span>
+                                }
+                                <span className="lp-sh-arrow">→</span>
+                                {item.new_value
+                                  ? <span className="lp-sh-badge lp-sh-badge--new">{item.new_value}</span>
+                                  : <span className="lp-sh-badge lp-sh-badge--old">Unassigned</span>
+                                }
+                              </div>
+                              {isLatest && <span className="lp-sh-current">current</span>}
+                            </div>
+                            <div className="lp-sh-meta">
+                              <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
+                              <span className="lp-sh-dot-sep">·</span>
+                              <span className="lp-sh-time">{timeStr}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Service History ── */}
+              <div className="lp-vm-card">
+                <div className="lp-vm-card-hd"><Wrench size={13} /> Service History</div>
+                {serviceHistory.length === 0 ? (
+                  <div className="lp-vm-empty-card">No service changes recorded yet.</div>
+                ) : (
+                  <div className="lp-sh-list">
+                    {serviceHistory.map((item, idx) => {
+                      const isFirst = idx === serviceHistory.length - 1;
+                      const isAdded = item.type === 'service_added';
+                      const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
+                        day: '2-digit', month: 'short', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      });
+                      return (
+                        <div key={item.id} className="lp-sh-item">
+                          <div className="lp-sh-left">
+                            <div className={`lp-sh-dot ${isAdded ? 'lp-sh-dot--svc-add' : 'lp-sh-dot--svc-rem'}`} />
+                            {!isFirst && <div className="lp-sh-line" />}
+                          </div>
+                          <div className="lp-sh-body">
+                            <div className="lp-sh-top">
+                              <div className="lp-sh-change">
+                                <span className={`lp-sh-badge ${isAdded ? 'lp-sh-badge--svc-add' : 'lp-sh-badge--svc-rem'}`}>
+                                  {isAdded ? '+ Added' : '− Removed'}
+                                </span>
+                                <span className="lp-sh-badge lp-sh-badge--new">
+                                  {isAdded ? item.new_value : item.old_value}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="lp-sh-meta">
+                              <span className="lp-sh-who">{item.created_by_name || 'System'}</span>
+                              <span className="lp-sh-dot-sep">·</span>
+                              <span className="lp-sh-time">{timeStr}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="lp-vm-card lp-vm-card--full lp-timeline-card">
+                <div className="lp-vm-card-hd"><MessageSquare size={13} /> Notes</div>
+
+                {/* Notes list — chat bubble style */}
+                <div className="lp-chat-list">
+                  {timeline.length === 0 ? (
+                    <div className="lp-timeline-empty">No notes added yet.</div>
+                  ) : (
+                    timeline.map((item) => {
+                      const isMine = Number(item.created_by) === Number(currentUser?.id);
+                      const timeStr = new Date(item.created_at).toLocaleString('en-IN', {
+                        day: '2-digit', month: 'short',
+                        hour: '2-digit', minute: '2-digit',
+                      });
+                      return (
+                        <div key={item.id} style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: isMine ? 'flex-end' : 'flex-start',
+                          marginBottom: 12,
+                          padding: '0 4px',
+                        }}>
+                          {!isMine && (
+                            <span style={{
+                              fontSize: 11, fontWeight: 600,
+                              color: 'var(--primary, #00b09b)',
+                              marginBottom: 3, marginLeft: 6,
+                            }}>
+                              {item.created_by_name || 'Unknown'}
+                            </span>
+                          )}
+                          <div style={{
+                            maxWidth: '75%',
+                            background: isMine ? 'var(--primary, #00b09b)' : '#f1f0f0',
+                            color: isMine ? '#fff' : 'var(--text-main, #1a1a1a)',
+                            borderRadius: isMine ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                            padding: '8px 12px',
+                            fontSize: 13,
+                            lineHeight: 1.5,
+                            wordBreak: 'break-word',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+                          }}>
+                            {item.note}
+                          </div>
+                          <span style={{
+                            fontSize: 10, color: 'var(--text-muted)',
+                            marginTop: 4,
+                            marginLeft: isMine ? 0 : 6,
+                            marginRight: isMine ? 6 : 0,
+                          }}>
+                            {timeStr}
+                          </span>
+                        </div>
+                      );
+                    })
                   )}
+                  <div ref={timelineEndRef} />
                 </div>
 
+                {/* Add note form — only for users who can edit leads */}
+                {canEdit && (
+                  <form className="lp-add-note-form" onSubmit={handleAddNote}>
+                    {noteError && <div className="lp-note-error"><AlertCircle size={12} /> {noteError}</div>}
+                    <div className="lp-add-note-row">
+                      <textarea
+                        className="lp-add-note-input"
+                        rows={2}
+                        placeholder="Add a note…"
+                        value={noteText}
+                        onChange={e => setNoteText(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddNote(e); }
+                        }}
+                        disabled={noteSaving}
+                      />
+                      <button type="submit" className="lp-add-note-btn" disabled={noteSaving || !noteText.trim()}>
+                        {noteSaving ? <Clock size={14} /> : <Send size={14} />}
+                      </button>
+                    </div>
+                    <span className="lp-add-note-hint">Enter to send · Shift+Enter for new line</span>
+                  </form>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* ── WhatsApp rail ────────────────────────────────────────────────
+            </div>
+          )}
+        </div>
+        </div>{/* /.lp-vp-left */}
+
+        {/* ── WhatsApp rail ────────────────────────────────────────────────
             Beside the detail, not inside it. Keyed by the NUMBER rather than
             the lead id: the thread is one continuous exchange with a person
             that happens to touch this lead. whatsapp first, mobile as the
@@ -1230,19 +1378,19 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, statusList = [], onLe
             the Edit modal is open on top, which is the whole reason this is a
             page: you can read what the customer asked for while you fill the
             form in. */}
-          {lead && (
-            <aside className="lp-vp-rail">
-              <WhatsAppThread
-                mobile={lead.whatsapp || lead.mobile}
-                /* This page already knows the lead, so the template button in the
-                   closed bar does not have to wait for the thread request to tell
-                   it. The Customer page has no such id and falls back to the
-                   conversation's resolved lead. */
-                entityType="lead"
-                entityId={lead.id}
-              />
-            </aside>
-          )}
+        {lead && (
+          <aside className="lp-vp-rail">
+            <WhatsAppThread
+              mobile={lead.whatsapp || lead.mobile}
+              /* This page already knows the lead, so the template button in the
+                 closed bar does not have to wait for the thread request to tell
+                 it. The Customer page has no such id and falls back to the
+                 conversation's resolved lead. */
+              entityType="lead"
+              entityId={lead.id}
+            />
+          </aside>
+        )}
         </div>
       </div>
       {rescheduleId && (
@@ -1596,7 +1744,11 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
           mobile: form.mobile.trim(),
           whatsapp: form.whatsapp.trim() || null,
           lead_source: form.lead_source.trim() || null,
-          lost_reason: form.status.toLowerCase().includes('lost') ? (form.lost_reason || null) : null,
+          /* Flag, not name match — see the status onChange above. */
+          lost_reason: statusList.find(s => s.name === form.status)?.needs_lost_reason
+            ? (form.lost_reason || null) : null,
+          lost_competitor_id:      actionData?.lost_competitor_id ?? undefined,
+          competitor_service_date: actionData?.competitor_service_date ?? undefined,
           follow_up_date: actionData?.follow_up_date || undefined,
           follow_up_time: actionData?.follow_up_time || undefined,
           follow_up_note: actionData?.note || undefined,
@@ -1733,14 +1885,21 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
                             onSaved(r.item);
                           }
                         });
-                      } else if (statusObj?.logs_call || statusObj?.needs_follow_up) {
+                      } else if (statusObj?.logs_call || statusObj?.needs_follow_up || statusObj?.needs_lost_reason) {
                         setActionModal({
                           statusName: newSt,
                           logsCall: !!statusObj.logs_call,
                           needsFollowUp: !!statusObj.needs_follow_up,
+                          needsLostReason: !!statusObj.needs_lost_reason,
                         });
                       } else {
-                        setForm(f => ({ ...f, status: newSt, lost_reason: newSt.toLowerCase().includes('lost') ? f.lost_reason : '' }));
+                        /* Keeping or clearing the reason is decided by the
+                           FLAG, not by whether the status name happens to
+                           contain the word "lost". The old test cleared the
+                           field the moment somebody renamed Lost — silently,
+                           and it was destroying data rather than just
+                           displaying it wrong. */
+                        setForm(f => ({ ...f, status: newSt, lost_reason: statusObj?.needs_lost_reason ? f.lost_reason : '' }));
                         setActionData(null); // clear any previous action data
                       }
                     }}>
@@ -2025,8 +2184,12 @@ function EditLeadModal({ lead, onClose, onSaved, statusList = [], leadSources = 
           leadName={lead.name || lead.mobile}
           logsCall={actionModal.logsCall}
           needsFollowUp={actionModal.needsFollowUp}
+          needsLostReason={actionModal.needsLostReason}
           onConfirm={data => {
-            setForm(f => ({ ...f, status: actionModal.statusName, lost_reason: '' }));
+            // The reason now comes back FROM the dialog rather than being
+            // blanked here — blanking it was correct while nothing could
+            // supply one, and is data loss now that something can.
+            setForm(f => ({ ...f, status: actionModal.statusName, lost_reason: data.lost_reason || '' }));
             setActionData(data);
             setActionModal(null);
           }}
@@ -2077,16 +2240,47 @@ function DeleteModal({ lead, onClose, onConfirm }) {
 // logsCall=true     → shows call outcome + notes section
 // needsFollowUp=true → shows follow-up date/time/note section
 // Both can be true → both sections shown in one modal
-function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onConfirm, onCancel }) {
+/* ── The one dialog every status behaviour opens ─────────────────────────────
+ *
+ * Three optional sections — call log, lost reason, follow-up — composed from
+ * the flags on the status being set. One dialog rather than three because a
+ * status can carry more than one flag, and being asked three times in a row is
+ * how people learn to click through without reading.
+ *
+ * ── Why nothing is pre-selected in the reason list ──────────────────────────
+ *
+ * The call-outcome chips default to the first item, which is fine: "Connected"
+ * is the common case and being wrong about it costs nothing. A lost reason
+ * defaulted the same way means every rushed Lost inherits whatever happens to
+ * sit at the top of the list — and that is worse than a blank, because a blank
+ * is visibly missing while a wrong reason looks like somebody chose it. The
+ * marketing spend is tuned on these.
+ */
+function StatusActionModal({
+  statusName, leadName, logsCall, needsFollowUp, needsLostReason,
+  /* false in bulk. One competitor can honestly describe fifty leads lost to
+     the workshop down the road; one service DATE cannot — those fifty cars
+     were not all done on the same Tuesday. Bulk therefore asks who and lets
+     the API count the retarget from today. */
+  allowServiceDate = true,
+  onConfirm, onCancel,
+}) {
   useBodyLock();
   useEscapeClose(onCancel);
-  const [outcome, setOutcome] = useState('');
+  const [outcome, setOutcome]     = useState('');
   const [callNotes, setCallNotes] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('09:00');
-  const [note, setNote] = useState('');
-  const [error, setError] = useState('');
-  const [outcomes, setOutcomes] = useState([]);
+  const [date, setDate]           = useState('');
+  const [time, setTime]           = useState('09:00');
+  const [note, setNote]           = useState('');
+  const [error, setError]         = useState('');
+  const [outcomes, setOutcomes]   = useState([]);
+
+  // Lost reason
+  const [reasons, setReasons]         = useState([]);
+  const [reason, setReason]           = useState('');   // deliberately blank — see above
+  const [competitors, setCompetitors] = useState([]);
+  const [competitorId, setCompetitorId] = useState('');
+  const [serviceDate, setServiceDate] = useState('');
 
   // Outcome colors cycle — purely visual
   const OUTCOME_COLORS = [
@@ -2109,20 +2303,73 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
       .catch(() => { });
   }, [logsCall]);
 
+  /* Both lists in one effect and both guarded on the same flag: the competitor
+     list is only ever needed by a reason that requires one, and fetching it
+     for every follow-up dialog would be a request per status change. */
+  useEffect(() => {
+    if (!needsLostReason) return;
+    api('/api/lost-reasons').then(r => setReasons(r.items || [])).catch(() => { });
+    api('/api/competitors').then(r => setCompetitors(r.items || [])).catch(() => { });
+  }, [needsLostReason]);
+
+  const reasonObj  = reasons.find(r => r.name === reason) || null;
+  const wantsComp  = !!reasonObj?.requires_competitor;
+  const wantsDate  = wantsComp && allowServiceDate;
+  const today      = new Date().toISOString().split('T')[0];
+
+  /* What the agent is about to cause, in words, before they cause it.
+     Month arithmetic done by hand because `setMonth` turns 30 November into
+     2 March — the same trap the API avoids by doing it in Postgres, which
+     clamps. Display only: the real date is stamped server-side, and this is
+     just here so nobody is surprised in three months. */
+  const retargetPreview = (() => {
+    const months = reasonObj?.retarget_after_months;
+    if (!months) return null;
+    const anchor = (wantsDate && serviceDate) ? new Date(`${serviceDate}T00:00:00`)
+                 : allowServiceDate ? null : new Date();
+    if (!anchor || isNaN(anchor)) return null;
+    const y = anchor.getFullYear(), m = anchor.getMonth(), d = anchor.getDate();
+    const lastOfTarget = new Date(y, m + months + 1, 0).getDate();
+    const due = new Date(y, m + months, Math.min(d, lastOfTarget));
+    return due.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  })();
+
   function handleConfirm() {
+    if (needsLostReason && !reason) { setError('Please pick a reason.'); return; }
+    if (wantsComp && !competitorId)  { setError('Please choose which competitor took the job.'); return; }
+    if (wantsDate && !serviceDate)   { setError('Please add the date they did the service — the retarget is counted from it.'); return; }
+    if (serviceDate && serviceDate > today) { setError('The service date cannot be in the future.'); return; }
     if (needsFollowUp && !date) { setError('Please select a follow-up date.'); return; }
     onConfirm({
       ...(logsCall ? { call_outcome: outcome, call_notes: callNotes || null } : {}),
+      ...(needsLostReason ? {
+        lost_reason: reason,
+        lost_competitor_id: wantsComp ? Number(competitorId) : null,
+        ...(wantsDate ? { competitor_service_date: serviceDate } : {}),
+      } : {}),
       ...(needsFollowUp ? { follow_up_date: date, follow_up_time: time, note } : {}),
     });
   }
 
   const fieldStyle = { width: '100%', padding: '8px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13, background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box', outline: 'none' };
   const labelStyle = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, display: 'block', marginBottom: 5 };
+  const dividerStyle = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border)' };
 
-  const title = logsCall && needsFollowUp ? 'Log Call & Schedule Follow-up'
-    : logsCall ? 'Log Call'
-      : 'Schedule Follow-up';
+  /* Section headers only earn their space when there is more than one section
+     to tell apart. With a single section the dialog title already says what
+     this is. */
+  const multi = [logsCall, needsLostReason, needsFollowUp].filter(Boolean).length > 1;
+
+  const title = [
+    logsCall        && 'Log Call',
+    needsLostReason && 'Mark as Lost',
+    needsFollowUp   && 'Schedule Follow-up',
+  ].filter(Boolean).join(' & ') || 'Update Status';
+
+  const confirmLabel = needsLostReason ? 'Save & Update Status'
+    : logsCall && needsFollowUp ? 'Save & Update Status'
+      : logsCall ? 'Log Call & Update Status'
+        : 'Save Follow-up';
 
   return (
     <div className="lr-backdrop">
@@ -2138,12 +2385,8 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
 
           {/* ── Call Log Section ── */}
           {logsCall && (
-            <div style={{ marginBottom: needsFollowUp ? 18 : 0 }}>
-              {needsFollowUp && (
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
-                  📞 Call Log
-                </div>
-              )}
+            <div style={{ marginBottom: multi ? 18 : 0 }}>
+              {multi && <div style={dividerStyle}>📞 Call Log</div>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
                   <label style={labelStyle}>Call Outcome</label>
@@ -2182,18 +2425,83 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
             </div>
           )}
 
+          {/* ── Lost Reason Section ──
+              The chips reuse .lr-reason-btn, which never left LeadsPage.css
+              when the old LostReasonModal was deleted. Same control, same
+              red — this is the same question being asked again, better. */}
+          {needsLostReason && (
+            <div style={{ marginBottom: needsFollowUp ? 18 : 0 }}>
+              {multi && <div style={{ ...dividerStyle, color: '#b91c1c' }}>🚫 Lost Reason</div>}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <label style={labelStyle}>Reason <span style={{ color: '#dc2626' }}>*</span></label>
+                  {reasons.length === 0 ? (
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      No reasons configured. Add them in Settings → Master Data → Lost Reasons.
+                    </span>
+                  ) : (
+                    <div className="lr-reasons">
+                      {reasons.map(r => (
+                        <button key={r.id} type="button"
+                          className={`lr-reason-btn${reason === r.name ? ' lr-reason-btn--active' : ''}`}
+                          onClick={() => { setReason(r.name); setError(''); }}>
+                          {r.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Only for a reason that says it needs them, so the common
+                    case stays two clicks. */}
+                {wantsComp && (
+                  <>
+                    <div>
+                      <label style={labelStyle}>Which competitor <span style={{ color: '#dc2626' }}>*</span></label>
+                      {competitors.length === 0 ? (
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          No competitors on the list yet. Add them in Settings → Master Data → Competitors.
+                        </span>
+                      ) : (
+                        <select className="lp-input" value={competitorId} style={fieldStyle}
+                          onChange={e => { setCompetitorId(e.target.value); setError(''); }}>
+                          <option value="">Select…</option>
+                          {competitors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    {allowServiceDate && (
+                      <div>
+                        <label style={labelStyle}>Date they did the service <span style={{ color: '#dc2626' }}>*</span></label>
+                        <input type="date" value={serviceDate} max={today}
+                          onChange={e => { setServiceDate(e.target.value); setError(''); }}
+                          style={fieldStyle} />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Says the consequence out loud. A status change that quietly
+                    schedules something three months out is the kind of thing
+                    people discover by accident. */}
+                {retargetPreview && (
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                    ⟳ This lead comes back automatically on <strong style={{ color: 'var(--text)' }}>{retargetPreview}</strong>
+                    {allowServiceDate ? '' : ' — counted from today, because a bulk change has no single service date'}.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ── Follow-up Section ── */}
           {needsFollowUp && (
             <div>
-              {logsCall && (
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
-                  📅 Follow-up
-                </div>
-              )}
+              {multi && <div style={dividerStyle}>📅 Follow-up</div>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
                   <label style={labelStyle}>Follow-up Date <span style={{ color: '#dc2626' }}>*</span></label>
-                  <input type="date" value={date} min={new Date().toISOString().split('T')[0]}
+                  <input type="date" value={date} min={today}
                     onChange={e => { setDate(e.target.value); setError(''); }}
                     style={fieldStyle}
                   />
@@ -2218,11 +2526,7 @@ function StatusActionModal({ statusName, leadName, logsCall, needsFollowUp, onCo
         </div>
         <div className="lr-footer">
           <button className="lr-btn-cancel" onClick={onCancel}>Cancel</button>
-          <button className="lr-btn-confirm" onClick={handleConfirm}>
-            {logsCall && needsFollowUp ? 'Save & Update Status'
-              : logsCall ? 'Log Call & Update Status'
-                : 'Save Follow-up'}
-          </button>
+          <button className="lr-btn-confirm" onClick={handleConfirm}>{confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -3287,13 +3591,14 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
       onOpenConvert?.({ statusName: name, leadId, leadName, saveFn: save });
       return;
     }
-    // 2. Intercept logs_call and/or needs_follow_up — open merged action modal
-    if (statusObj?.logs_call || statusObj?.needs_follow_up) {
+    // 2. Intercept logs_call / needs_follow_up / needs_lost_reason — one modal
+    if (statusObj?.logs_call || statusObj?.needs_follow_up || statusObj?.needs_lost_reason) {
       setOpen(false);
       setActionModal({
         statusName: name,
         logsCall: !!statusObj.logs_call,
         needsFollowUp: !!statusObj.needs_follow_up,
+        needsLostReason: !!statusObj.needs_lost_reason,
       });
       return;
     }
@@ -3317,6 +3622,12 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
       }
       const body = { status };
       if (lostReason) body.lost_reason = lostReason;
+      /* From the dialog. `lostReason` is the older positional argument and is
+         still honoured — the convert-to-appointment path passes null through
+         it — so the dialog's value wins when both are present. */
+      if (meta.lost_reason) body.lost_reason = meta.lost_reason;
+      if (meta.lost_competitor_id) body.lost_competitor_id = meta.lost_competitor_id;
+      if (meta.competitor_service_date) body.competitor_service_date = meta.competitor_service_date;
       if (meta.follow_up_date) body.follow_up_date = meta.follow_up_date;
       if (meta.follow_up_time) body.follow_up_time = meta.follow_up_time;
       if (meta.note) body.follow_up_note = meta.note;
@@ -3340,6 +3651,7 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
           leadName={leadName}
           logsCall={actionModal.logsCall}
           needsFollowUp={actionModal.needsFollowUp}
+          needsLostReason={actionModal.needsLostReason}
           onConfirm={data => { const m = actionModal; setActionModal(null); save(m.statusName, null, data); }}
           onCancel={() => setActionModal(null)}
         />
@@ -3408,6 +3720,139 @@ function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = 
   );
 }
 
+/* ── Reassign a lead from the detail view, without opening the Edit form ─────
+   The Edit form does far more than this — every field on the lead — and
+   reassigning is the one change a caller makes constantly. Making them open a
+   full form, change one dropdown and save is three interactions and a chance
+   to bump something else on the way past.
+
+   Deliberately NOT gated on EDIT_LEAD. Reassignment has its own permission
+   (ASSIGN_LEAD) precisely because "may correct a customer's phone number" and
+   "may move this lead to another caller" are different authorities — a team
+   lead usually holds the second without the first. The caller passes canAssign
+   from useCan('ASSIGN_LEAD') alone; without it this renders the plain badge
+   the page has always shown and nothing is clickable.
+
+   Same shape as StatusInlineSelect above — portal dropdown, outside-click and
+   scroll to close, position flipped upward when the row sits low on screen —
+   so the two controls on this card behave identically. */
+function AssigneeInlineSelect({ leadId, current, currentName, agents = [], onChange }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+  const btnRef = useRef(null);
+  const dropRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onOut(e) {
+      if (btnRef.current?.contains(e.target)) return;
+      if (dropRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
+    document.addEventListener('mousedown', onOut);
+    return () => document.removeEventListener('mousedown', onOut);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onScroll(e) {
+      if (dropRef.current && dropRef.current.contains(e.target)) return;
+      setOpen(false);
+    }
+    window.addEventListener('scroll', onScroll, true);
+    return () => window.removeEventListener('scroll', onScroll, true);
+  }, [open]);
+
+  function toggle() {
+    if (busy) return;
+    if (!open) {
+      const r = btnRef.current.getBoundingClientRect();
+      /* +1 for the Unassigned row. Same 38px-per-row estimate the status
+         dropdown uses, so both flip upward at the same point on a short
+         window. */
+      const dropHeight = Math.min((agents.length + 1) * 38 + 8, 300);
+      const spaceBelow = window.innerHeight - r.bottom;
+      const openUp = spaceBelow < dropHeight + 8 && r.top > dropHeight;
+      setPos({
+        left: r.left,
+        width: Math.max(r.width, 220),
+        top: openUp ? undefined : r.bottom + 4,
+        bottom: openUp ? window.innerHeight - r.top + 4 : undefined,
+      });
+    }
+    setOpen(o => !o);
+  }
+
+  async function pick(userId) {
+    // Picking the person already assigned is a no-op, not a write — it would
+    // otherwise post an assigned_changed activity row saying nothing changed.
+    if (userId === (current ?? null)) { setOpen(false); return; }
+    setBusy(true);
+    setOpen(false);
+    try {
+      await api(`/api/leads/${leadId}`, {
+        method: 'PATCH',
+        body: { assigned_to: userId },
+      });
+      onChange?.();
+    } catch (e) {
+      alert(e.message || 'Could not reassign this lead.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={busy}
+        onClick={toggle}
+        className="lp-assign-trigger"
+        title="Reassign this lead"
+      >
+        {currentName
+          ? <span className="lp-assigned-badge"><UserCheck size={11} /><span className="lp-assigned-name">{currentName}</span></span>
+          : <span className="lp-muted">Unassigned</span>}
+        <ChevronDown
+          size={11}
+          style={{ flexShrink: 0, opacity: 0.6, transition: 'transform .15s', transform: open ? 'rotate(180deg)' : 'none' }}
+        />
+      </button>
+
+      {open && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={dropRef}
+          className="lp-status-portal"
+          style={{ top: pos.top, bottom: pos.bottom, left: pos.left, minWidth: pos.width }}
+        >
+          <button
+            className={`lp-dropdown-item${!current ? ' lp-dropdown-item--current' : ''}`}
+            onClick={() => pick(null)}
+          >
+            <span style={{ flex: 1, opacity: 0.7 }}>Unassigned</span>
+            {!current && <CheckCircle2 size={13} style={{ flexShrink: 0 }} />}
+          </button>
+          {agents.map(a => (
+            <button
+              key={a.id}
+              className={`lp-dropdown-item${a.id === current ? ' lp-dropdown-item--current' : ''}`}
+              onClick={() => pick(a.id)}
+            >
+              <UserCheck size={12} style={{ flexShrink: 0, opacity: 0.7 }} />
+              <span style={{ flex: 1 }}>{a.name}</span>
+              {a.id === current && <CheckCircle2 size={13} style={{ flexShrink: 0 }} />}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function LeadsPage() {
   const location = useLocation();
@@ -3418,6 +3863,9 @@ export default function LeadsPage() {
   const [pageConvertModal, setPageConvertModal] = useState(null); // { statusName, leadId, leadName, saveFn }
   const canCreate = useCan('CREATE_LEAD');
   const canEdit = useCan('EDIT_LEAD');
+  /* Its own permission, checked on its own. Reassigning is not a subset of
+     editing — see AssigneeInlineSelect. */
+  const canAssign = useCan('ASSIGN_LEAD');
   const canDelete = useCan('DELETE_LEAD');
   const canExport = useCan('EXPORT_LEADS');
   const canViewReports = useCan('VIEW_REPORTS');
@@ -3425,12 +3873,9 @@ export default function LeadsPage() {
   // The Mine chip needs to know who "me" is.
   const { user: currentUser } = useAuth();
   const canViewTeam = useCan('VIEW_TEAM_LEADS');
-  const canManageFollowUps = useCan('MANAGE_FOLLOW_UPS');
 
   // Stage Velocity: visible to anyone who can see beyond own leads (reporting/team/all)
   const showStageVelocity = canViewReports || canViewLead || canViewTeam;
-  // Follow-up Compliance: visible to managers/admins or those managing follow-ups
-  const showCompliancePanel = canViewReports || canManageFollowUps || canViewTeam;
 
   // Remember page/pageSize/filters across a full navigation away and back
   // (e.g. opening a linked appointment/estimate, then clicking "Leads" in
@@ -3455,8 +3900,6 @@ export default function LeadsPage() {
   const [leadSources, setLeadSources] = useState(LEAD_SOURCES); // default to const; overridden by API
   const [stageStats, setStageStats] = useState([]);
   const [showVelocity, setShowVelocity] = useState(false);
-  const [compliance, setCompliance] = useState(null);  // { summary, by_agent }
-  const [showCompliance, setShowCompliance] = useState(false);
   const [todayEvents, setTodayEvents] = useState([]);
   const [eventsDone, setEventsDone] = useState({});
   const [fuDrawerOpen, setFuDrawerOpen] = useState(false);
@@ -3510,7 +3953,7 @@ export default function LeadsPage() {
   // name from the Advanced dropdown — the two answer different questions and
   // combining them into one control would lose the narrow one.
   const [sourceChip, setSourceChip] = useState(ls.sourceChip ?? 'all');
-  const [ownerChip, setOwnerChip] = useState(ls.ownerChip ?? 'all');
+  const [ownerChip, setOwnerChip]   = useState(ls.ownerChip ?? 'all');
 
   // Persist whenever any of these change
   useEffect(() => {
@@ -3519,7 +3962,7 @@ export default function LeadsPage() {
       dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip,
     });
   }, [page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
-    dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip]);
+      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip]);
 
   useListScrollRestore('sp_leads_list_v1', !loading);
 
@@ -3685,15 +4128,6 @@ export default function LeadsPage() {
     setTimeout(() => setToast(null), 3000);
   }
 
-  // Compliance is behind MANAGE_FOLLOW_UPS or VIEW_REPORTS (see
-  // routes/lead_events.routes.js). Asked for unconditionally, it 403s on every
-  // page load for every caller who does not have it — silent to them, and a
-  // console full of red for anybody debugging something else entirely.
-  //
-  // Checked here rather than swallowed in the catch: a .catch() cannot tell a
-  // permission from an outage, so it hides both.
-  const canCompliance = useCan('MANAGE_FOLLOW_UPS', 'VIEW_REPORTS');
-
   useEffect(() => {
     api('/api/lead-statuses').then(r => setStatusList(r.items)).catch(() => { });
     api('/api/users/assignable').then(r => setAgentsList(r.items || [])).catch(() => { });
@@ -3702,10 +4136,7 @@ export default function LeadsPage() {
       if (r.items?.length) setLeadSources(r.items.map(s => s.name));
     }).catch(() => { }); // keep fallback LEAD_SOURCES if API fails
     api('/api/leads/stage-stats').then(r => setStageStats(r.items || [])).catch(() => { });
-    if (canCompliance) {
-      api('/api/lead-events/compliance').then(r => setCompliance(r)).catch(() => { });
-    }
-  }, [canCompliance]);
+  }, []);
 
   // Open lead from duplicate detection click in NewLeadModal
   useEffect(() => {
@@ -3809,60 +4240,143 @@ export default function LeadsPage() {
    * an array for two), and a server that has to check which it got is a server
    * that will one day get it wrong.
    */
+  /* ── Pages already seen ─────────────────────────────────────────────────────
+     Keyed by the exact query string that produced them, so a key covers the
+     page number AND every filter — two different filter sets can never collide
+     on the same page number.
+
+     This is a cache of what to SHOW WHILE WAITING, not a substitute for
+     fetching. Every visit still issues the request; the cached rows just fill
+     the screen instantly instead of a skeleton, and are replaced the moment
+     the response lands. That distinction is why there is no invalidation logic
+     anywhere below: nothing can go permanently stale when every view is
+     revalidated as it is opened.
+
+     It matters here more than it would elsewhere, because the server never
+     broadcasts lead changes — there is no 'leads' socket topic — so this
+     request is the ONLY thing that ever refreshes the list. A plain cache
+     would have left rows stale until the user changed a filter. */
+  const leadsCache = useRef(new Map());
+  const LEADS_CACHE_LIMIT = 20;
+
+  /* Which request is allowed to write to state. Clicking through pages faster
+     than the network answers means several are in flight at once, and they can
+     come back out of order — without this, page 2's rows can land after page
+     3's and leave the table showing the wrong page. */
+  const leadsReq = useRef(0);
+
+  /* Every mutation on this page patches the visible `leads` array in place
+     rather than refetching — which is right, it is instant — but it leaves the
+     cached copy of that page holding the pre-change rows.
+
+     Revalidation would correct it within a moment either way. The reason to
+     drop the cache explicitly is what that moment looks like: navigate away
+     from a lead you just deleted and back, and the deleted row reappears for
+     an instant. Self-correcting or not, that reads as "the delete failed".
+
+     Cheap enough to be unsubtle about — clear everything, not just the page
+     that changed. A bulk status change can move rows across page boundaries,
+     so working out which entries are still valid costs more than refetching. */
+  const invalidateLeadsCache = useCallback(() => {
+    leadsCache.current.clear();
+  }, []);
+
+  const applyLeadsResponse = useCallback((r) => {
+    setLeads(r.items || []);
+    setTotal(r.total ?? 0);
+    setCounts(r.counts || { status: {}, assignee: {}, source: {}, owner: {} });
+    setAssignees(r.assignees || []);
+    setCreators(r.creators || []);
+    setTotalValue(r.total_value ?? 0);
+    setLeadsScope(r.scope || 'all');
+  }, []);
+
   const loadLeads = useCallback(async () => {
-    setLoading(true);
-    try {
+    {
       const qs = new URLSearchParams();
       qs.set('page', String(page));
       qs.set('page_size', String(pageSize));
 
-      if (search) qs.set('search', search);
-      if (statusFilters.length) qs.set('status', statusFilters.join(','));
+      if (search)                 qs.set('search', search);
+      if (statusFilters.length)   qs.set('status', statusFilters.join(','));
       if (assigneeFilters.length) qs.set('assignee', assigneeFilters.join(','));
-      if (creatorFilter) qs.set('creator', creatorFilter);
-      if (dateFrom) qs.set('date_from', dateFrom);
-      if (dateTo) qs.set('date_to', dateTo);
-      if (fState) qs.set('state', fState);
-      if (fCity) qs.set('city', fCity);
-      if (fArea) qs.set('area', fArea);
-      if (fVType) qs.set('vehicle_type', fVType);
-      if (fMake) qs.set('make', fMake);
-      if (fModel) qs.set('model', fModel);
+      if (creatorFilter)          qs.set('creator', creatorFilter);
+      if (dateFrom)               qs.set('date_from', dateFrom);
+      if (dateTo)                 qs.set('date_to', dateTo);
+      if (fState)                 qs.set('state', fState);
+      if (fCity)                  qs.set('city', fCity);
+      if (fArea)                  qs.set('area', fArea);
+      if (fVType)                 qs.set('vehicle_type', fVType);
+      if (fMake)                  qs.set('make', fMake);
+      if (fModel)                 qs.set('model', fModel);
       // The dropdown is an exact stored name; the chip is a GROUP of names.
       // Two parameters because they are two different questions and can both
       // be asked at once.
-      if (fSource) qs.set('source_exact', fSource);
+      if (fSource)                qs.set('source_exact', fSource);
       if (sourceChip && sourceChip !== 'all') qs.set('source', sourceChip);
-      if (ownerChip && ownerChip !== 'all') qs.set('owner', ownerChip);
+      if (ownerChip && ownerChip !== 'all')   qs.set('owner', ownerChip);
 
-      const r = await api(`/api/leads?${qs.toString()}`);
-      setLeads(r.items || []);
-      setTotal(r.total ?? 0);
-      setCounts(r.counts || { status: {}, assignee: {}, source: {}, owner: {} });
-      setAssignees(r.assignees || []);
-      setTotalValue(r.total_value ?? 0);
-      setLeadsScope(r.scope || 'all');
-      // Selection is per page now. Carrying ids across a page change would let
-      // a bulk action hit rows nobody can currently see.
+      const key = qs.toString();
+      const cached = leadsCache.current.get(key);
+
+      /* Seen before: paint it now. The skeleton is for a view we genuinely
+         have nothing for — showing it over rows we already hold is the flicker
+         this whole change exists to remove. */
+      if (cached) {
+        applyLeadsResponse(cached);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
+      // Selection is per page. Carrying ids across a page change would let a
+      // bulk action hit rows nobody can currently see. Cleared here, on the
+      // key change — NOT when a response arrives, or the background refresh
+      // would silently drop a selection the user just made.
       setSelectedLeads(new Set());
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
+
+      const seq = ++leadsReq.current;
+      try {
+        const r = await api(`/api/leads?${key}`);
+        if (seq !== leadsReq.current) return;   // a newer request owns the table
+
+        // delete-then-set moves the entry to the end, so the eviction below
+        // drops the least recently USED page rather than the oldest fetched.
+        leadsCache.current.delete(key);
+        leadsCache.current.set(key, r);
+        if (leadsCache.current.size > LEADS_CACHE_LIMIT) {
+          leadsCache.current.delete(leadsCache.current.keys().next().value);
+        }
+
+        applyLeadsResponse(r);
+        setError('');
+      } catch (e) {
+        if (seq !== leadsReq.current) return;
+        /* A failed refresh over rows that are already on screen is not worth
+           blanking the table for — the user keeps what they had. Only a view
+           with nothing behind it reports the error. */
+        if (!cached) setError(e.message);
+      } finally {
+        if (seq === leadsReq.current) setLoading(false);
+      }
     }
     /* Every filter is a dependency, which is what makes the effect below the
        ONLY place a refetch is triggered. The alternative — calling loadLeads()
        from each filter's onChange — is fifteen call sites to keep in step, and
        the one that gets forgotten is a filter that silently does nothing. */
   }, [page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
-    dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource,
-    sourceChip, ownerChip]);
+      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource,
+      sourceChip, ownerChip, applyLeadsResponse]);
 
   useEffect(() => { loadLeads(); }, [loadLeads]);
+  /* A new lead invalidates every cached page — it shifts every row after it by
+     one. Drop the cache before refetching so the list cannot flash its
+     pre-creation self on the way. */
   useEffect(() => {
-    window.addEventListener('lead-created', loadLeads);
-    return () => window.removeEventListener('lead-created', loadLeads);
-  }, [loadLeads]);
+    const onCreated = () => { invalidateLeadsCache(); loadLeads(); };
+    window.addEventListener('lead-created', onCreated);
+    return () => window.removeEventListener('lead-created', onCreated);
+  }, [loadLeads, invalidateLeadsCache]);
 
   /* The assignee dropdown's options come from the server now.
      Derived from `leads` they were derived from ONE PAGE — the dropdown would
@@ -3870,24 +4384,30 @@ export default function LeadsPage() {
      else, so filtering by an agent stopped being possible the moment they had
      no recent lead. */
   const [assignees, setAssignees] = useState([]);
+  const [creators, setCreators] = useState([]);
 
-  const creators = useMemo(() => {
-    const map = {};
-    for (const l of leads) {
-      if (l.created_by_id && l.created_by_name) map[l.created_by_id] = l.created_by_name;
-    }
-    return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [leads]);
+  /* Was derived from `leads` — the rows currently on screen. That made the
+     dropdown's contents depend on the page you happened to be looking at, and
+     the control itself appear and vanish as you filtered, because it was only
+     rendered when the derived list was non-empty. Worse, a creator filter
+     could stay APPLIED after the control disappeared, leaving the list
+     narrowed by something with no visible way to switch it off.
+
+     The server sends the list now, exactly as it already did for assignees,
+     and for the same reason. See `creators` in leads.controller.js. */
 
 
   // Count active advanced filters
-  const advCount = [dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource].filter(Boolean).length;
+  const advCount = [dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, creatorFilter].filter(Boolean).length;
 
   function clearAdvanced() {
     setDateFrom(''); setDateTo('');
     setFState(''); setFCity(''); setFArea('');
     setFVType(''); setFMake(''); setFModel('');
     setFSource('');
+    // Counted in advCount, so it has to be cleared by the same button — or
+    // "Clear filters" leaves the badge showing 1 and the list still narrowed.
+    setCreatorFilter('');
   }
 
   // Multi-select assignee match — 'unassigned' is a pseudo-value alongside
@@ -3951,6 +4471,7 @@ export default function LeadsPage() {
   async function handleDelete(lead) {
     await api(`/api/leads/${lead.id}`, { method: 'DELETE' });
     setLeads(prev => prev.filter(l => l.id !== lead.id));
+    invalidateLeadsCache();
     setDeleteLead(null);
     showToast(`Lead for ${lead.name || lead.mobile} deleted.`);
   }
@@ -3983,6 +4504,7 @@ export default function LeadsPage() {
 
   function handleEditSaved(updated) {
     setLeads(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l));
+    invalidateLeadsCache();
     setEditLead(null);
     // Refetch the open detail page. Without this the page sitting behind the
     // dialog keeps showing the values from before the save.
@@ -4042,19 +4564,21 @@ export default function LeadsPage() {
      notes per lead as you make the calls, which is the only place they mean
      anything. A status with both flags asks for the follow-up only.
 
-     A LOST status is no exception any more. It used to stop and ask for a
-     reason; it now applies like everything else here. leads.lost_reason is
-     left alone rather than blanked — a lead that already carries one keeps
-     showing it — so the field reads as history, not as something this screen
-     maintains. */
+     A LOST status DOES ask, and is the exception the paragraph above is not.
+     A reason genuinely can be true of a whole selection — "we lost this batch
+     to the workshop that opened down the road" is one fact about twenty leads,
+     which is exactly what a call outcome is not. The competitor comes with it
+     when the reason wants one; the service DATE does not, because twenty cars
+     were not all serviced on the same Tuesday, and the API counts the retarget
+     from today instead. */
   const bulkStatusOptions = statusList.filter(s => !s.converts_to_appointment);
 
-  /* The second argument is a follow-up, and it is the only extra this screen
-     can supply. No lost_reason: the endpoint still accepts one and the
-     single-lead PATCH still re-sends an existing one, but nothing here asks
-     for a reason any more, and a parameter no caller can fill is a parameter
-     that goes stale. */
-  async function applyBulkStatus(statusName, followUp = null) {
+  /* The second argument is whatever StatusActionModal collected — a follow-up,
+     a lost reason and competitor, or both. One bag rather than two positional
+     parameters, because the dialog decides what it asked for and this function
+     should not have to know. */
+  async function applyBulkStatus(statusName, extra = null) {
+    const followUp = extra;
     setBulkStatusBusy(true);
     setBulkStatusOpen(false);
     try {
@@ -4067,6 +4591,13 @@ export default function LeadsPage() {
         // the modal is shared with the single-lead path that sends `note`.
         if (followUp.note) body.follow_up_note = followUp.note;
       }
+      /* No competitor_service_date, deliberately — see the comment above
+         bulkStatusOptions. The API anchors the retarget on today when none
+         arrives, and says so in its own comment. */
+      if (extra?.lost_reason) {
+        body.lost_reason = extra.lost_reason;
+        if (extra.lost_competitor_id) body.lost_competitor_id = extra.lost_competitor_id;
+      }
       const r = await api('/api/leads/bulk-status', { method: 'POST', body });
 
       // Reflect it locally rather than refetching the list: the server told us
@@ -4075,6 +4606,7 @@ export default function LeadsPage() {
       const moved = new Set(r.ids || []);
       if (moved.size) {
         setLeads(prev => prev.map(l => (moved.has(l.id) ? { ...l, status: r.status } : l)));
+        invalidateLeadsCache();
       }
       setSelectedLeads(new Set());
 
@@ -4082,13 +4614,16 @@ export default function LeadsPage() {
       // explanation is the thing that makes people stop trusting bulk actions.
       const bits = [];
       bits.push(`${r.updated} lead${r.updated !== 1 ? 's' : ''} moved to ${r.status}`);
-      if (r.unchanged) bits.push(`${r.unchanged} already there`);
-      if (r.skipped_locked) bits.push(`${r.skipped_locked} locked`);
+      if (r.unchanged)         bits.push(`${r.unchanged} already there`);
+      if (r.skipped_locked)    bits.push(`${r.skipped_locked} locked`);
       if (r.skipped_converted) bits.push(`${r.skipped_converted} already converted`);
       // Counted from the RESPONSE, not from what was asked for. A follow-up is
       // only written for leads that actually moved, so saying "12 scheduled"
       // because twelve were ticked would be a number nobody could reconcile.
-      if (r.follow_ups) bits.push(`follow-up set for ${r.follow_up_date}`);
+      if (r.follow_ups)        bits.push(`follow-up set for ${r.follow_up_date}`);
+      // Same rule as the follow-up count: read from the RESPONSE, so the
+      // number is what was written rather than what was ticked.
+      if (r.retargets)         bits.push(`back for retargeting on ${r.retarget_date}`);
       showToast(bits.join(' · '), r.updated ? 'success' : 'warning');
     } catch (e) {
       showToast(e.message || 'Could not change the status.', 'error');
@@ -4126,13 +4661,18 @@ export default function LeadsPage() {
         />
       )}
 
-      {/* One follow-up for the whole selection.
+      {/* One answer for the whole selection.
 
           The SAME modal the single-lead path opens, with the call half
           switched off — a call outcome describes one conversation and cannot
-          describe twenty, so bulk asks for the date and nothing else. Reusing
-          it means the date picker, the default 09:00 and the "pick a date"
-          validation cannot drift between the two places.
+          describe twenty. Reusing it means the date picker, the default 09:00,
+          the reason chips and every "you have not filled this in" message
+          cannot drift between the two places.
+
+          allowServiceDate={false} is the one real difference, and it is a
+          statement about the data rather than the screen: twenty customers did
+          not have their cars serviced on the same day, so bulk does not
+          pretend to know when.
 
           At page level, like the convert modal, so re-rendering the list
           underneath cannot close it half-filled. */}
@@ -4141,7 +4681,9 @@ export default function LeadsPage() {
           statusName={bulkFollow.statusName}
           leadName={`${selectedLeads.size} selected lead${selectedLeads.size !== 1 ? 's' : ''}`}
           logsCall={false}
-          needsFollowUp
+          needsFollowUp={!!bulkFollow.needsFollowUp}
+          needsLostReason={!!bulkFollow.needsLostReason}
+          allowServiceDate={false}
           onConfirm={data => { const m = bulkFollow; setBulkFollow(null); applyBulkStatus(m.statusName, data); }}
           onCancel={() => setBulkFollow(null)}
         />
@@ -4389,7 +4931,15 @@ export default function LeadsPage() {
               </div>
 
               <div className="lp-adv-modal-body">
-                {/* Date */}
+                {/* Date and Created By share a column. The body is an auto-fit
+                    grid that lands on three columns at this width, so a fourth
+                    top-level section wrapped onto a second row and left two
+                    thirds of it as bare gap-coloured background.
+
+                    Pairing them also balances the columns: Date (2 fields) plus
+                    Creator (1) matches Location's three and Vehicle's three, so
+                    no column is mostly empty. */}
+                <div className="lp-adv-col">
                 <div className="lp-adv-section">
                   <div className="lp-adv-section-label"><Calendar size={12} /> Date Range</div>
                   <div className="lp-adv-row">
@@ -4407,6 +4957,28 @@ export default function LeadsPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Created by — moved here from the toolbar. Options come from
+                    the server, so the list is every creator in scope rather
+                    than whoever happens to be on the current page. */}
+                <div className="lp-adv-section">
+                  <div className="lp-adv-section-label"><User size={12} /> Created By</div>
+                  <div className="lp-adv-row">
+                    <div className="lp-adv-field">
+                      <label>Creator</label>
+                      <select className="lp-adv-input" value={creatorFilter}
+                        onChange={e => setCreatorFilter(e.target.value)}>
+                        <option value="">All creators</option>
+                        {creators.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}{c.count ? ` (${c.count})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                </div>{/* /.lp-adv-col */}
 
                 {/* Location */}
                 <div className="lp-adv-section">
@@ -4492,135 +5064,48 @@ export default function LeadsPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Analytics Panels Row (side by side) ── */}
-      {false && (showStageVelocity || showCompliancePanel) && (
+      {/* ── Analytics Panels Row ──
+          Follow-up Compliance was REMOVED from this page. Not disabled behind a
+          flag, not commented out: the panel, its state, its fetch and its
+          permission check are all gone, so the page no longer asks
+          /api/lead-events/compliance on every load. The endpoint itself is
+          untouched — nothing else calls it today, but deleting an API because
+          one screen stopped using it is a separate decision.
+
+          Stage Velocity stays, and stays off behind its own `false &&`. I still
+          do not know why it was disabled, and switching a panel back on without
+          knowing what was wrong with it is how somebody ends up acting on a
+          number that was hidden for a reason. */}
+      {false && showStageVelocity && stageStats.length > 0 && (
         <div className="lp-panels-row">
-
-          {/* ── Stage Velocity Panel ── */}
-          {showStageVelocity && stageStats.length > 0 && (
-            <div className="lp-velocity-wrap">
-              <button className="lp-velocity-toggle" onClick={() => setShowVelocity(v => !v)}>
-                <div className="lp-velocity-toggle-icon"><Clock size={13} /></div>
-                <div className="lp-velocity-toggle-text">
-                  <span className="lp-velocity-title">Stage Velocity</span>
-                  <span className="lp-velocity-sub">{stageStats.length} stage{stageStats.length !== 1 ? 's' : ''} tracked</span>
-                </div>
-                <ChevronDown size={14} className={`lp-velocity-chevron${showVelocity ? ' lp-velocity-chevron--open' : ''}`} />
-              </button>
-              {showVelocity && (() => {
-                const maxSec = Math.max(...stageStats.map(s => s.avg_seconds));
-                return (
-                  <div className="lp-velocity-body">
-                    {stageStats.map(s => (
-                      <div key={s.status} className="lp-velocity-row">
-                        <div className="lp-velocity-label">{s.status}</div>
-                        <div className="lp-velocity-bar-wrap">
-                          <div className="lp-velocity-bar"
-                            style={{ width: `${Math.max(4, (s.avg_seconds / maxSec) * 100)}%` }} />
-                        </div>
-                        <div className="lp-velocity-val">{formatDuration(s.avg_seconds)}</div>
-                        <div className="lp-velocity-n">n={s.sample_count}</div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* ── Follow-up Compliance Panel ── */}
-          {showCompliancePanel && compliance && compliance.summary.total_due > 0 && (() => {
-
-            const { summary, by_agent } = compliance;
-            const rate = summary.rate;
-            const rateColor = rate === null ? '#64748b' : rate >= 80 ? '#16a34a' : rate >= 50 ? '#d97706' : '#dc2626';
-            return (
-              <div className="lp-velocity-wrap">
-                <button className="lp-velocity-toggle" onClick={() => setShowCompliance(v => !v)}>
-                  <div className="lp-velocity-toggle-icon" style={{ background: rateColor + '15', color: rateColor }}><Bell size={13} /></div>
-                  <div className="lp-velocity-toggle-text">
-                    <span className="lp-velocity-title">Follow-up Compliance</span>
-                    <span className="lp-velocity-sub">{summary.total_due} follow-up{summary.total_due !== 1 ? 's' : ''} due</span>
-                  </div>
-                  {rate !== null && (
-                    <span className="lp-comply-rate-pill" style={{ background: rateColor + '18', color: rateColor }}>
-                      {rate}%
-                    </span>
-                  )}
-                  <ChevronDown size={14} className={`lp-velocity-chevron${showCompliance ? ' lp-velocity-chevron--open' : ''}`} />
-                </button>
-                {showCompliance && (
-                  <div className="lp-velocity-body">
-                    {/* Summary row */}
-                    <div className="lp-comply-summary">
-                      <div className="lp-comply-kpi" style={{ color: '#16a34a' }}>
-                        <span className="lp-comply-kpi-n">{summary.on_time}</span>
-                        <span className="lp-comply-kpi-l">On-time</span>
-                      </div>
-                      <div className="lp-comply-kpi" style={{ color: '#d97706' }}>
-                        <span className="lp-comply-kpi-n">{summary.late}</span>
-                        <span className="lp-comply-kpi-l">Late</span>
-                      </div>
-                      <div className="lp-comply-kpi" style={{ color: '#dc2626' }}>
-                        <span className="lp-comply-kpi-n">{summary.missed}</span>
-                        <span className="lp-comply-kpi-l">Missed</span>
-                      </div>
-                      {/* Stacked bar */}
-                      <div className="lp-comply-bar-wrap">
-                        {summary.on_time > 0 && (
-                          <div className="lp-comply-bar-seg" title={`On-time: ${summary.on_time}`}
-                            style={{ flex: summary.on_time, background: '#16a34a' }} />
-                        )}
-                        {summary.late > 0 && (
-                          <div className="lp-comply-bar-seg" title={`Late: ${summary.late}`}
-                            style={{ flex: summary.late, background: '#d97706' }} />
-                        )}
-                        {summary.missed > 0 && (
-                          <div className="lp-comply-bar-seg" title={`Missed: ${summary.missed}`}
-                            style={{ flex: summary.missed, background: '#dc2626' }} />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Per-agent table */}
-                    {by_agent.length > 1 && (
-                      <table className="lp-comply-table">
-                        <thead>
-                          <tr>
-                            <th>Agent</th>
-                            <th className="lp-comply-th-r">On-time</th>
-                            <th className="lp-comply-th-r">Late</th>
-                            <th className="lp-comply-th-r">Missed</th>
-                            <th className="lp-comply-th-r">Rate</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {by_agent.map(a => {
-                            const aColor = a.rate === null ? '#64748b' : a.rate >= 80 ? '#16a34a' : a.rate >= 50 ? '#d97706' : '#dc2626';
-                            return (
-                              <tr key={a.agent_name}>
-                                <td className="lp-comply-agent">{a.agent_name}</td>
-                                <td className="lp-comply-td-r" style={{ color: '#16a34a' }}>{a.on_time}</td>
-                                <td className="lp-comply-td-r" style={{ color: '#d97706' }}>{a.late}</td>
-                                <td className="lp-comply-td-r" style={{ color: '#dc2626' }}>{a.missed}</td>
-                                <td className="lp-comply-td-r">
-                                  {a.rate !== null
-                                    ? <span className="lp-comply-rate-pill" style={{ background: aColor + '18', color: aColor }}>{a.rate}%</span>
-                                    : <span className="lp-muted">—</span>
-                                  }
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                )}
+          <div className="lp-velocity-wrap">
+            <button className="lp-velocity-toggle" onClick={() => setShowVelocity(v => !v)}>
+              <div className="lp-velocity-toggle-icon"><Clock size={13} /></div>
+              <div className="lp-velocity-toggle-text">
+                <span className="lp-velocity-title">Stage Velocity</span>
+                <span className="lp-velocity-sub">{stageStats.length} stage{stageStats.length !== 1 ? 's' : ''} tracked</span>
               </div>
-            );
-          })()}
-
+              <ChevronDown size={14} className={`lp-velocity-chevron${showVelocity ? ' lp-velocity-chevron--open' : ''}`} />
+            </button>
+            {showVelocity && (() => {
+              const maxSec = Math.max(...stageStats.map(s => s.avg_seconds));
+              return (
+                <div className="lp-velocity-body">
+                  {stageStats.map(s => (
+                    <div key={s.status} className="lp-velocity-row">
+                      <div className="lp-velocity-label">{s.status}</div>
+                      <div className="lp-velocity-bar-wrap">
+                        <div className="lp-velocity-bar"
+                          style={{ width: `${Math.max(4, (s.avg_seconds / maxSec) * 100)}%` }} />
+                      </div>
+                      <div className="lp-velocity-val">{formatDuration(s.avg_seconds)}</div>
+                      <div className="lp-velocity-n">n={s.sample_count}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
 
@@ -4705,7 +5190,7 @@ export default function LeadsPage() {
               other lists this one filters CLIENT-side, so nothing here is about
               query load — it is purely so the same control sits in the same
               place on every screen. */}
-          <div className="lb-toolbar" >
+          <div className="lb-toolbar">
             {/* Status multi-select dropdown */}
             <div className="lp-status-dd-wrap" ref={statusDDRef}>
               <button
@@ -4825,17 +5310,10 @@ export default function LeadsPage() {
               </div>
             )}
 
-            {creators.length > 0 && (
-              <div className="lp-creator-wrap">
-                <User size={13} className="lp-creator-icon" />
-                <select className="lp-creator-select" value={creatorFilter} onChange={e => setCreatorFilter(e.target.value)}>
-                  <option value="">All creators</option>
-                  {creators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <ChevronDown size={13} className="lp-creator-caret" />
-                {creatorFilter && <button className="lp-creator-clear" onClick={() => setCreatorFilter('')}><X size={11} /></button>}
-              </div>
-            )}
+            {/* Created by used to sit here as a toolbar dropdown that rendered
+                only when the current page happened to contain creators. It
+                lives in the Filters panel now — always present, never
+                flickering. */}
 
             {/* This page already had the funnel-plus-panel pattern before the
                 other lists did; it keeps its own panel and its own count. */}
@@ -4936,6 +5414,7 @@ export default function LeadsPage() {
                             setLeads(prev => prev.map(l =>
                               selectedLeads.has(l.id) && !l.is_converted ? { ...l, assigned_to: a.id, assigned_to_name: a.name } : l
                             ));
+                            invalidateLeadsCache();
                             setSelectedLeads(new Set());
                             if (result.skipped_converted > 0) {
                               showToast(`${result.updated} lead${result.updated !== 1 ? 's' : ''} assigned to ${a.name}. ${result.skipped_converted} converted lead${result.skipped_converted !== 1 ? 's' : ''} skipped (locked).`, 'warning');
@@ -4983,13 +5462,18 @@ export default function LeadsPage() {
                         key={s.id}
                         className="lp-bulk-dd-opt"
                         onClick={() => {
-                          // The one interception left, and it is the flag's
-                          // own rule rather than a special case for a status
-                          // name: needs_follow_up means "this status is not
-                          // finished until somebody says when to chase it".
-                          if (s.needs_follow_up) {
+                          /* Two interceptions, both the flags' own rules
+                             rather than special cases for a status name:
+                             needs_follow_up means "not finished until somebody
+                             says when to chase it", needs_lost_reason means
+                             "not finished until somebody says why". */
+                          if (s.needs_follow_up || s.needs_lost_reason) {
                             setBulkStatusOpen(false);
-                            setBulkFollow({ statusName: s.name });
+                            setBulkFollow({
+                              statusName: s.name,
+                              needsFollowUp: !!s.needs_follow_up,
+                              needsLostReason: !!s.needs_lost_reason,
+                            });
                             return;
                           }
                           applyBulkStatus(s.name);
@@ -5035,6 +5519,7 @@ export default function LeadsPage() {
                         });
                         const count = selectedLeads.size;
                         setLeads(prev => prev.filter(l => !selectedLeads.has(l.id)));
+                        invalidateLeadsCache();
                         setSelectedLeads(new Set());
                         setBulkDeleteConfirm(false);
                         showToast(`${count} lead${count > 1 ? 's' : ''} deleted`);
@@ -5104,7 +5589,14 @@ export default function LeadsPage() {
                   {hasAnyFilter ? 'No leads match your filters.' : 'No leads yet. Capture your first lead!'}
                 </td></tr>
               ) : paginated.map(l => (
-                <tr key={l.id} className={`lp-row${selectedLeads.has(l.id) ? ' lp-row--selected' : ''}`} onClick={() => openLead(l)}>
+                /* The rail is a modifier on the ordinary row rather than a
+                   sort or a filter: the lead stays exactly where it belongs
+                   chronologically and is simply impossible to scroll past. Each
+                   tone clears itself — a follow-up marked done, a retarget task
+                   closed — so nothing has to be un-set by hand. */
+                <tr key={l.id}
+                    className={`lp-row${selectedLeads.has(l.id) ? ' lp-row--selected' : ''}${rowRailTone(l, statusList) ? ` lp-row--rail lp-row--rail-${rowRailTone(l, statusList)}` : ''}`}
+                    onClick={() => openLead(l)}>
                   <td onClick={e => e.stopPropagation()}>
                     <input type="checkbox" className="lp-chk"
                       checked={selectedLeads.has(l.id)}
@@ -5204,8 +5696,16 @@ export default function LeadsPage() {
                         <CheckCircle2 size={10} /> Converted to Appt.
                       </div>
                     )}
-                    {l.lost_reason && l.status?.toLowerCase().includes('lost') && (
-                      <div className="lp-lost-reason-sub">{l.lost_reason}</div>
+                    {l.lost_reason && isLostStatus(l.status, statusList) && (
+                      <div className="lp-lost-reason-sub">
+                        {l.lost_reason}
+                        {l.lost_competitor_name && <> · {l.lost_competitor_name}</>}
+                      </div>
+                    )}
+                    {isRetargetDue(l) && (
+                      <div className="lp-retarget-sub" title="This vehicle is due for service again">
+                        <RefreshCw size={10} /> Due for retargeting
+                      </div>
                     )}
                   </td>
                   {/* Assign To column */}
@@ -5218,25 +5718,21 @@ export default function LeadsPage() {
                   </td>
                   {/* Next Follow-up column */}
                   <td>
-                    {l.next_follow_up_date && !l.is_converted && !statusList.find(s => s.name === l.status)?.is_locked ? (() => {
-                      const d = new Date(l.next_follow_up_date);
-                      const today = new Date(); today.setHours(0, 0, 0, 0);
-                      const diff = Math.round((d - today) / 86400000);
-                      const isOverdue = diff < 0;
-                      const isToday = diff === 0;
-                      const isTomorrow = diff === 1;
-                      const label = isOverdue ? 'Overdue'
-                        : isToday ? 'Today'
-                          : isTomorrow ? 'Tomorrow'
-                            : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-                      const color = isOverdue ? '#dc2626' : isToday ? '#d97706' : '#16a34a';
-                      const bg = isOverdue ? '#fee2e2' : isToday ? '#fef3c7' : '#dcfce7';
+                    {(() => {
+                      const fu = followUpState(l, statusList);
+                      if (!fu) return <span className="lp-muted">—</span>;
+                      const label = fu.isOverdue ? 'Overdue'
+                        : fu.isToday ? 'Today'
+                          : fu.isTomorrow ? 'Tomorrow'
+                            : fu.date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                      const color = fu.isOverdue ? '#dc2626' : fu.isToday ? '#d97706' : '#16a34a';
+                      const bg = fu.isOverdue ? '#fee2e2' : fu.isToday ? '#fef3c7' : '#dcfce7';
                       return (
                         <span className="lp-followup-badge" style={{ background: bg, color }}>
-                          {isOverdue && '⚠ '}{label}
+                          {fu.isOverdue && '⚠ '}{label}
                         </span>
                       );
-                    })() : <span className="lp-muted">—</span>}
+                    })()}
                   </td>
                   {/* ── Recent Activity ──────────────────────────────────
                       The last thing that happened, from the server's LATERAL
@@ -5283,26 +5779,23 @@ export default function LeadsPage() {
             </div>
           )}
           {!loading && paginated.map(l => (
-            <div key={l.id} className="lp-mobile-card" onClick={() => openLead(l)}>
+            <div key={l.id}
+                 className={`lp-mobile-card${rowRailTone(l, statusList) ? ` lp-mobile-card--rail lp-mobile-card--rail-${rowRailTone(l, statusList)}` : ''}`}
+                 onClick={() => openLead(l)}>
+              {/* ── Row 1: who, and where they are in the pipeline ──
+                  Name and status on ONE line, which they were not: .lp-mc-top
+                  was switched to a column at 768px so a long name could not
+                  squeeze the badge, and the cost was that the status ended up
+                  below the Call and WhatsApp buttons — three rows down from the
+                  name it describes, and in a different place on every card
+                  depending on whether the WhatsApp button was there.
+
+                  A wrapping name and a non-shrinking badge do the same job
+                  without moving anything: the name takes the width it needs and
+                  the badge stays in the corner where the eye goes for it. */}
               <div className="lp-mc-top">
                 <div className="lp-mc-customer">
                   <div className="lp-mc-name">{l.name || <span className="lp-muted">No name</span>}</div>
-                  <div className="lp-mc-mobile">{l.mobile}</div>
-                  <div className="lp-mc-actions" onClick={e => e.stopPropagation()}>
-                    <a className="lp-mc-action-btn lp-mc-action-btn--call"
-                      href={`tel:${l.mobile}`} title="Call">
-                      <Phone size={13} /> Call
-                    </a>
-                    {/* waTarget adds the missing country code and hides the
-                        button when the number cannot be messaged. */}
-                    {waTarget(l) && (
-                      <a className="lp-mc-action-btn lp-mc-action-btn--wa"
-                        href={waTarget(l)}
-                        target="_blank" rel="noreferrer" title="WhatsApp">
-                        <MessageCircle size={13} /> WhatsApp
-                      </a>
-                    )}
-                  </div>
                 </div>
                 <div className="lp-mc-right" onClick={e => e.stopPropagation()}>
                   {canEdit && !l.is_converted
@@ -5311,20 +5804,74 @@ export default function LeadsPage() {
                       onOpenConvert={setPageConvertModal} />
                     : <StatusBadge status={l.status} statusList={statusList} />
                   }
-                  {l.is_converted && (
-                    <div style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 3,
-                      background: '#ecfdf5', color: '#059669', border: '1.5px solid #6ee7b7',
-                      borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap'
-                    }}>
-                      <CheckCircle2 size={10} /> Converted to Appt.
-                    </div>
-                  )}
-                  {l.lost_reason && l.status?.toLowerCase().includes('lost') && (
-                    <div className="lp-lost-reason-sub">{l.lost_reason}</div>
-                  )}
                 </div>
               </div>
+
+              {/* ── Row 2: the three facts worth a glance ──
+                  Number, date and value on one line instead of the number at
+                  the top and the date stranded at the bottom of the card next
+                  to a dash. Separated by dots rather than spread across the
+                  full width — three short values pushed to the edges read as
+                  three unrelated things. */}
+              <div className="lp-mc-line">
+                <span className="lp-mc-mobile">{l.mobile}</span>
+                <span className="lp-mc-dot" aria-hidden="true">·</span>
+                <span className="lp-mc-date">
+                  {new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                </span>
+                {Number(l.total_price) > 0 && (
+                  <>
+                    <span className="lp-mc-dot" aria-hidden="true">·</span>
+                    <span className="lp-mc-value">₹{Number(l.total_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                  </>
+                )}
+                {/* The card had NO follow-up indicator of any kind — the badge
+                    lives in a table column that does not exist on a phone. So
+                    the one question a list is for, "who have I not called
+                    back", could not be answered here at all. */}
+                {(() => {
+                  const fu = followUpState(l, statusList);
+                  if (!fu) return null;
+                  const label = fu.isOverdue ? '⚠ Overdue'
+                    : fu.isToday ? 'Today'
+                      : fu.isTomorrow ? 'Tomorrow'
+                        : fu.date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                  const color = fu.isOverdue ? '#dc2626' : fu.isToday ? '#d97706' : '#16a34a';
+                  const bg = fu.isOverdue ? '#fee2e2' : fu.isToday ? '#fef3c7' : '#dcfce7';
+                  return (
+                    <>
+                      <span className="lp-mc-dot" aria-hidden="true">·</span>
+                      <span className="lp-mc-fu" style={{ background: bg, color }}>{label}</span>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* created_by is deliberately NOT here. On the desktop table it
+                  is a column somebody occasionally sorts by; on a phone it was
+                  rendering as a bare "—" on most cards, which is a character
+                  of noise per row buying nothing. It is still on the row in the
+                  table and in the lead's own panel. */}
+
+              {(l.is_converted || (l.lost_reason && isLostStatus(l.status, statusList)) || isRetargetDue(l)) && (
+                <div className="lp-mc-flags">
+                  {l.is_converted && (
+                    <span className="lp-mc-conv"><CheckCircle2 size={10} /> Converted to Appt.</span>
+                  )}
+                  {l.lost_reason && isLostStatus(l.status, statusList) && (
+                    <span className="lp-lost-reason-sub">
+                      {l.lost_reason}
+                      {l.lost_competitor_name && <> · {l.lost_competitor_name}</>}
+                    </span>
+                  )}
+                  {isRetargetDue(l) && (
+                    <span className="lp-retarget-sub">
+                      <RefreshCw size={10} /> Due for retargeting
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="lp-mc-meta">
                 {(l.area_name || l.city_name) && (
                   <span className="lp-mc-tag"><MapPin size={11} />{[l.area_name, l.city_name].filter(Boolean).join(', ')}</span>
@@ -5335,25 +5882,45 @@ export default function LeadsPage() {
                 {l.vehicle_type_name && !l.make_name && (
                   <span className="lp-mc-tag"><Car size={11} />{l.vehicle_type_name}</span>
                 )}
-              </div>
-              <div className="lp-mc-footer">
-                <span className="lp-mc-date">
-                  <Calendar size={11} />
-                  {new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                </span>
-                {Number(l.total_price) > 0 && (
-                  <span className="lp-mc-value">₹{Number(l.total_price).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
-                )}
-                <span className="lp-mc-by">{l.created_by_name || '—'}</span>
+                {/* Moved up from the footer to sit with the other facts about
+                    the lead. Who it belongs to is the same kind of thing as
+                    where it is and what it drives. */}
                 {l.assigned_to_name && (
                   <span className="lp-mc-assigned"><UserCheck size={10} /> {l.assigned_to_name}</span>
                 )}
-                <div onClick={e => e.stopPropagation()}>
-                  <ActionMenu lead={l} canEdit={canEdit} canDelete={canDelete}
-                    onView={l => openLead(l)}
-                    onEdit={l => setEditLead(l)}
-                    onDelete={l => setDeleteLead(l)} />
+              </div>
+
+              {/* ── Row 4: everything you can DO, in one place ──
+                  Call, WhatsApp and the overflow menu on the last line, at the
+                  bottom of the card, in the same position on every card. They
+                  were split across two rows — the two green buttons up beside
+                  the name and the kebab alone at the foot — so acting on a lead
+                  meant looking in two places, and the pair moved down the card
+                  whenever the name wrapped.
+
+                  The two buttons share the width rather than hugging their
+                  labels: an equal half each is a bigger thumb target than a
+                  90px pill, and they line up down the list. */}
+              <div className="lp-mc-bottom" onClick={e => e.stopPropagation()}>
+                <div className="lp-mc-actions">
+                  <a className="lp-mc-action-btn lp-mc-action-btn--call"
+                    href={`tel:${l.mobile}`} title="Call">
+                    <Phone size={13} /> Call
+                  </a>
+                  {/* waTarget adds the missing country code and hides the
+                      button when the number cannot be messaged. */}
+                  {waTarget(l) && (
+                    <a className="lp-mc-action-btn lp-mc-action-btn--wa"
+                      href={waTarget(l)}
+                      target="_blank" rel="noreferrer" title="WhatsApp">
+                      <MessageCircle size={13} /> WhatsApp
+                    </a>
+                  )}
                 </div>
+                <ActionMenu lead={l} canEdit={canEdit} canDelete={canDelete}
+                  onView={l => openLead(l)}
+                  onEdit={l => setEditLead(l)}
+                  onDelete={l => setDeleteLead(l)} />
               </div>
             </div>
           ))}
@@ -5418,7 +5985,13 @@ export default function LeadsPage() {
           the layout. Clearing it here would drop you back to the list the
           moment you clicked Edit. */}
       {viewId && (
-        <ViewLeadModal key={`${viewId}:${leadRefresh}`} leadId={viewId} canEdit={canEdit} statusList={statusList}
+        <ViewLeadModal key={`${viewId}:${leadRefresh}`} leadId={viewId} canEdit={canEdit} canAssign={canAssign} statusList={statusList}
+          /* The route token, so the detail can publish the topbar breadcrumb
+             label once it knows the lead. Passed down rather than read with
+             useParams() inside, because the crumb store pairs the label WITH
+             the token it belongs to — that pairing is what stops the previous
+             lead's mobile flashing against the next lead's URL. */
+          crumbToken={token}
           onLeadLoaded={handleLeadLoaded}
           onClose={closeLead}
           /* Same handler the list passes, so a converts_to_appointment status

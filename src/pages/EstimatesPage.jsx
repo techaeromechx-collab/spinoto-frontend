@@ -17,6 +17,8 @@ import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/u
 import { useFlipPopup } from '../hooks/useFlipPopup.js';
 import { usePageSearch } from '../lib/pageSearchStore.js';
 import { usePageCrumb } from '../lib/pageCrumbStore.js';
+import useSync from '../hooks/useSync.js';
+import { applyTransactionDiscount } from '../lib/transactionDiscount.js';
 import { CreateAppointmentModal } from './AppointmentsPage.jsx';
 import AdvancePaymentModal from '../components/AdvancePaymentModal.jsx';
 import WhatsAppSendMenu from '../components/WhatsAppSendMenu.jsx';
@@ -1248,16 +1250,26 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     return { itemsTotal: acc.itemsTotal + c.total, totalDiscount: acc.totalDiscount + c.discountAmount };
   }, { itemsTotal: 0, totalDiscount: 0 });
 
-  // Transaction-level discount calculation
-  let txDiscountAmount = 0;
-  if (discountMode === 'transaction' && txDiscountValue > 0) {
-    if (txDiscountType === 'percent') {
-      txDiscountAmount = r2(itemsTotal * txDiscountValue / 100);
-    } else {
-      txDiscountAmount = Math.min(txDiscountValue, itemsTotal);
-    }
-  }
-  const grandTotal = discountMode === 'transaction' ? r2(itemsTotal - txDiscountAmount) : itemsTotal;
+  /* ── Transaction discount ────────────────────────────────────────────────
+     The discount reduces the TAXABLE value and the tax comes down with it, so
+     ₹500 off saves the customer ₹590 on an 18% bill. It used to be subtracted
+     from the inclusive total, which left the tax overstated on the saved
+     document.
+
+     Through the shared helper, which is a deliberate mirror of the server's —
+     this figure appears live while somebody types, and if it disagreed with
+     what the server stores on save, the number would visibly jump. */
+  const txCalc = applyTransactionDiscount({
+    items: items.map(it => {
+      const c = computeItem(discountMode !== 'line_item'
+        ? { ...it, discount_type: null, discount_value: 0 } : it);
+      return { amount: c.amount, gst_percent: Number(it.gst_percent) || 0 };
+    }),
+    discountType:  discountMode === 'transaction' ? txDiscountType : null,
+    discountValue: discountMode === 'transaction' ? txDiscountValue : 0,
+  });
+  const txDiscountAmount = txCalc.discountAmount;
+  const grandTotal = discountMode === 'transaction' ? txCalc.grandTotal : itemsTotal;
   const totalDiscount = discountMode === 'line_item' ? lineDiscount : txDiscountAmount;
   const hasDiscount = discountMode === 'line_item';
 
@@ -2554,6 +2566,12 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
 
   react.useEffect(() => { load(); }, [load]);
 
+  /* And the record you are LOOKING at, not just the list behind it.
+     Reloading the list while EST-000103 is open on screen leaves the very
+     estimate whose approval just arrived showing the old status — the one case
+     where being stale is most obviously wrong. */
+  useSync('estimates', load);
+
   async function doAction(path, body) {
     setActionBusy(true);
     try {
@@ -2680,24 +2698,76 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
     slab.cgst = r2(Math.ceil(slab.gstTotal * 100 / 2) / 100);
     slab.sgst = r2(slab.gstTotal - slab.cgst);
   });
-  subtotalEx = r2(subtotalEx);
-  totalGst = r2(totalGst);
-  grandTotal = r2(grandTotal);
-  totalDiscount = r2(totalDiscount);
+  /* ── Transaction discount ────────────────────────────────────────────────
+     Recomputed here rather than subtracted from the total, because the
+     discount reduces the taxable value and the tax follows it down — and this
+     view prints the CGST/SGST split per rate slab, which has to be the SPLIT
+     OF THE DISCOUNTED tax or the two halves will not sum to the total beside
+     them.
 
-  // Apply transaction-level discount on top of items total
+     Rebuilt from the per-line results so a bill mixing 18% and 28% has each
+     slab reduced in proportion to its own share, not to a blended rate. */
   let txDiscountAmount = 0;
   if (detailDiscountMode === 'transaction' && detailTxDiscountValue > 0) {
-    if (detailTxDiscountType === 'percent') {
-      txDiscountAmount = r2(grandTotal * detailTxDiscountValue / 100);
-    } else {
-      txDiscountAmount = Math.min(detailTxDiscountValue, grandTotal);
-    }
-    grandTotal = r2(grandTotal - txDiscountAmount);
-  }
+    const calc = applyTransactionDiscount({
+      items: activeItems.map(it => {
+        const exRate = parseFloat(it.customer_rate ?? it.unit_rate) || 0;
+        const gstPct = parseFloat(it.gst_percent) || 0;
+        const preDiscountIncRate = exRate > 0 ? r2(exRate * (1 + gstPct / 100)) : 0;
+        const c = computeItem({ ...it, unit_rate: it.customer_rate ?? it.unit_rate, inc_rate: preDiscountIncRate });
+        return { amount: c.amount, gst_percent: gstPct };
+      }),
+      discountType:  detailTxDiscountType,
+      discountValue: detailTxDiscountValue,
+    });
 
-  // Rounding adjustment: difference between grand total and sum of components (should be 0.00 or ±0.01)
-  const roundingAdj = r2(grandTotal - subtotalEx - totalGst + txDiscountAmount);
+    txDiscountAmount = calc.discountAmount;
+    /* grossExGst, not subtotalExGst.
+       ────────────────────────────────────────────────────────────────────────
+       subtotalExGst is the value AFTER the discount — it is what actually gets
+       taxed, and it is the right number for the GST maths. It is the wrong
+       number to PRINT on a row that has a "Discount" row underneath it: the
+       reader subtracts the discount a second time and the column stops adding
+       up (761.18 − 84.58 + 137.02 = 813.62, next to a Grand Total of 898.20).
+
+       grossExGst is the same helper's pre-discount figure, and its own comment
+       says it exists "for the 'you saved' line". Printing it here makes the
+       column read exactly as it computes:
+           845.76 − 84.58 + 137.02 = 898.20
+       The totals themselves are untouched; only which of the two the subtotal
+       row displays has changed. */
+    subtotalEx = calc.grossExGst;
+    totalGst   = calc.totalGst;
+    grandTotal = calc.grandTotal;
+
+    // The slabs are rebuilt from the discounted lines, then re-split.
+    Object.keys(gstSlabMap).forEach(k => delete gstSlabMap[k]);
+    calc.lines.forEach(l => {
+      if (!l.rate) return;
+      const key = String(l.rate);
+      if (!gstSlabMap[key]) gstSlabMap[key] = { pct: l.rate, cgst: 0, sgst: 0, gstTotal: 0 };
+      gstSlabMap[key].gstTotal += l.gst;
+    });
+    Object.values(gstSlabMap).forEach(slab => {
+      slab.cgst = r2(Math.ceil(slab.gstTotal * 100 / 2) / 100);
+      slab.sgst = r2(slab.gstTotal - slab.cgst);
+    });
+  } else {
+    subtotalEx = r2(subtotalEx);
+    totalGst   = r2(totalGst);
+    grandTotal = r2(grandTotal);
+  }
+  totalDiscount = r2(totalDiscount);
+
+  /* Rounding adjustment: the gap between the printed total and the sum of the
+     printed components. Should be 0.00, or ±0.01 from per-line rounding.
+
+     `+ txDiscountAmount` was removed from this sum, and leaving it would have
+     been the loudest possible bug: the discount now lives INSIDE subtotalEx
+     rather than being subtracted after it, so adding it back made this equal
+     the whole discount — and the invoice would have printed a "Rounding ₹500"
+     line under the total. */
+  const roundingAdj = r2(grandTotal - subtotalEx - totalGst);
   // Sort slabs descending by rate (18% first, then 12%, 5%, etc.)
   const gstSlabs = Object.values(gstSlabMap).sort((a, b) => b.pct - a.pct);
 
@@ -3046,6 +3116,11 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                   ...(estimate.cc_category_name ? [
                     { label: 'CC Category', Icon: Gauge, value: `${estimate.cc_category_name}${estimate.engine_cc ? ` (${estimate.engine_cc} cc)` : ''}` },
                   ] : []),
+                  /* `!= null`, not a truthiness test: 0 km is a real reading on
+                     a new vehicle and would be dropped by `? :` on the value. */
+                  ...(estimate.odometer_km != null ? [
+                    { label: 'Odometer', Icon: Gauge, value: `${Number(estimate.odometer_km).toLocaleString('en-IN')} km` },
+                  ] : []),
                   { label: 'Est. No.', Icon: FileText, value: `EST-${String(estimate.id).padStart(6, '0')}`, mono: true },
                   {
                     label: 'Date',
@@ -3377,7 +3452,19 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
               </>
             )}
 
-            {['sent_to_customer', 'partially_approved', 'fully_approved', 'work_in_progress'].includes(status) && (
+            {/* ── Staff only ──────────────────────────────────────────────
+                This records what the CUSTOMER decided, and records it with no
+                provenance at all — no source, no timestamp, no user — unlike
+                the customer's own link, which stores all of that plus their IP.
+                So a hub ticking these boxes produced an approved estimate
+                indistinguishable from one the customer really approved, on the
+                document that authorises both the work and the bill.
+
+                The API refuses it for a hub session as well (403
+                CUSTOMER_DECISION_STAFF_ONLY); this is so the portal does not
+                offer a button that can only fail. The hub still submits the
+                estimate and still updates per-item work status. */}
+            {!isHubUser && ['sent_to_customer', 'partially_approved', 'fully_approved', 'work_in_progress'].includes(status) && (
               <button className="btn btn-primary" disabled={actionBusy}
                 onClick={() => setShowApproval(true)}>
                 Mark Customer Approval
@@ -3895,6 +3982,23 @@ export default function EstimatesPage() {
   }, [search, statusFilter, hubFilter, vehicleTypeFilter, page, pageSize, showToast, abortSignal]);
 
   react.useEffect(() => { fetchEstimates(); }, [fetchEstimates]);
+
+  /* ── The list keeps itself current ───────────────────────────────────────
+     This page subscribed to nothing, so an estimate approved by the customer
+     on their phone sat stale here until somebody reloaded — staff got the push
+     notification and then found the old status on screen, which reads as the
+     approval not having worked.
+
+     'estimates' is emitted by the customer's decision route, by the staff-side
+     customer-approval, and by warranty_claims (which has emitted it since it
+     was written, with nobody listening — so that path had this same bug
+     silently).
+
+     The payload carries no data on purpose: it says "this topic moved", and the
+     re-fetch is what reads the new state. A pushed row would have to arrive in
+     the shape of whatever filter and page the receiver happens to be on, which
+     the emitter cannot know. */
+  useSync('estimates', fetchEstimates);
 
   // Filters for the split-pane rail, built from the SAME values the table uses
   // so the two can never disagree about what is being listed.

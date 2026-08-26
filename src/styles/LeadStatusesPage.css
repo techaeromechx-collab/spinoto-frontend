@@ -186,3 +186,80 @@
   background: #e2e8f0;
   color: #475569;
 }
+
+/* The success counterpart to .ls-err, which has existed alone since this screen
+   was written — every save that had something worth saying said it in red or
+   said nothing.
+
+   Renaming a lost reason cascades to every lead carrying it, and "31 leads
+   updated" is precisely the thing somebody needs to see before they trust that
+   their data came along. */
+.ls-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #15803d;
+}
+
+[data-theme="dark"] .ls-ok {
+  background: #14311f;
+  border-color: #166534;
+  color: #86efac;
+}
+
+/* ── Panel chrome ────────────────────────────────────────────────────────────
+   .ls-panel and its three header classes have been used since the tabbed
+   layout was introduced and have never been DEFINED — Appointment Status,
+   Invoice Status and Call Outcomes have all been rendering an unstyled div
+   stack where the Lead Status tab gets a proper card, which is why those tabs
+   have always looked like a different screen.
+
+   Defined here rather than left alone because the two new tabs use the same
+   classes, and adding a third and fourth unstyled panel is not a fix. Matched
+   to .card in app.css, which is what the Lead Status tab wraps itself in. */
+.ls-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ls-panel-hd {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.ls-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ls-panel-desc {
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-width: 620px;
+}
+
+/* The table inside a panel scrolls on its own rather than widening the page —
+   the same rule .ls-table-scroll applies to the Lead Status table above. */
+.ls-panel .data-table {
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .ls-panel-hd { flex-direction: column; align-items: stretch; }
+  .ls-panel-hd .button { width: 100%; justify-content: center; }
+}
