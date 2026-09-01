@@ -1854,6 +1854,28 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
   const [vehLoading, setVehLoading] = useState(false);
   const [selectedVeh, setSelectedVeh] = useState(null);
   const [showAddVeh, setShowAddVeh] = useState(false);
+
+  /* ── Booking in somebody else's name ──────────────────────────────────────
+     Offered ONLY to people who can see every appointment. created_by is one of
+     the three things that make an appointment visible to a user WITHOUT
+     VIEW_APPOINTMENT, so an agent who books in a colleague's name gives away
+     the only claim they had on it and watches it vanish from their own list.
+     Someone who sees everything cannot lose it, so for them there is no trap.
+
+     The server enforces the same rule and 403s regardless of what the UI shows
+     — this only decides whether the control is worth putting on screen. */
+  const canPickCreator = useCan('VIEW_APPOINTMENT');
+  const [creatorList, setCreatorList] = useState([]);
+  const [createdBy, setCreatedBy] = useState('');   // '' = me, the default
+
+  useEffect(() => {
+    if (!canPickCreator) return;
+    let alive = true;
+    api('/api/users/assignable')
+      .then(r => { if (alive) setCreatorList(r.items || []); })
+      .catch(() => { /* the picker just stays empty — never blocks the booking */ });
+    return () => { alive = false; };
+  }, [canPickCreator]);
   const [newVeh, setNewVeh] = useState({
     vehicle_number: '', vehicle_type_id: '', make_id: '', model_id: '',
     body_type_id: '', segment_ids: [], cc_category_id: '',
@@ -2301,6 +2323,9 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
     setSaving(true); setError('');
     try {
       const payload = {
+        // Omitted entirely when blank — the server then keeps its default of
+        // req.user.id, and no permission check is triggered at all.
+        ...(createdBy ? { created_by: Number(createdBy) } : {}),
         customer_name: selectedCust.customer_name,
         mobile: selectedCust.mobile,
         whatsapp: selectedCust.whatsapp || null,
@@ -2420,6 +2445,29 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
                       />
                     </div>
                   </div>
+
+                  {/* Who this appointment is booked FOR. Blank = the person
+                      filling the form in, which is what it always was. */}
+                  {canPickCreator && creatorList.length > 0 && (
+                    <div>
+                      <label className="ca-lbl">Created By</label>
+                      <select
+                        className="ca-input"
+                        value={createdBy}
+                        onChange={e => setCreatedBy(e.target.value)}
+                      >
+                        <option value="">Me ({authUser?.name || 'current user'})</option>
+                        {creatorList
+                          .filter(u => String(u.id) !== String(authUser?.id))
+                          .map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                        {createdBy
+                          ? 'This appointment will be filed under them, and assigned to them.'
+                          : 'Filed under you. Pick someone else to book it in their name.'}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Search results */}
                   {custLoading && <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>Searching…</div>}
@@ -2902,6 +2950,36 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
+/* The four sources, and what each is called on screen.
+   Keyed on exactly the strings the API's CASE expression emits — see
+   APPT_SELECT in appointments.controller.js. Anything unrecognised falls back
+   to a neutral dash rather than rendering the raw key, so a value added on the
+   server before this map is updated degrades quietly instead of leaking
+   'warranty_redo' into the UI. */
+const APPT_SOURCE = {
+  lead:          { label: 'Converted from Lead', short: 'Lead',     bg: '#eff6ff', color: '#1e40af', border: '#bfdbfe' },
+  direct:        { label: 'Direct Appointment',  short: 'Direct',   bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
+  booking:       { label: 'Online Booking',      short: 'Booking',  bg: '#f0fdf4', color: '#166534', border: '#bbf7d0' },
+  warranty_redo: { label: 'Warranty Redo',       short: 'Warranty', bg: '#fef3c7', color: '#92400e', border: '#fde68a' },
+};
+
+function SourceBadge({ type }) {
+  const s = APPT_SOURCE[type];
+  if (!s) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+  return (
+    <span
+      title={s.label}
+      style={{
+        display: 'inline-block', whiteSpace: 'nowrap',
+        fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+        background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+      }}
+    >
+      {s.short}
+    </span>
+  );
+}
+
 export default function AppointmentsPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -3003,14 +3081,15 @@ export default function AppointmentsPage() {
      editable on the Vehicles page, and a filter that matched on "Two-Wheeler"
      would quietly stop matching the day somebody shortened it to "2W". */
   const [filterVType, setFilterVType] = useState(ls.filterVType ?? '');
+  const [filterSource, setFilterSource] = useState(ls.filterSource ?? '');
   const [page, setPage] = useState(ls.page ?? 1);
   const [pageSize, setPageSize] = useState(ls.pageSize ?? 10);
 
   // Persist whenever any of these change
   useEffect(() => {
     // searchInput, not search: restore the box exactly as they left it, even mid-word.
-    writeListState('sp_appointments_list_v1', { search: searchInput, page, pageSize, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType });
-  }, [page, pageSize, searchInput, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType]);
+    writeListState('sp_appointments_list_v1', { search: searchInput, page, pageSize, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource });
+  }, [page, pageSize, searchInput, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource]);
 
   useListScrollRestore('sp_appointments_list_v1', !loading);
 
@@ -3061,7 +3140,7 @@ export default function AppointmentsPage() {
   };
 
   const hiddenFilterCount =
-    (filterCreatedBy ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0) + (filterVType ? 1 : 0);
+    (filterCreatedBy ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0) + (filterVType ? 1 : 0) + (filterSource ? 1 : 0);
 
   // Starts CLOSED. `true` was right when this drove a filter ROW that expanded
   // in place; it now drives the funnel popover, and a popover open on arrival
@@ -3102,6 +3181,7 @@ export default function AppointmentsPage() {
       if (dateTo) qs.set('date_to', dateTo);
       if (filterCreatedBy) qs.set('created_by_id', filterCreatedBy);
       if (filterVType) qs.set('vehicle_type_id', filterVType);
+      if (filterSource) qs.set('source', filterSource);
       const r = await api(`/api/appointments?${qs}`);
       setAppts(r.items || []);
       setTotal(r.total || 0);
@@ -3110,7 +3190,7 @@ export default function AppointmentsPage() {
       setStatusCounts(counts);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, page, pageSize]);
+  }, [search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -3448,6 +3528,25 @@ export default function AppointmentsPage() {
                   </select>
                 </div>
 
+                {/* Source. A fixed list, unlike Vehicle type above: these four
+                    are creation PATHS in the code, not master data somebody can
+                    add to, so the options are the same everywhere and hardcoding
+                    them here cannot fall out of step with a table. */}
+                <div>
+                  <label className="lb-pop-label" htmlFor="lb-appt-source">Source</label>
+                  <select
+                    id="lb-appt-source"
+                    className="lb-control"
+                    value={filterSource}
+                    onChange={e => { setFilterSource(e.target.value); setPage(1); }}
+                  >
+                    <option value="">All sources</option>
+                    {Object.entries(APPT_SOURCE).map(([k, s]) => (
+                      <option key={k} value={k}>{s.label}</option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Vehicle type. Options come from Master Data rather than a
                     hardcoded 2W/4W pair, so a workshop that adds Commercial —
                     or renames either of the two — gets a filter that still
@@ -3593,6 +3692,7 @@ export default function AppointmentsPage() {
                 <th>Customer</th>
                 <th>Vehicle</th>
                 <th>Hub</th>
+                <th>Source</th>
                 <th>Schedule</th>
                 <th>Totals</th>
                 <th>Status</th>
@@ -3602,19 +3702,19 @@ export default function AppointmentsPage() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 7 }).map((_, j) => (
+                    {Array.from({ length: 8 }).map((_, j) => (
                       <td key={j}><div className="appt-skel" /></td>
                     ))}
                   </tr>
                 ))
               ) : appts.length === 0 ? (
                 <tr>
-                  <td colSpan="7">
+                  <td colSpan="8">
                     <div className="appt-empty">
                       <Calendar size={36} style={{ opacity: .2, marginBottom: 10 }} />
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>No appointments found</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo || filterCreatedBy || filterVType
+                        {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo || filterCreatedBy || filterVType || filterSource
                           ? 'Try adjusting your filters.'
                           : 'Appointments appear here when leads are converted.'}
                       </div>
@@ -3699,6 +3799,10 @@ export default function AppointmentsPage() {
                         </div>
                       )}
                     </td>
+                    {/* Where it came from. source_type is derived server-side
+                        from lead_id / booking_source / is_warranty_redo — see
+                        the CASE in APPT_SELECT. */}
+                    <td><SourceBadge type={a.source_type} /></td>
                     <td>
                       {/* ── Hub portal: the word, not the date ──
                           A hub works a bench, not a calendar. "Today" answers

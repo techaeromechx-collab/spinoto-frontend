@@ -863,6 +863,13 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                     <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{inv.cc_category_name}{inv.engine_cc ? ` (${inv.engine_cc} cc)` : ''}</span>
                   </div>
                 )}
+                {/* `!= null`: 0 km is a real reading on a new vehicle. */}
+                {inv.odometer_km != null && (
+                  <div style={{ display: 'flex' }}>
+                    <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500, width: 90, flexShrink: 0 }}>Odometer</span>
+                    <span style={{ fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{Number(inv.odometer_km).toLocaleString('en-IN')} km</span>
+                  </div>
+                )}
                 {[
                   { label: 'Invoice No.', value: docNumber(inv, isHubUser) },
                   { label: 'Date', value: fmtDate(inv.invoice_date || inv.created_at) },

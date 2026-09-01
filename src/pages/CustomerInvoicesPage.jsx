@@ -34,6 +34,8 @@ import {
   ShieldCheck,
   // Send the invoice to the customer on WhatsApp.
   MessageCircle,
+  // Odometer reading, matching the estimate drawer's choice of icon.
+  Gauge,
 } from 'lucide-react';
 
 /**
@@ -1305,6 +1307,21 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                     <Layers size={14} aria-hidden="true" />
                     <span className="ci-doc-il-lbl">Body Type</span>
                     <span className="ci-doc-il-v">{inv.body_type_name}{inv.segment_names ? ` (${inv.segment_names})` : ''}</span>
+                  </div>
+                )}
+                {/* `!= null`, not a truthiness test: 0 km is a real reading on a
+                    brand-new vehicle, and `inv.odometer_km &&` would drop it.
+                    Same guard the estimate drawer and the PDF adapter use.
+
+                    The value has been in the API response all along
+                    (customer_invoices.controller.js selects ci.odometer_km) and
+                    on the printed invoice — this screen was the one place that
+                    never read it. */}
+                {inv.odometer_km != null && (
+                  <div className="ci-doc-il" title="Odometer reading" aria-label="Odometer reading">
+                    <Gauge size={14} aria-hidden="true" />
+                    <span className="ci-doc-il-lbl">Odometer</span>
+                    <span className="ci-doc-il-v">{Number(inv.odometer_km).toLocaleString('en-IN')} km</span>
                   </div>
                 )}
 
