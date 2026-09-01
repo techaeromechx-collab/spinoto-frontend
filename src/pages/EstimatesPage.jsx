@@ -2539,14 +2539,28 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   const [showDeleteConfirm, setShowDeleteConfirm] = react.useState(false);
   const [deleting, setDeleting] = react.useState(false);
 
-  const load = react.useCallback(async () => {
-    setLoading(true);
+  /* background: this fetch is a REFRESH of an estimate already on screen, so
+     do not put the spinner over it.
+
+     `loading` replaces the entire drawer. That is right on first open, when
+     there is nothing behind it. It is wrong for a refresh triggered by
+     something other than the user — a colleague's edit arriving over the
+     socket — where the record on screen is still the best answer available
+     until the new one lands. Blanking it there is the flicker, not the fix.
+
+     estimateRef rather than the `estimate` value: this callback is memoised on
+     [estimateId, showToast], so reading `estimate` from its closure would give
+     the value from whenever it was last built, not the current one. */
+  const estimateRef = react.useRef(null);
+  const load = react.useCallback(async ({ background = false } = {}) => {
+    if (!background || !estimateRef.current) setLoading(true);
     try {
       const [res, co] = await Promise.all([
         api(`/api/estimates/${estimateId}`),
         api('/api/settings/company').catch(() => null),
       ]);
       const loaded = res.item || res.estimate || res;
+      estimateRef.current = loaded;
       setEstimate(loaded);
       onLoaded?.(loaded);
       if (co) setCompany(co);
@@ -2570,7 +2584,11 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
      Reloading the list while EST-000103 is open on screen leaves the very
      estimate whose approval just arrived showing the old status — the one case
      where being stale is most obviously wrong. */
-  useSync('estimates', load);
+  /* Background: this only ever fires for somebody ELSE's change now — the
+     backend leaves the tab that made a change out of the broadcast — so there
+     is always a record on screen, and it should update under the reader rather
+     than blank on them mid-sentence. */
+  useSync('estimates', react.useCallback(() => load({ background: true }), [load]));
 
   async function doAction(path, body) {
     setActionBusy(true);
@@ -2606,6 +2624,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
         body: { work_status: newStatus },
       });
       // Update local drawer state immediately — no reload needed
+      estimateRef.current = res.item;
       setEstimate(res.item);
       // Notify parent list to sync its shallow copy
       onUpdated && onUpdated(res.item);
@@ -3956,8 +3975,21 @@ export default function EstimatesPage() {
       .catch(() => setHubsLoaded(true));
   }, []);
 
+  /* The last query this list actually ran, so a refresh can tell itself apart
+     from a new search.
+
+     `loading` blanks the table — it swaps every row for "Loading estimates…".
+     That is right when the answer is about to be a DIFFERENT set of rows (a
+     new filter, a new page): the rows on screen are about to be wrong, and
+     showing them a moment longer is showing a lie.
+
+     It is wrong when the query has not moved and this is just a refresh — a
+     socket event, or the refetch after a delete. There the rows on screen are
+     still the best answer available, and blanking them is the flicker rather
+     than a fix for it. Same distinction the Leads page draws with keepRows. */
+  const lastQueryRef = react.useRef(null);
+
   const fetchEstimates = react.useCallback(async () => {
-    setLoading(true);
     try {
       const q = new URLSearchParams();
       if (search) q.set('search', search);
@@ -3966,6 +3998,12 @@ export default function EstimatesPage() {
       if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
       q.set('page', String(page));
       q.set('limit', String(pageSize));
+
+      // null on the very first run, so the first load still gets its skeleton.
+      const sameQuery = lastQueryRef.current === q.toString();
+      lastQueryRef.current = q.toString();
+      if (!sameQuery) setLoading(true);
+
       const res = await api(`/api/estimates?${q.toString()}`, { signal: abortSignal() });
       setEstimates(res.items || []);
       setTotal(res.total ?? (res.items || []).length);
@@ -4032,14 +4070,37 @@ export default function EstimatesPage() {
     }
   }
 
-  // Work status changes are now handled inside DetailDrawer directly.
-  // The drawer calls onUpdated(updatedItem) to sync the list here.
+  /* The drawer calls this two ways, and they are not the same question.
+     ── WITH a row (work status, approve, edit) ────────────────────────────
+     One estimate changed and the server has already handed back the new
+     version — the PATCH response IS the update. Writing it into the list is
+     the whole job.
+
+     This used to call fetchEstimates() as well, and that refetch was the
+     "page refresh" people saw on every single Done click: fetchEstimates
+     starts with setLoading(true), which replaces the table with "Loading
+     estimates…". Ten line items meant ten full round trips and ten flashes,
+     to arrive at the state the setEstimates below had already produced
+     locally, instantly, from data the server had just sent.
+
+     ── WITHOUT a row (delete, and the two callers at the drawer's foot) ───
+     The SET of estimates changed, not one row in it. Nothing local can know
+     what the list should now contain — which row vanished, what moves up from
+     the next page, what the totals are. That genuinely needs the server.
+
+     The rule, and it is worth keeping: a mutation that RETURNS the changed
+     entity updates state with it; a mutation that changes WHICH entities exist
+     refetches. Never both. */
   function handleDrawerUpdated(updatedItem) {
-    fetchEstimates();
     if (updatedItem?.id) {
+      // Spread the whole row, not a hand-picked pair. The old version copied
+      // status and grand_total only, so a work-status change left the list's
+      // own copy of the item stale in every other column.
       setEstimates(prev => prev.map(e =>
-        e.id === updatedItem.id ? { ...e, status: updatedItem.status, grand_total: updatedItem.grand_total } : e
+        e.id === updatedItem.id ? { ...e, ...updatedItem } : e
       ));
+    } else {
+      fetchEstimates();
     }
   }
 

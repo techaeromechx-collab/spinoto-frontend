@@ -758,6 +758,11 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   const subtotal = hasDiscount ? r2(storedSubtotalExGst + totalDiscount) : storedSubtotalExGst;
   const totalGst = parseFloat(inv?.total_gst ?? 0);
   const grandTotal = parseFloat(inv?.grand_total ?? 0);
+  /* Signed, and ALREADY inside grand_total — shown as its own row so the column
+     still adds up, never added to anything. 0 on every invoice raised before
+     the cutoff in backend/src/utils/invoiceRounding.js, and the row is hidden
+     at 0 so those invoices look exactly as they always did. */
+  const roundOff = parseFloat(inv?.round_off ?? 0);
 
   // Dynamic GST slab grouping
   const gstSlabMap = {};
@@ -1394,6 +1399,13 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                     </div>
                   );
                 })}
+
+                {Math.abs(roundOff) > 0.001 && (
+                  <div className="ci-doc-sumrow">
+                    <span>Round Off</span>
+                    <b>{roundOff < 0 ? `−${fmt(Math.abs(roundOff))}` : fmt(roundOff)}</b>
+                  </div>
+                )}
 
                 <div className="ci-doc-sumrule" />
 

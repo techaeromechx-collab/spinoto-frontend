@@ -84,6 +84,50 @@ const batchIsBankTransfer = e => (e?.payments || []).some(isBankTransfer);
 const fmt = n => n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 const fmtDate = d => !d ? '—' : new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 const fmtDateTime = d => !d ? '—' : new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+// "Tue 1 Sep" — the payout run's own label, short enough to sit above a figure.
+const fmtRunDate = d => !d ? '—' : new Date(d).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+
+/**
+ * The next payout run.
+ *
+ * Payouts go out weekly, on a Tuesday — backend/src/utils/payoutSchedule.js sets
+ * every due date to a Tuesday and nothing else can produce one. So "this week"
+ * for a payout means "the next Tuesday run". It is NOT a rolling 7 days, and it
+ * is NOT a Mon–Sun calendar week: both of those would put a due date on one side
+ * of the line and the run that pays it on the other.
+ *
+ * On or AFTER today, not strictly after. On a Tuesday the run happening THAT DAY
+ * is the one being counted; rolling to the following week would blank the figure
+ * on the single day of the week it matters most.
+ */
+function nextPayoutTuesday(from = new Date()) {
+  const d = new Date(from);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + ((2 - d.getDay() + 7) % 7)); // 2 = Tuesday
+  return d;
+}
+
+/**
+ * What actually leaves the bank at that run: every unsettled balance whose due
+ * date is on or before it.
+ *
+ * ON OR BEFORE, so overdue invoices are INCLUDED. An invoice that was due three
+ * Tuesdays ago is still paid at the next run — it does not get its own separate
+ * event — so a figure that counted only the coming Tuesday's due dates would
+ * read calm while the money owed was already late. That is the same failure the
+ * plain "Total Due" had, in the other direction.
+ *
+ * A NULL due date is excluded on purpose: it means the customer has not paid yet,
+ * so there is nothing to pay the hub and no run it belongs to.
+ */
+function dueByRun(invoices, runDate) {
+  return invoices.reduce((sum, pi) => {
+    if (isSettled(pi.payment_status)) return sum;
+    if (!pi.payout_due_date) return sum;
+    if (new Date(pi.payout_due_date) > runDate) return sum;
+    return sum + (parseFloat(pi.grand_total) - parseFloat(pi.amount_paid || 0));
+  }, 0);
+}
 
 const PSTATUS = {
   pending:        { bg: '#f1f5f9', color: '#64748b', label: 'Unpaid'    },
@@ -1451,6 +1495,14 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
   const totalDue   = invoices.reduce((s,pi)=>s+parseFloat(pi.grand_total)-parseFloat(pi.amount_paid||0), 0);
   const unpaid     = invoices.filter(pi=>pi.payment_status!=='paid').length;
 
+  // The headline figure is the NEXT RUN, not the lifetime total. "Total Due"
+  // answers "what does this hub have outstanding, ever" — a number that cannot
+  // be acted on, because most of it is not payable yet (the customer has not
+  // paid) or not due yet. What the person on this screen is deciding is what to
+  // transfer on Tuesday, so that is what the big number says now.
+  const payoutRun  = useMemo(() => nextPayoutTuesday(), []);
+  const dueThisRun = dueByRun(invoices, payoutRun);
+
   useEffect(()=>{ setPage(1); setTab('invoices'); setSelected(new Set()); }, [hubName]);
 
   const unpaidInvoices   = sorted.filter(pi => !isSettled(pi.payment_status));
@@ -1481,9 +1533,21 @@ function InvoicePanel({ hubName, hubId, invoices, onPay, onViewPayments, onBulkS
             {unpaid>0 && <> · <span style={{ color:'#ef4444', fontWeight:600 }}>{unpaid} Unpaid</span></>}
           </div>
         </div>
-        <div style={{ textAlign:'right' }}>
-          <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Total Due</div>
-          <div style={{ fontSize:18, fontWeight:800, color:totalDue>0.01?'#ef4444':'#16a34a' }}>{fmt(totalDue)}</div>
+        <div
+          style={{ textAlign:'right' }}
+          title={`Payouts run every Tuesday. This is every unpaid balance due on or before ${fmtRunDate(payoutRun)}, including anything already overdue — it is all paid at the same run.`}
+        >
+          <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>
+            Pay by {fmtRunDate(payoutRun)}
+          </div>
+          <div style={{ fontSize:18, fontWeight:800, color:dueThisRun>0.01?'#ef4444':'#16a34a' }}>{fmt(dueThisRun)}</div>
+          {/* Only when it says something the figure above does not. Repeating the
+              same number under a second label reads as a bug. */}
+          {totalDue > dueThisRun + 0.01 && (
+            <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:3 }}>
+              Total due {fmt(totalDue)}
+            </div>
+          )}
         </div>
       </div>
 

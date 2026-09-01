@@ -536,6 +536,11 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
   const subtotal = items.reduce((s, it) => s + (parseFloat(it.hub_rate ?? 0) * parseFloat(it.quantity ?? 1)), 0);
   const totalGst = items.reduce((s, it) => s + parseFloat(it.gst_amount ?? 0), 0);
   const grandTotal = parseFloat(inv?.grand_total ?? (subtotal + totalGst));
+  /* Signed, and ALREADY inside grand_total — shown as its own row so the column
+     still adds up, never added to anything. 0 on every invoice raised before
+     the cutoff in backend/src/utils/invoiceRounding.js, and the row is hidden
+     at 0 so those invoices look exactly as they always did. */
+  const roundOff = parseFloat(inv?.round_off ?? 0);
   const paid = parseFloat(inv?.amount_paid ?? 0);
   const balance = Math.max(0, grandTotal - paid);
 
@@ -1062,6 +1067,16 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Round Off — only when the invoice was actually rounded. */}
+              {Math.abs(roundOff) > 0.001 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#6b7280', padding: '5px 0', borderBottom: '1px solid #f3f4f6' }}>
+                  <span>Round Off</span>
+                  <span style={{ fontWeight: 600, color: '#374151', minWidth: 110, textAlign: 'right' }}>
+                    {roundOff < 0 ? `−${fmt(Math.abs(roundOff))}` : fmt(roundOff)}
+                  </span>
                 </div>
               )}
 

@@ -1,3 +1,5 @@
+import socket from '../lib/socket';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'spinoto.token';
 
@@ -33,6 +35,18 @@ export async function api(path, { method = 'GET', body, auth = true, headers = {
     const token = getToken();
     if (token) opts.headers.Authorization = `Bearer ${token}`;
   }
+
+  /* Which tab is asking.
+     The backend broadcasts `invalidate { topic }` after a write so other
+     screens re-fetch. That broadcast used to include the tab that CAUSED it,
+     so the person clicking got told about their own edit and every listening
+     view re-fetched — on the Estimates page the list and the open drawer both,
+     the drawer blanking behind its loading state on every single click.
+     Sending the socket id lets the server leave this tab out (see
+     backend src/socket.js emitInvalidate).
+     Guarded: socket.id is undefined until the connection is up, and the login
+     request itself runs before connect() is ever called. */
+  if (socket.id) opts.headers['X-Socket-Id'] = socket.id;
   if (body !== undefined) opts.body = JSON.stringify(body);
 
   const res = await fetch(`${API_URL}${path}`, opts);

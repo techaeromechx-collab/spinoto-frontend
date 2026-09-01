@@ -4281,6 +4281,12 @@ export default function LeadsPage() {
     leadsCache.current.clear();
   }, []);
 
+  // Manual reload. Bulk actions patch their rows in place and deliberately do
+  // NOT refetch — a row vanishing from under the person who just acted on it
+  // is worse than a stale one, because they never get to see what they did.
+  // This button is how the list catches up, when they say so.
+  const [reloading, setReloading] = useState(false);
+
   const applyLeadsResponse = useCallback((r) => {
     setLeads(r.items || []);
     setTotal(r.total ?? 0);
@@ -4291,7 +4297,16 @@ export default function LeadsPage() {
     setLeadsScope(r.scope || 'all');
   }, []);
 
-  const loadLeads = useCallback(async () => {
+  /* keepRows: this fetch is a MANUAL reload over rows the user is already
+     looking at, so do not put the skeleton over them.
+
+     The cache normally answers that question — a cached page means we have
+     something to paint. But every bulk action clears the cache, which is
+     exactly the moment the reload button gets pressed, so on that press there
+     is nothing cached and the default path would blank a table the user is
+     mid-sentence about. The rows stay; they update in place when the response
+     lands, and the button's spinner is what says work is happening. */
+  const loadLeads = useCallback(async ({ keepRows = false } = {}) => {
     {
       const qs = new URLSearchParams();
       qs.set('page', String(page));
@@ -4325,7 +4340,7 @@ export default function LeadsPage() {
       if (cached) {
         applyLeadsResponse(cached);
         setLoading(false);
-      } else {
+      } else if (!keepRows) {
         setLoading(true);
       }
 
@@ -4367,6 +4382,15 @@ export default function LeadsPage() {
   }, [page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
       dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource,
       sourceChip, ownerChip, applyLeadsResponse]);
+
+  /* Not wrapped in useCallback: it is passed to exactly one onClick and
+     nothing depends on its identity. */
+  async function handleReload() {
+    if (reloading) return;              // a second click during a fetch is a no-op
+    setReloading(true);
+    try { await loadLeads({ keepRows: true }); }
+    finally { setReloading(false); }
+  }
 
   useEffect(() => { loadLeads(); }, [loadLeads]);
   /* A new lead invalidates every cached page — it shifts every row after it by
@@ -5324,6 +5348,20 @@ export default function LeadsPage() {
               <SlidersHorizontal size={14} />
               Filters
               {advCount > 0 && <span className="lp-adv-count">{advCount}</span>}
+            </button>
+
+            {/* Refetches the current page with the current filters. Sits beside
+                Filters because that is where the person is when a bulk action
+                has just made the list disagree with the filter above it. */}
+            <button
+              type="button"
+              className={`lp-reload-btn${reloading ? ' lp-reload-btn--busy' : ''}`}
+              onClick={handleReload}
+              disabled={reloading}
+              title="Reload list"
+              aria-label="Reload list"
+            >
+              <RefreshCw size={14} />
             </button>
 
             {advCount > 0 && (

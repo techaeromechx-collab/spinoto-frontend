@@ -6550,3 +6550,70 @@
     font-size: 15px;
   }
 }
+
+/* ── Reload button ────────────────────────────────────────────────────────
+   Sits beside Filters. Square, because it is an icon and a pill around a
+   single glyph reads as a lozenge with a stray mark in it — the shape below
+   matches the Filters button's height and border so the pair still line up.
+
+   Bulk actions patch rows in place and never refetch; this is how the list
+   catches up when the person says so. */
+.lp-reload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 9px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.lp-reload-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Disabled only ever means "a fetch is in flight", and the spinner already
+   says that — so this stays legible rather than greying out to nothing. */
+.lp-reload-btn:disabled {
+  cursor: default;
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.lp-reload-btn--busy svg {
+  animation: lp-reload-spin 0.7s linear infinite;
+}
+
+@keyframes lp-reload-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Respect a system-level request for less motion: the button still shows it
+   is working, by holding the active colour, without the spin. */
+@media (prefers-reduced-motion: reduce) {
+  .lp-reload-btn--busy svg { animation: none; }
+}
+
+/* The pill-shaped toolbar variant, matching the compound selector the other
+   controls use — same specificity (0,2,0), same 36px height. */
+.leads-page.lb-page .lp-reload-btn {
+  width: 36px;
+  height: 36px;
+  border-width: 1px;
+  border-radius: 999px;
+  background: var(--bg);
+  box-sizing: border-box;
+}
+
+.leads-page.lb-page .lp-reload-btn:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
