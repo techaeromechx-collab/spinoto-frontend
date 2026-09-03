@@ -1123,8 +1123,26 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Raised from 680px when the Payment column was added — 860 first, which was
+   not enough, and then this.
+
+   680 was the floor for NINE columns. A tenth arrived and the auto table
+   layout took the room out of the narrowest ones, so "26 Aug 2026" became
+   "26 Aug / 2026" and "CI-000078" broke at its hyphen into "CI- / 000078".
+   The real cure for that is `white-space: nowrap` on those cells (see
+   CustomerInvoicesPage.jsx): a nowrap cell reports its full text as its own
+   minimum width, so the column cannot be compressed below it and the table
+   widens instead. This number is the backstop underneath that.
+
+   Where the sideways scroll happens is NOT here. `.ci-table-wrap` carries
+   `lb-scroll-x` inside `.lb-list`, and listLayout.css deliberately sets that
+   combination to `overflow: visible` — a sticky <th> binds to its nearest
+   SCROLLING ancestor, so giving this wrapper an overflow would silently unstick
+   the header on this page. The scrolling is done by `.page-scroll`, which is
+   already the vertical scroller and computes to `auto` on the horizontal axis.
+   A min-width on the table is what hands it something to scroll. */
 .ci-table {
-  min-width: 680px;
+  min-width: 1150px;
 }
 
 .ci-items-table {

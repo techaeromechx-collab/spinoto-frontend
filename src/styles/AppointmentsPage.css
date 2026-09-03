@@ -2022,8 +2022,23 @@
   font-weight: 600;
 }
 
-.appt-today-chip--on,
-.appt-today-chip--on:hover {
+/* `.appt-page button…` rather than a bare `.appt-today-chip--on`, and the extra
+   weight is load-bearing.
+
+   listLayout.css declares the base control as
+   `.lb-control, select.lb-control, input.lb-control, button.lb-control`. That
+   last selector is (0,1,1) and a <button> matches it, so a plain
+   `.appt-today-chip--on` at (0,1,0) LOST — whatever the import order. The
+   result: pressing Today (or Tomorrow) filtered the list correctly but the chip
+   never lit up, so nothing on screen said the list was filtered. Verified in a
+   browser, not reasoned about: computed background was rgb(255,255,255).
+
+   `.appt-page button.appt-today-chip--on` is (0,2,1) and wins outright. The
+   element qualifiers in the base rule are there to beat the browser's own
+   styling of form controls, so they are not going away; anything overriding
+   `.lb-control` on a real <button> has to clear the same bar. */
+.appt-page button.appt-today-chip--on,
+.appt-page button.appt-today-chip--on:hover {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
@@ -2031,6 +2046,6 @@
 
 /* The default control's focus ring is drawn against the page background and
    disappears on a filled chip. */
-.appt-today-chip--on:focus-visible {
+.appt-page button.appt-today-chip--on:focus-visible {
   box-shadow: 0 0 0 3px rgba(22, 185, 148, 0.35);
 }

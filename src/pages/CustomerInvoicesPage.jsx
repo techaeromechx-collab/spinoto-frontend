@@ -197,6 +197,59 @@ function StatusBadge({ status }) {
   );
 }
 
+/* ── The list's Payment cell ─────────────────────────────────────────────────
+   The LATEST payment, plus a count of the ones behind it.
+
+   Not every payment stacked: a three-instalment invoice would make its row
+   three times the height of its neighbours, and on a 25-row page that is what
+   stops a table being scannable. The full history already exists one click
+   away, in the drawer's payments table — this column says when money last
+   arrived, how, and whether there is more to look at.
+
+   The amount is deliberately absent. `Paid` sits immediately to the left with
+   the total; printing one instalment beside it invites reading the two as the
+   same number. */
+function PaymentCell({ inv }) {
+  if (!inv.last_payment_date) {
+    return <span style={{ color: 'var(--text-muted)', opacity: 0.5 }}>—</span>;
+  }
+  // payment_count rides along in CI_SELECT; the row being shown is one of them.
+  const more = Math.max(0, Number(inv.payment_count || 0) - 1);
+  return (
+    <div style={{ whiteSpace: 'nowrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontWeight: 600, fontSize: 12.5 }}>{fmtDate(inv.last_payment_date)}</span>
+        {more > 0 && (
+          <span
+            title={`${more + 1} payments on this invoice — open it to see them all`}
+            style={{
+              fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
+              background: '#f1f5f9', color: '#475569',
+            }}
+          >
+            +{more} more
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}>
+        <MethodBadge method={inv.last_payment_method} />
+        {/* Money taken BEFORE this invoice existed and applied to it later, so
+            its date can legitimately be older than the invoice's own. Without
+            the tag that reads as bad data rather than as an advance. */}
+        {inv.last_payment_is_advance && (
+          <span style={{
+            fontSize: 9, fontWeight: 800, letterSpacing: '.02em',
+            padding: '1px 5px', borderRadius: 4,
+            background: '#fef3c7', color: '#92400e',
+          }}>
+            ADVANCE
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MethodBadge({ method }) {
   const m = METHOD_META[method] || METHOD_META.other;
   return (
@@ -2947,6 +3000,9 @@ export default function CustomerInvoicesPage() {
                       <th>Hub</th>
                       <th style={{ textAlign: 'right' }}>Grand Total</th>
                       <th style={{ textAlign: 'right' }}>Paid</th>
+                      {/* Next to Paid, because it explains the number beside
+                          it: when that money last arrived and how. */}
+                      <th>Payment</th>
                       <th style={{ textAlign: 'right' }}>Balance</th>
                       <th>Status</th>
                     </tr>
@@ -2966,7 +3022,24 @@ export default function CustomerInvoicesPage() {
                               </div>
                             )}
                           </td>
-                          <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                          {/* nowrap on BOTH lines.
+
+                              "26 Aug 2026" has two spaces to break at and
+                              "CI-000078" has a hyphen, which CSS treats as a
+                              legal break point — so a squeezed column split
+                              them into four lines:
+                                  26 Aug / 2026 / CI- / 000078
+                              An invoice number broken across two lines is not
+                              a cosmetic problem; it is unreadable and
+                              un-copyable.
+
+                              This is also what stops the squeeze in the first
+                              place: a nowrap cell reports its full text as its
+                              minimum width, so the auto table layout has to
+                              give the column that much and widen the table
+                              instead of compressing it. .page-scroll then
+                              scrolls sideways. */}
+                          <td style={{ fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                             <div>{fmtDate(invoiceDate(inv))}</div>
                             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', marginTop: 2 }}>
                               CI-{String(inv.id).padStart(6, '0')}
@@ -2987,7 +3060,26 @@ export default function CustomerInvoicesPage() {
                             >
                               <div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ fontWeight: 600, fontSize: 13 }} className="ci-cust-name">
+                                  {/* nowrap + ellipsis rather than plain nowrap.
+
+                                      A name is free text: "Raj Whatstapp" wants
+                                      one line, but a B2B company name can be
+                                      sixty characters, and an unbounded nowrap
+                                      would let that one row push the whole
+                                      table 400px wider for everybody. Capped at
+                                      200px, which clears a normal name without
+                                      truncating; the full value stays in the
+                                      title, and the invoice itself is one click
+                                      away. */}
+                                  <span
+                                    style={{
+                                      fontWeight: 600, fontSize: 13,
+                                      whiteSpace: 'nowrap', overflow: 'hidden',
+                                      textOverflow: 'ellipsis', maxWidth: 200,
+                                    }}
+                                    className="ci-cust-name"
+                                    title={inv.is_b2b ? (inv.b2b_company_name || inv.customer_name || '') : (inv.customer_name || '')}
+                                  >
                                     {inv.is_b2b ? (inv.b2b_company_name || inv.customer_name || '—') : (inv.customer_name || '—')}
                                   </span>
                                   {inv.is_b2b && (
@@ -3041,9 +3133,15 @@ export default function CustomerInvoicesPage() {
                               )}
                             </div>
                           </td>
-                          <td style={{ fontSize: 12 }}>{inv.hub_full_name || inv.hub_name || inv.hub?.name || '—'}</td>
+                          {/* Same reason as the date: "QuickFix Auto Hub" was
+                              breaking into two lines on a squeezed column,
+                              which made every row a different height. Hub names
+                              are short and fixed — there is nothing to gain
+                              from letting them wrap. */}
+                          <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{inv.hub_full_name || inv.hub_name || inv.hub?.name || '—'}</td>
                           <td style={{ textAlign: 'right', fontWeight: 350, fontSize: 13 }}>{fmt(gt)}</td>
                           <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 300 }}>{fmt(pd)}</td>
+                          <td><PaymentCell inv={inv} /></td>
                           <td style={{
                             textAlign: 'right', fontWeight: 350, fontSize: 13,
                             color: bal > 0.001 ? '#dc2626' : '#6b7280',

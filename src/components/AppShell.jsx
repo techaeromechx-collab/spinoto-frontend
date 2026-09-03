@@ -215,6 +215,10 @@ const NAV_ITEMS = [
   { label: 'Workshops',    to: '/workshops',    permissions: ['VIEW_WORKSHOP','CREATE_WORKSHOP','EDIT_WORKSHOP','MANAGE_HUBS'], icon: Store, section: 'WORKFLOW' },
   { label: 'HUBs',         to: '/hubs',         permissions: ['VIEW_HUB','MANAGE_HUBS','CREATE_HUB','EDIT_HUB'], icon: Network, section: 'WORKFLOW' },
   { label: 'Leads',        to: '/leads',        permissions: ['VIEW_LEAD','VIEW_TEAM_LEADS','VIEW_OWN_LEADS','CREATE_LEAD'], icon: Users, section: 'WORKFLOW' },
+  /* Directly under Leads: it is a view OF leads, and the two are worked
+     together. Permissions mirror canFollowUp in routes/lead_events.routes.js —
+     offering a tab the API will refuse is worse than not offering it. */
+  { label: 'Follow-ups',   to: '/follow-ups',   permissions: ['MANAGE_FOLLOW_UPS','VIEW_LEAD','VIEW_TEAM_LEADS','VIEW_OWN_LEADS','CREATE_LEAD','EDIT_LEAD'], icon: Clock, section: 'WORKFLOW' },
   { label: 'Appointments', to: '/appointments', permissions: ['VIEW_APPOINTMENT','VIEW_LEAD','CREATE_APPOINTMENT'], icon: Calendar, section: 'WORKFLOW' },
 
   // ── Sales ─────────────────────────────────────────────────────────────────

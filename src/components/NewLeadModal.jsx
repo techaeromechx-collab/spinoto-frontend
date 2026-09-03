@@ -806,6 +806,20 @@ export default function NewLeadModal({ isOpen, onClose, onSuccess }) {
                                   value={form.body_type_id}
                                   onChange={v => setForm(f => ({ ...f, body_type_id: v, make_id: '', model_id: '' }))}
                                   options={fw4wBodyTypes} placeholder="Select Body Type"
+                                  /* clearable was missing HERE and only here — the four other
+                                     SearchableSelects in this modal (Make and Model, in both the
+                                     4W and 2W blocks) all pass it. The field is labelled
+                                     (optional), but once a body type was picked there was no way
+                                     back to none: no empty option, no ×. Pick the wrong one and
+                                     the only way out was to close the modal and start the lead
+                                     again.
+
+                                     Clearing it also resets Make and Model, per the onChange
+                                     above. That is deliberate rather than a side effect — the
+                                     body type filters which makes and models are offered, so a
+                                     make chosen under "Commercial Van" must not survive the body
+                                     type being removed. */
+                                  clearable
                                   emptyMsg="No body types found" />
                               </div>
                               {/* Segment / Fuel Type — display only, below make/model/body type */}

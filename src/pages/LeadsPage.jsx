@@ -43,10 +43,14 @@ import WhatsAppThread from '../components/WhatsAppThread.jsx';
    click. Change `other` in leads.controller.js (sourceChipSql) if that trade
    ever stops being the right one. */
 const SOURCE_CHIPS = [
-  { key: 'all',      label: 'All' },
-  { key: 'whatsapp', label: 'WhatsApp' },
-  { key: 'manual',   label: 'Manual' },
-  { key: 'other',    label: 'Other' },
+  { key: 'all',       label: 'All' },
+  { key: 'whatsapp',  label: 'WhatsApp' },
+  { key: 'manual',    label: 'Manual' },
+  /* Leads where nobody filled the source in. Previously counted as Manual,
+     which made missing data look like a real channel — see sourceChipSql in
+     leads.controller.js. Manual's number is smaller now, and truer. */
+  { key: 'no source', label: 'No Source' },
+  { key: 'other',     label: 'Other' },
 ];
 
 /* ── Who owns it — a SEPARATE axis from where it came from ───────────────────
@@ -118,7 +122,11 @@ export function matchesSourceChip(leadSource, chip) {
   if (chip === 'whatsapp') return s === 'whatsapp';
   if (chip === 'website')  return s === 'website';
   if (chip === 'meta ads') return META_SOURCES.includes(s);
-  if (chip === 'manual')   return s === '' || MANUAL_SOURCES.includes(s);
+  // Blanks moved OUT of manual and into their own chip. This function is the
+  // client-side twin of sourceChipSql() — if the two disagree, a lead shows in
+  // the list under one chip and in the count under another.
+  if (chip === 'no source' || chip === 'no_source') return s === '';
+  if (chip === 'manual')   return MANUAL_SOURCES.includes(s);
   if (chip === 'other')    return s !== '' && !META_SOURCES.includes(s) && !MANUAL_SOURCES.includes(s) && s !== 'whatsapp' && s !== 'website';
   return s === chip;
 }
@@ -2730,7 +2738,14 @@ function ApptSelect({ value, onChange, options, placeholder = 'Select…', disab
 }
 
 // ── Convert to Appointment — full modal ───────────────────────────────────────
-function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, onCancel }) {
+/* Exported for FollowUpsPage, which hosts it at page level exactly as this page
+   does. Not moved to components/: it is one half of a pair with
+   StatusInlineSelect below, both lean on the lp- and ca- rules in
+   LeadsPage.css, and
+   splitting 1,400 lines out of a working screen to serve one caller buys
+   tidiness at the price of the risk. Re-home them together if a third caller
+   appears. */
+export function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, onCancel }) {
   useBodyLock();
   useEscapeClose(onCancel);
 
@@ -3532,7 +3547,15 @@ function ConvertToAppointmentModal({ statusName, leadId, leadName, onConfirm, on
 
 // ── Inline status select (EDIT_LEAD only) ─────────────────────────────────────
 // Uses a fixed-position portal so the dropdown is never clipped by overflow:hidden parents.
-function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = [], onOpenConvert }) {
+/* Exported so the Follow-ups page changes a status through THIS control rather
+   than a dropdown of its own. That matters more than it looks: picking a status
+   is not a save. Four flags on lead_statuses intercept it —
+   converts_to_appointment opens the booking form, and logs_call /
+   needs_follow_up / needs_lost_reason open StatusActionModal — and a plain
+   <select> elsewhere would send a bare PATCH that the API rejects for most of
+   the statuses people actually pick. Sharing the component is the only way the
+   two screens cannot drift. */
+export function StatusInlineSelect({ leadId, leadName, current, onChange, statusList = [], onOpenConvert }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });

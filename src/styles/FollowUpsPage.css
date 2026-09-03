@@ -1,0 +1,203 @@
+/* ── Follow-ups ─────────────────────────────────────────────────────────────
+   Layout comes from styles/listLayout.css via `.lb-page` — full-bleed table, one
+   toolbar row, sticky header, no card. This file holds ONLY what is specific to
+   these rows.
+
+   It used to be a card list with its own header, its own pill tabs and its own
+   list surface: the one work queue in the app that did not look like the others.
+   Nothing here re-declares a layout rule that listLayout.css already owns.
+
+   ⚠️ Nothing in this file may give `.lb-scroll-x` an overflow. listLayout.css
+   sets it to `visible` deliberately: a sticky <th> binds to its nearest
+   SCROLLING ancestor, so any overflow here would make the header stick to a box
+   that never moves vertically — i.e. not stick at all. Horizontal scrolling for
+   a wide table happens at `.page-scroll`. */
+
+/* ── Toolbar ── */
+
+/* Filter tabs, as chips on the toolbar rather than a segmented control in a
+   panel of their own — the same shape and the same "on" treatment Appointments
+   uses for Today / Tomorrow, so the two toolbars read as one idea. */
+.fu-chip { flex: 0 0 auto; font-weight: 600; }
+
+/* `.fu-page button…`, not a bare `.fu-chip--on`, and the extra weight is the
+   whole point rather than defensive noise.
+
+   listLayout.css declares the base control as
+   `.lb-control, select.lb-control, input.lb-control, button.lb-control` — that
+   last selector is (0,1,1), and a <button> matches it. A plain `.fu-chip--on`
+   is (0,1,0) and LOSES, whatever the import order, so the selected chip kept
+   the unselected background and border and there was no way to tell which tab
+   you were on. `.fu-page button.fu-chip--on` is (0,2,1) and wins outright.
+
+   The element qualifiers in that base rule exist to beat the browser's own
+   styling of form controls, so they are not going away; anything overriding
+   `.lb-control` on a real <button> has to clear the same bar. */
+.fu-page button.fu-chip--on,
+.fu-page button.fu-chip--on:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+/* The default control's focus ring is drawn against the page background and
+   vanishes on a filled chip. */
+.fu-page button.fu-chip--on:focus-visible {
+  box-shadow: 0 0 0 3px rgba(22, 185, 148, 0.35);
+}
+
+/* ── Tab counts ──
+   The number belongs ON the tab, not only beside the list: the question people
+   are answering when they look here is "where is my work", and that has to be
+   readable without clicking four tabs to find out. */
+.fu-n {
+  display: inline-block; min-width: 18px; margin-left: 7px;
+  padding: 0 5px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; line-height: 16px; text-align: center;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg-soft); color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+/* Overdue, and only when there IS something overdue — a red 0 would be an
+   alarm about nothing, which is how people learn to stop reading alarms. */
+.fu-n--alert { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+
+/* On the selected chip the badge sits on solid green, where both the grey and
+   the red are illegible. Translucent white keeps it a badge rather than a
+   second, brighter thing competing with the label. */
+.fu-page button.fu-chip--on .fu-n {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  border-color: transparent;
+}
+
+.fu-to { font-size: 12px; color: var(--text-muted); }
+
+/* One turn per 0.7s while a fetch is in flight — the button says work is
+   happening so the list underneath does not have to blank to prove it. */
+.fu-spin { animation: fu-spin 0.7s linear infinite; }
+@keyframes fu-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .fu-spin { animation: none; } }
+
+/* ── Table ── */
+
+/* Columns size from their content, like every other list on the app — no
+   table-layout: fixed and no min-width. A fixed grid here needs six widths that
+   add up, and the first status somebody renames to something long then either
+   truncates or pushes the sum past the window. Only Note is capped, because it
+   is free text and would otherwise take the whole table on its own — and the
+   cap goes on the div, not the <td>: the auto table algorithm treats max-width
+   on a cell as a suggestion and routinely ignores it, while a block inside the
+   cell simply obeys. */
+.fu-note { max-width: 380px; }
+
+.fu-th-act, .fu-td-act { text-align: right; white-space: nowrap; }
+
+/* Overdue reads as a left accent, not a wash of pink across the row. On a
+   full-bleed table a tinted row fights the header band and the hover state; a
+   3px rule on the leading edge says the same thing and stays legible when the
+   row is hovered. */
+.fu-tr--overdue td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
+
+/* ── Cells ── */
+
+.fu-due {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.fu-due-yr { font-weight: 600; color: var(--text-muted); }
+
+.fu-sub {
+  font-size: 11px; color: var(--text-muted); margin-top: 2px;
+  display: flex; align-items: center; gap: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.fu-od {
+  display: inline-block; margin-top: 5px;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.02em;
+  padding: 2px 7px; border-radius: 4px; white-space: nowrap;
+  background: #fee2e2; color: #b91c1c;
+}
+
+.fu-cust { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.fu-cust-txt { min-width: 0; }
+.fu-avatar {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  display: grid; place-items: center; font-weight: 800; font-size: 13px;
+}
+.fu-name {
+  font-weight: 600; font-size: 13px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.fu-owner {
+  font-size: 13px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fu-team {
+  display: inline-flex; align-items: center; gap: 3px; margin-top: 3px;
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+  background: #f3e8ff; color: #6b21a8; white-space: nowrap;
+}
+
+.fu-note {
+  font-size: 12.5px; color: var(--text-muted); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fu-dash { font-size: 12.5px; color: var(--text-muted); opacity: 0.6; }
+
+/* Read-only status, for a user without EDIT_LEAD. Matches the shape
+   StatusInlineSelect draws so the column does not change size with permission. */
+.fu-pill {
+  display: inline-block; max-width: 100%;
+  font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── Actions ── */
+
+.fu-acts {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 6px; flex-wrap: wrap;
+}
+.fu-btn {
+  font-size: 11.5px; font-weight: 700; font-family: inherit;
+  padding: 5px 10px; border-radius: 7px; cursor: pointer;
+  white-space: nowrap; border: 1.5px solid transparent;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: filter 0.12s, background 0.12s;
+}
+.fu-btn--done { background: var(--primary); color: #fff; }
+.fu-btn--done:hover:not(:disabled) { filter: brightness(1.08); }
+/* Outlined, not filled. Done is the action this screen exists for and keeps the
+   solid button; opening the lead is the way out of it. */
+.fu-btn--open {
+  background: transparent; color: var(--primary); border-color: var(--primary);
+}
+.fu-btn--open:hover:not(:disabled) { background: var(--bg-soft); }
+.fu-btn:disabled { opacity: 0.55; cursor: default; }
+
+.fu-noact { font-size: 11px; color: var(--text-muted); font-style: italic; }
+
+/* ── Empty + loading ── */
+
+.fu-empty { text-align: center; padding: 52px 20px; color: var(--text-muted); }
+.fu-empty svg { opacity: 0.2; margin-bottom: 10px; }
+.fu-empty-t { font-weight: 600; font-size: 13.5px; color: var(--text); margin-bottom: 4px; }
+.fu-empty-s { font-size: 12px; }
+
+.fu-skel {
+  height: 14px; border-radius: 4px; background: var(--border);
+  animation: fu-pulse 1.2s ease-in-out infinite;
+}
+@keyframes fu-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .fu-skel { animation: none; } }
+
+/* ── Narrow ──
+   The table keeps its min-width and scrolls sideways rather than collapsing —
+   same as every other list screen, so a phone behaves the way people already
+   expect it to here. Only the toolbar reflows. */
+@media (max-width: 720px) {
+  .fu-chip { flex: 1 1 auto; justify-content: center; }
+}

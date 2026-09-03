@@ -11,6 +11,7 @@ import LocationsPage from './pages/LocationsPage.jsx';
 import VehiclesPage from './pages/VehiclesPage.jsx';
 import ServicesPage from './pages/ServicesPage.jsx';
 import LeadsPage from './pages/LeadsPage.jsx';
+import FollowUpsPage from './pages/FollowUpsPage.jsx';
 import LeadStatusesPage from './pages/LeadStatusesPage.jsx';
 import DepartmentsPage  from './pages/DepartmentsPage.jsx';
 import HubsPage              from './pages/HubsPage.jsx';
@@ -256,6 +257,14 @@ export default function App() {
                     on every open/close, wiping any state set in the same tick
                     (this was the cause of the "Edit doesn't open" bug). */}
                 <Route path="/leads/:token?"     element={<RequirePermission codes={['VIEW_LEAD','CREATE_LEAD']}><LeadsPage /></RequirePermission>} />
+
+                {/* Follow-ups.
+                    No :token segment — this screen has no detail view of its
+                    own; a row navigates to /leads/:id and the lead page owns
+                    the detail from there. Codes match canFollowUp on
+                    routes/lead_events.routes.js, so the menu entry and the API
+                    cannot disagree about who may open it. */}
+                <Route path="/follow-ups" element={<RequirePermission codes={['MANAGE_FOLLOW_UPS','VIEW_LEAD','VIEW_TEAM_LEADS','VIEW_OWN_LEADS','CREATE_LEAD','EDIT_LEAD']}><FollowUpsPage /></RequirePermission>} />
 
                 {/* Appointments */}
                 <Route path="/appointments/:token?" element={<RequirePermission codes={['VIEW_APPOINTMENT','CREATE_APPOINTMENT','EDIT_APPOINTMENT']}><AppointmentsPage /></RequirePermission>} />
