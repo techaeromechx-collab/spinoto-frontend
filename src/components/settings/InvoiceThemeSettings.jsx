@@ -922,6 +922,62 @@ export default function InvoiceThemeSettings() {
               </p>
             </div>
           )}
+          {/* ── How the customer can pay from the paper ────────────────────
+              A section of its own rather than two more toggles under the QR:
+              the QR above answers "where is my invoice", these answer "how do
+              I pay it", and only one of them can move money into a bank
+              account nobody in this system is watching.
+
+              Both are off until somebody turns them on. Neither appears on a
+              document with nothing left to pay — a payment code on a settled
+              invoice is an invitation to pay twice. */}
+          <div className="its-sub">Paying from the invoice</div>
+
+          <Toggle label="Show a Scan to Pay code" checked={!!cfg.global.pay_online}
+            onChange={v => setGlobal('pay_online', v)} />
+          <p className="its-hint">
+            Card, UPI or netbanking through the payment gateway. The invoice
+            marks itself paid the moment the money lands — nothing to record by
+            hand. Needs the gateway set up on the Payments screen.
+          </p>
+
+          <Toggle label="Show a Pay Now button" checked={!!cfg.global.pay_button}
+            onChange={v => setGlobal('pay_button', v)} />
+          <p className="its-hint">
+            A real link in the PDF, so it is tappable in WhatsApp, in email and
+            in any PDF reader — the same payment page the code above opens. On
+            paper it prints as a box with the web address under it. Independent
+            of the code, so you can show either, both or neither.
+          </p>
+
+          <Toggle label="Show a UPI QR with the amount" checked={!!cfg.global.upi_qr}
+            onChange={v => setGlobal('upi_qr', v)} />
+          <p className="its-hint">
+            A plain UPI code the customer scans with any UPI app. It never
+            expires, so unlike the gateway's own QR it can be printed — but the
+            money goes straight to your bank and <strong>the invoice stays
+            unpaid until someone records the payment</strong>.
+          </p>
+          {cfg.global.upi_qr && (
+            <div className="its-fields">
+              <label className="its-label">UPI ID</label>
+              <input className="its-input" maxLength={100}
+                placeholder="workshop@okhdfcbank"
+                value={cfg.global.upi_vpa || ''}
+                onChange={e => setGlobal('upi_vpa', e.target.value)} />
+              <label className="its-label">Name shown in the customer's UPI app</label>
+              <input className="its-input" maxLength={100}
+                placeholder="Your business name"
+                value={cfg.global.upi_payee_name || ''}
+                onChange={e => setGlobal('upi_payee_name', e.target.value)} />
+              <p className="its-hint">
+                Without a UPI ID the code is skipped entirely — half a payment
+                instruction is worse than none. Send yourself ₹1 with it before
+                putting it on a customer's invoice.
+              </p>
+            </div>
+          )}
+
           <Toggle label="Show contact details in the footer" checked={cfg.global.footer_contact}
             onChange={v => setGlobal('footer_contact', v)} />
           <Toggle label="Use icons for phone/email (📞 ✉)" checked={cfg.global.footer_contact_icons}

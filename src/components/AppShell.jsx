@@ -6,6 +6,8 @@ import { NOTIF_POLL_MS } from '../config/polling.js';
 import { useUpload } from '../context/UploadContext.jsx';
 import { usePushNotifications } from '../hooks/usePushNotifications.js';
 import { useAppPaths } from '../lib/appPaths.js';
+import useSync from '../hooks/useSync.js';
+import { announce } from '../lib/notify.js';
 import {
   LayoutDashboard,
   MapPin,
@@ -522,6 +524,48 @@ export default function AppShell({ children }) {
   useEffect(() => {
     if (notifOpen) fetchNotifs();
   }, [notifOpen, fetchNotifs]);
+
+  /* ── Live notifications, with a sound ──────────────────────────────────────
+     The bell polls every 120s and only while the tab is visible, which is right
+     for a badge and far too slow for a hub waiting to be told a car is booked
+     in. The backend now emits `invalidate { topic: 'notifications' }` when it
+     writes one, so this reacts immediately.
+
+     The socket frame carries NO content — it says "yours changed", and the text
+     is then read back from /api/notifications, which is scoped to the user. A
+     payload on the wire would put one hub's customer in every other hub's
+     browser.
+
+     seenRef starts null and the FIRST sync only primes it. Without that, every
+     page load would chime through whatever was already sitting unread — the
+     fastest way to teach somebody to mute a tab. */
+  const seenNotifIdRef = useRef(null);
+
+  const syncNotifs = useCallback(async () => {
+    try {
+      const r = await api('/api/notifications');
+      const items = r.items || [];
+      setNotifItems(items);
+      fetchCount();
+
+      const newest = items[0];              // the list is ORDER BY created_at DESC
+      if (!newest) return;
+
+      const primed = seenNotifIdRef.current !== null;
+      const isNew  = primed && newest.id !== seenNotifIdRef.current;
+      seenNotifIdRef.current = newest.id;
+
+      // Only for something genuinely new AND still unread — a notification the
+      // user has already opened somewhere else should not ring here.
+      if (isNew && !newest.is_read) {
+        announce({ title: newest.title || 'Spinoto', body: newest.body || '' });
+      }
+    } catch { /* silent — a missed chime must never surface as an error */ }
+  }, [fetchCount]);
+
+  // Prime on mount (announces nothing), then react to every server nudge.
+  useEffect(() => { syncNotifs(); }, [syncNotifs]);
+  useSync('notifications', syncNotifs);
 
   // Close on outside click
   useEffect(() => {

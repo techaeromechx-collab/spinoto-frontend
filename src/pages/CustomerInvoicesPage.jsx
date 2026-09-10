@@ -15,6 +15,8 @@ import { PaymentLinksPanel } from '../components/PaymentsAdminTabs.jsx';
 import { openDocumentPdf, downloadDocumentPdf, openAdvanceVoucher } from '../lib/documentPdf.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { getRoundingFunction } from '../lib/math.js';
+import { getDiscountBasis } from '../lib/discountBasis.js';
+import { splitGstLines } from '../lib/gstSplit.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
@@ -810,6 +812,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
      already baked into each line's rate before it is summed. Either way the
      stored value is net and `totalDiscount` is what came off it. */
   const storedSubtotalExGst = parseFloat(inv?.subtotal_ex_gst ?? 0);
+  /* The stored, POST-discount taxable value — printed as its own row. Distinct
+     from `subtotal` below, which adds the discount back so the top row can show
+     the pre-discount price the customer was quoted. Two numbers, two jobs. */
+  const subtotalExGstStored = storedSubtotalExGst;
   const subtotal = hasDiscount ? r2(storedSubtotalExGst + totalDiscount) : storedSubtotalExGst;
   const totalGst = parseFloat(inv?.total_gst ?? 0);
   const grandTotal = parseFloat(inv?.grand_total ?? 0);
@@ -818,6 +824,16 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
      the cutoff in backend/src/utils/invoiceRounding.js, and the row is hidden
      at 0 so those invoices look exactly as they always did. */
   const roundOff = parseFloat(inv?.round_off ?? 0);
+
+  /* Which discount rule THIS invoice was raised under — see lib/discountBasis.
+     An issued document keeps its own for ever, so a legacy invoice goes on
+     showing the ex-GST subtotal and a blank Disc. column exactly as it did. */
+  const ciBasis = getDiscountBasis(inv?.created_at);
+  const ciInclusive = ciBasis === 'inclusive';
+  /* The pre-discount inclusive total — the "Items (incl. GST)" row.
+     grand_total already contains the round-off, so it is taken back out first;
+     leaving it in would count it twice, once here and again in its own row. */
+  const grossIncGst = r2(grandTotal - roundOff + totalDiscount);
 
   // Dynamic GST slab grouping
   const gstSlabMap = {};
@@ -869,16 +885,34 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   // see payments.routes.js. Nothing new arrives; what changes is where it counts.
   const canAllocateCredit = useCan('ALLOCATE_PAYMENT');
   const customerCredit = parseFloat(inv?.customer_credit || 0);
-  // Taking money through the gateway is its own permission, separate from
-  // recording a payment by hand: one opens a charge on the company's merchant
-  // account, the other writes a bookkeeping row. Hub logins never see it — the
-  // backend refuses them outright, and offering a button that always 403s is
-  // worse than not offering one.
-  const canCollectOnline = useCan('COLLECT_PAYMENT') && !isHubUser;
-  // A link is a public URL that keeps working for whoever it is forwarded to,
-  // which is a different risk from taking a payment on a device you are
-  // holding — hence its own permission rather than riding on COLLECT_PAYMENT.
-  const canPayLink = useCan('CREATE_PAYMENT_LINK') && !isHubUser;
+  /* Taking money through the gateway is its own permission, separate from
+     recording a payment by hand: one opens a charge on the company's merchant
+     account, the other writes a bookkeeping row.
+
+     ── The `&& !isHubUser` that used to be here is gone ────────────────────
+     It was a second, invisible rule on top of the permission, and it made the
+     permission a lie for hub roles: tick "Collect Online Payment" in Settings →
+     Roles and the button still would not appear, with nothing on screen saying
+     why. Whether a hub may charge a card is a decision for that screen, not a
+     constant in this file.
+
+     The backend was never the thing blocking it. Those routes are
+     requirePermission('COLLECT_PAYMENT'), which tests permissions.has(code) and
+     never looks at hub_id — a hub role holding the permission already passed.
+     Deliberately NOT loosened to requirePermissionOrHub: that helper waves
+     through any hub user with zero permissions (auth.middleware.js line 100),
+     which for a route that opens a charge on the merchant account would mean
+     every hub, whether anyone chose that or not.
+
+     So this is now opt-in per role, revocable in one click, and the server
+     enforces the same answer the UI shows. */
+  const canCollectOnline = useCan('COLLECT_PAYMENT');
+  /* A link is a public URL that keeps working for whoever it is forwarded to,
+     which is a different risk from taking a payment on a device you are
+     holding — hence its own permission rather than riding on COLLECT_PAYMENT.
+     Grant them separately: a workshop that should take a UPI QR at the counter
+     does not necessarily need to mint links it can forward anywhere. */
+  const canPayLink = useCan('CREATE_PAYMENT_LINK');
   const [linkBusy, setLinkBusy] = useState(false);
 
   // ── Send the invoice on WhatsApp ────────────────────────────────────────
@@ -1442,9 +1476,39 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                 and space was never the constraint in this column. */}
             <div className="ci-doc-col ci-doc-col--sum">
               <div className="ci-doc-cap">Summary</div>
+              {/* ── Why this total may be short ──────────────────────────────
+                  An invoice bills only the lines that are BOTH approved by the
+                  customer and finished, so a line still waiting on them, or
+                  approved but not yet fitted, is simply absent from every
+                  figure below. Without a word here the total just looks wrong
+                  and nobody can tell why — least of all the customer holding
+                  it. A statement, not a block: the invoice still works. */}
+              {(Number(inv.items_awaiting_approval) > 0 || Number(inv.items_work_pending) > 0) && (
+                <div className="ci-doc-pending">
+                  {Number(inv.items_awaiting_approval) > 0 && (
+                    <div>
+                      {inv.items_awaiting_approval} item
+                      {Number(inv.items_awaiting_approval) === 1 ? '' : 's'} waiting for customer approval
+                    </div>
+                  )}
+                  {Number(inv.items_work_pending) > 0 && (
+                    <div>
+                      {inv.items_work_pending} item
+                      {Number(inv.items_work_pending) === 1 ? '' : 's'} approved, work not completed
+                    </div>
+                  )}
+                  <div className="ci-doc-pending-note">Not included in the totals below.</div>
+                </div>
+              )}
               <div className="ci-doc-sum">
                 <div className="ci-doc-sumrow">
-                  <span>Subtotal (ex-GST)</span><b>{fmt(subtotal)}</b>
+                  {/* On the inclusive basis the top line is the price the
+                      customer was quoted, so Items − Discount reaches the Grand
+                      Total below and the column can be checked by hand at the
+                      counter. Legacy invoices keep the ex-GST wording, where
+                      that subtraction does not hold. */}
+                  <span>{ciInclusive ? 'Items (incl. GST)' : 'Subtotal (ex-GST)'}</span>
+                  <b>{fmt(ciInclusive ? grossIncGst : subtotal)}</b>
                 </div>
 
                 {hasDiscount && (
@@ -1457,6 +1521,18 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                     <b>−{fmt(totalDiscount)}</b>
                   </div>
                 )}
+
+                {/* The taxable value — what GST was actually charged ON, and the
+                    figure that goes in the return. It was nowhere on this screen:
+                    the column ran Items → Discount → CGST → SGST, and the one
+                    number an accountant looks for had to be worked out.
+
+                    Between the discount and the tax lines, matching the printed
+                    invoice, so the column reads
+                        Items − Discount = Taxable + CGST + SGST = Total. */}
+                <div className="ci-doc-sumrow">
+                  <span>Taxable value</span><b>{fmt(subtotalExGstStored)}</b>
+                </div>
 
                 {/* Each slab, not a single "tax" line: a two-slab invoice owes
                     two different rates and the GST return needs them apart. */}
@@ -1554,7 +1630,12 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                 <tbody>
                   {items.length === 0 ? (
                     <tr><td colSpan={hasDiscount ? 10 : 9} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
-                  ) : items.map((it, i) => {
+                  ) : (() => {
+                    /* Allocated across the whole invoice, not line by line, so
+                       the CGST and SGST columns each add up to the figure the
+                       summary declares below. See lib/gstSplit.js. */
+                    const halves = splitGstLines(items.map(x => parseFloat(x.gst_amount ?? 0)));
+                    return items.map((it, i) => {
                     const exRate = parseFloat(it.customer_rate ?? it.rate ?? 0);
                     const qty = parseFloat(it.quantity ?? 1);
                     const gstPct = parseFloat(it.gst_percent ?? 0);
@@ -1565,11 +1646,38 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                     const taxable = r2(total - gstAmt);
 
                     const halfPct = gstPct / 2;
-                    const discAmt = parseFloat(it.discount_amount ?? 0);
+                    const lineDisc = parseFloat(it.discount_amount ?? 0);
                     const dType = it.discount_type;
                     const dValue = parseFloat(it.discount_value) || 0;
 
-                    // Display rate including GST (original standard price before discount)
+                    /* This line's share of a WHOLE-BILL discount, recovered from
+                       stored figures — the apportionment is computed at
+                       generation but only its result is kept:
+
+                         gross = customer_rate × qty × (1 + gst%)
+                         share = gross − line discount − total_inc_gst
+
+                       Identical to the server's txnShareOf in documentAdapter,
+                       so the screen and the printed invoice cannot disagree.
+                       Only on the inclusive basis: on a legacy invoice this
+                       arithmetic returns the share grossed up by the tax, a
+                       number that never appeared on that document. */
+                    const txnShare = (() => {
+                      if (!ciInclusive) return 0;
+                      const gross = exRate * qty * (1 + gstPct / 100);
+                      const sh = gross - lineDisc - total;
+                      return sh > 0.005 ? r2(sh) : 0;
+                    })();
+                    /* One figure in the Disc. column: what came off this line,
+                       whichever way it was given. Two columns to separate them
+                       would answer a question nobody asked, on a table that is
+                       already nine columns wide. */
+                    const discAmt = r2(lineDisc + txnShare);
+
+                    /* Rate is PRE-discount, so the row reads
+                           Rate − Disc. = Amount
+                       left to right. Both deductions are added back because
+                       both are already out of total_inc_gst. */
                     const incRate = qty > 0 ? r2((total + discAmt) / qty) : 0;
                     return (
                       <tr key={i}>
@@ -1592,8 +1700,15 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                             {discAmt > 0 ? (
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                                 <span style={{ fontSize: 12, fontWeight: 600, color: '#b45309', whiteSpace: 'nowrap' }}>{fmt(discAmt)}</span>
+                                {/* The sub-label describes the LINE's own rule.
+                                    A whole-bill share has no rule of its own —
+                                    calling it "Flat" would invite the reader to
+                                    check ₹282.05 against a flat amount nobody
+                                    entered — so it is labelled for what it is. */}
                                 <span style={{ fontSize: 11, color: '#92400e', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                                  {dType === 'percent' ? `${dValue}%` : 'Flat'}
+                                  {lineDisc > 0
+                                    ? (dType === 'percent' ? `${dValue}%` : 'Flat')
+                                    : 'Bill share'}
                                 </span>
                               </div>
                             ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
@@ -1605,13 +1720,13 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                             both columns would show twice the tax that was
                             charged. */}
                         <td style={{ textAlign: 'right' }}>
-                          {halfPct > 0 ? fmt(gstAmt / 2) : '—'}
+                          {halfPct > 0 ? fmt(halves[i].cgst) : '—'}
                           {uniformHalfPct == null && halfPct > 0 && (
                             <span className="ci-doc-rate">{halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%</span>
                           )}
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          {halfPct > 0 ? fmt(gstAmt / 2) : '—'}
+                          {halfPct > 0 ? fmt(halves[i].sgst) : '—'}
                           {uniformHalfPct == null && halfPct > 0 && (
                             <span className="ci-doc-rate">{halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%</span>
                           )}
@@ -1619,7 +1734,8 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                         <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(total)}</td>
                       </tr>
                     );
-                  })}
+                  });
+                  })()}
                 </tbody>
               </table>
             </div>

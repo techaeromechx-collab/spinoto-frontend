@@ -394,11 +394,23 @@ export default function FollowUpsPage() {
   const rows = useMemo(() => {
     return events
       .filter(e => !dismissed[e.id])
-      /* lead_assigned_to_id, NOT assigned_to_id — the SELECT aliases it that way
-         (lead_events.controller.js). The shorter name reads correctly and
-         matches nothing, so the filter would have silently emptied the list for
-         every agent. */
-      .filter(e => !agent || String(e.lead_assigned_to_id) === String(agent))
+      /* assigned OR created — the same pair the server's visibility rule uses,
+         and the same pair /tab-counts narrows on, so the badge and the rows
+         agree.
+
+         Assigned-to alone was wrong in a way that hid work rather than showing
+         too much: this page lists a lead for whoever CREATED it as well as
+         whoever it is assigned to, so an agent's own unassigned leads belong
+         here — and those vanished the moment anybody was picked in the agent
+         filter. "Show me Kisha's follow-ups" silently dropped every lead Kisha
+         had created and not yet handed to anyone.
+
+         lead_assigned_to_id / lead_created_by_id, NOT assigned_to_id — the
+         SELECT aliases them that way. The shorter names read correctly and
+         match nothing, which would empty the list for every agent instead. */
+      .filter(e => !agent
+        || String(e.lead_assigned_to_id) === String(agent)
+        || String(e.lead_created_by_id)  === String(agent))
       .map(e => {
         const cfg = statusList.find(x => x.name === e.lead_current_status);
         /* A lead that converted or closed is not waiting on anybody, so its

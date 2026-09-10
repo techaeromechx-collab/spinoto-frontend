@@ -146,7 +146,7 @@ function CancelReasonModal({ statusName, onConfirm, onCancel }) {
 }
 
 function ApptStatusSelect({
-  apptId, current, statusList, onChange, pickupRequired,
+  apptId, appt, current, statusList, onChange, pickupRequired,
   pickupTimestamp, estimateStatus, invoiceStatus, invoiceId,
   showToast,
 }) {
@@ -161,6 +161,7 @@ function ApptStatusSelect({
   const [busy, setBusy] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const [pendingStatus, setPendingStatus] = useState(null);
+  const [pendingReschedule, setPendingReschedule] = useState(false);
   const [blockMsg, setBlockMsg] = useState('');   // inline error message
   const btnRef = useRef(null);
   const dropRef = useRef(null);
@@ -314,8 +315,80 @@ function ApptStatusSelect({
     }
   }
 
+  /**
+   * A reschedule started from the STATUS DROPDOWN.
+   *
+   * Sends exactly what the Reschedule button on the appointment popup sends —
+   * date, time, reason, notes — and deliberately does NOT send status_id.
+   *
+   * The server owns that decision. updateAppointment flips the status to
+   * 'rescheduled' itself when the date moves and the appointment is still at
+   * Scheduled or Rescheduled, and leaves the status alone once the job has
+   * moved further along. Sending status_id from here would override that and
+   * hand a 400 back to somebody who had already filled in the whole form: the
+   * sort_order guard refuses to drag a job with an approved estimate back to
+   * sort 11. Letting the server decide means a late reschedule still records
+   * properly and simply keeps the status it had earned.
+   *
+   * reschedule_reason is the field that makes the server snapshot the original
+   * date, so a reschedule begun here is recorded exactly like one begun from
+   * the popup — same audit trail, same hub notification, same card layout.
+   *
+   * The modal stays open when the request fails, so a rejected slot can be
+   * corrected without retyping the reason.
+   */
+  async function applyReschedule(formData) {
+    setBusy(true);
+    try {
+      const r = await api(`/api/appointments/${apptId}`, {
+        method: 'PATCH',
+        body: {
+          scheduled_date:    formData.scheduled_date,
+          scheduled_time:    formData.scheduled_time || null,
+          reschedule_reason: formData.reschedule_reason,
+          reschedule_notes:  formData.reschedule_notes || null,
+        },
+      });
+      onChange(r.item);
+      setPendingReschedule(false);
+    } catch (e) {
+      console.error('[ApptStatusSelect] reschedule', e.message);
+      if (showToast) showToast(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function pick(status) {
     if (status.id === current?.id) { setOpen(false); return; }
+
+    // ── Reschedule is a date change, not a label ─────────────────────────
+    //
+    // Picking it here used to set the status and nothing else. The appointment
+    // was stamped "Rescheduled" while its date, its reason, its original date,
+    // the hub schedule check and the hub notification were all skipped —
+    // because checkPrerequisite has no case for this slug and fell through to
+    // `default: break`.
+    //
+    // The result is visible in the data: of the appointments sitting on this
+    // status, the large majority carry no reason and no original date, and the
+    // card — which decides what to draw from reschedule_reason rather than from
+    // the status — still shows their single unchanged date under a "Scheduled"
+    // label. A status that says the job moved, above a date that says it did
+    // not.
+    //
+    // So this opens the same modal the Reschedule button opens. Two doors, one
+    // road. Matched on slug rather than name, so renaming the status in Master
+    // Data cannot quietly reopen the old behaviour.
+    //
+    // Guarded on `appt` because the modal needs the current date and time to
+    // prefill: a caller that has not passed the row keeps the plain status
+    // write rather than crashing on an undefined.
+    if (status.slug === 'rescheduled' && appt) {
+      setOpen(false); setBlockMsg('');
+      setPendingReschedule(true);
+      return;
+    }
 
     // Cancellation — intercept for reason modal
     if (status.name?.toLowerCase().includes('cancel')) {
@@ -353,6 +426,13 @@ function ApptStatusSelect({
           statusName={pendingStatus.name}
           onConfirm={reason => { applyStatus(pendingStatus, reason); setPendingStatus(null); }}
           onCancel={() => setPendingStatus(null)}
+        />
+      )}
+      {pendingReschedule && appt && (
+        <RescheduleModal
+          appt={appt}
+          onConfirm={applyReschedule}
+          onCancel={() => setPendingReschedule(false)}
         />
       )}
       <button
@@ -756,6 +836,40 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onD
                       )}
                     </div>
                   </div>
+
+                  {/* ── Every earlier move ──────────────────────────────────
+                      The two boxes above are the LATEST move only, because the
+                      four columns behind them are overwritten each time. An
+                      appointment moved 10 → 12 → 15 Sep therefore reads
+                      "12 → 15" up there, with nothing to say the customer was
+                      moved twice.
+
+                      Shown only from the second move onward: with a single one
+                      this list would repeat what is already directly above it.
+                      `reschedules` arrives with the full record the modal
+                      fetches on open, so an older cached row simply renders
+                      nothing rather than a broken block. */}
+                  {appt.reschedules?.length > 1 && (
+                    <div className="apptv-resch-log">
+                      <div className="apptv-resch-date-lbl">
+                        <Clock size={11} /> Moved {appt.reschedules.length} times
+                      </div>
+                      {appt.reschedules.map((h, i) => (
+                        <div key={h.id} className="apptv-resch-log-row">
+                          <span className="apptv-resch-log-n">{i + 1}</span>
+                          <span className="apptv-resch-log-move">
+                            {fmtDate(h.from_date) || '—'}{h.from_time ? ` ${fmtTime(h.from_time)}` : ''}
+                            {' → '}
+                            {fmtDate(h.to_date) || '—'}{h.to_time ? ` ${fmtTime(h.to_time)}` : ''}
+                          </span>
+                          <span className="apptv-resch-log-why">
+                            {h.reason || 'No reason given'}
+                            {h.rescheduled_by_name ? ` · ${h.rescheduled_by_name}` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               ) : (
                 /* Not rescheduled: simple date + time */
@@ -2986,6 +3100,18 @@ export default function AppointmentsPage() {
   const { token } = useParams();
   const { user } = useAuth();
   const isHubUser = !!user?.hub_id;          // hub portal user
+
+  /* ── Source is a Spinoto-side fact, not a hub one ──────────────────────────
+     "Converted from a lead" / "booked online" / "typed in directly" describes
+     how the job reached SPINOTO. A hub receives the work either way and cannot
+     act on the difference, so the column and its filter come off in the portal.
+
+     One flag, used by the header, the cell, the filter, the skeleton and the
+     empty state's colSpan. The count is derived from it rather than written out
+     twice — an 8 left behind in a colSpan is how the "no appointments" row ends
+     up spanning one column too many and the table visibly breaks. */
+  const showSource = !isHubUser;
+  const COL_COUNT  = showSource ? 8 : 7;
   // This page is mounted twice: at /appointments for staff and at
   // /hub/appointments inside the hub portal. P resolves every destination —
   // including this page's own URL — for whichever shell is rendering it.
@@ -3140,7 +3266,11 @@ export default function AppointmentsPage() {
   };
 
   const hiddenFilterCount =
-    (filterCreatedBy ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0) + (filterVType ? 1 : 0) + (filterSource ? 1 : 0);
+    (filterCreatedBy ? 1 : 0) + ((dateFrom || dateTo) ? 1 : 0) + (filterVType ? 1 : 0)
+    // Gated on showSource for the same reason the query below is: a hub has no
+    // control to clear this with, so counting it would put a number on the
+    // funnel that nothing inside the funnel explains.
+    + (showSource && filterSource ? 1 : 0);
 
   // Starts CLOSED. `true` was right when this drove a filter ROW that expanded
   // in place; it now drives the funnel popover, and a popover open on arrival
@@ -3181,7 +3311,12 @@ export default function AppointmentsPage() {
       if (dateTo) qs.set('date_to', dateTo);
       if (filterCreatedBy) qs.set('created_by_id', filterCreatedBy);
       if (filterVType) qs.set('vehicle_type_id', filterVType);
-      if (filterSource) qs.set('source', filterSource);
+      /* showSource, not just filterSource. The value is persisted in
+         localStorage (sp_appointments_list_v1), so a browser that used the
+         staff screen and then signed into the hub portal would keep sending a
+         source filter the hub has no control to see or clear — a list quietly
+         missing rows, with nothing on screen to explain why. */
+      if (showSource && filterSource) qs.set('source', filterSource);
       const r = await api(`/api/appointments?${qs}`);
       setAppts(r.items || []);
       setTotal(r.total || 0);
@@ -3190,7 +3325,10 @@ export default function AppointmentsPage() {
       setStatusCounts(counts);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource, page, pageSize]);
+    // showSource is in here because the query above reads it. It is derived
+    // from the session's user and does not change in practice, but a dependency
+    // the body reads and the array omits is a stale closure waiting to happen.
+  }, [search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource, showSource, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -3532,6 +3670,7 @@ export default function AppointmentsPage() {
                     are creation PATHS in the code, not master data somebody can
                     add to, so the options are the same everywhere and hardcoding
                     them here cannot fall out of step with a table. */}
+                {showSource && (
                 <div>
                   <label className="lb-pop-label" htmlFor="lb-appt-source">Source</label>
                   <select
@@ -3546,6 +3685,7 @@ export default function AppointmentsPage() {
                     ))}
                   </select>
                 </div>
+                )}
 
                 {/* Vehicle type. Options come from Master Data rather than a
                     hardcoded 2W/4W pair, so a workshop that adds Commercial —
@@ -3692,7 +3832,7 @@ export default function AppointmentsPage() {
                 <th>Customer</th>
                 <th>Vehicle</th>
                 <th>Hub</th>
-                <th>Source</th>
+                {showSource && <th>Source</th>}
                 <th>Schedule</th>
                 <th>Totals</th>
                 <th>Status</th>
@@ -3702,19 +3842,22 @@ export default function AppointmentsPage() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 8 }).map((_, j) => (
+                    {Array.from({ length: COL_COUNT }).map((_, j) => (
                       <td key={j}><div className="appt-skel" /></td>
                     ))}
                   </tr>
                 ))
               ) : appts.length === 0 ? (
                 <tr>
-                  <td colSpan="8">
+                  <td colSpan={COL_COUNT}>
                     <div className="appt-empty">
                       <Calendar size={36} style={{ opacity: .2, marginBottom: 10 }} />
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>No appointments found</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo || filterCreatedBy || filterVType || filterSource
+                        {/* (showSource && filterSource) to match the query: for a hub
+                            the source filter is neither sent nor shown, so it must not
+                            make an empty list claim it was filtered. */}
+                        {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo || filterCreatedBy || filterVType || (showSource && filterSource)
                           ? 'Try adjusting your filters.'
                           : 'Appointments appear here when leads are converted.'}
                       </div>
@@ -3802,7 +3945,7 @@ export default function AppointmentsPage() {
                     {/* Where it came from. source_type is derived server-side
                         from lead_id / booking_source / is_warranty_redo — see
                         the CASE in APPT_SELECT. */}
-                    <td><SourceBadge type={a.source_type} /></td>
+                    {showSource && <td><SourceBadge type={a.source_type} /></td>}
                     <td>
                       {/* ── Hub portal: the word, not the date ──
                           A hub works a bench, not a calendar. "Today" answers
@@ -3872,6 +4015,7 @@ export default function AppointmentsPage() {
                     <td onClick={e => e.stopPropagation()} style={{ position: 'relative', paddingRight: 36 }}>
                       <ApptStatusSelect
                         apptId={a.id}
+                        appt={a}
                         current={statusCfg}
                         statusList={statusList}
                         onChange={handleUpdated}
@@ -3974,6 +4118,7 @@ export default function AppointmentsPage() {
                   </div>
                   <ApptStatusSelect
                     apptId={a.id}
+                    appt={a}
                     current={statusCfg}
                     statusList={statusList}
                     onChange={handleUpdated}

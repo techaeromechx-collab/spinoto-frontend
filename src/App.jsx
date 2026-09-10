@@ -5,6 +5,7 @@ import LoginPage from './auth/LoginPage.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import PublicInvoicePage from './pages/PublicInvoicePage.jsx';
 import PublicPayPage from './pages/PublicPayPage.jsx';
+import PublicInvoicePayPage from './pages/PublicInvoicePayPage.jsx';
 import PublicEstimatePage from './pages/PublicEstimatePage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import LocationsPage from './pages/LocationsPage.jsx';
@@ -144,6 +145,14 @@ export default function App() {
           to /hub, landing on a dashboard instead of the document it asked for.
 
           One address, one meaning. */}
+      {/* Ordered before /invoice/:token only for readability — React Router
+          matches on specificity, not on declaration order, so the two cannot
+          shadow each other. This is where the "Scan to Pay" code on a printed
+          invoice lands: it exchanges the invoice's permanent token for a live
+          payment link and forwards to /pay. Public on exactly the same terms
+          as the invoice page it sits beside — the token is already printed on
+          paper, and this hands out strictly less than that page does. */}
+      <Route path="/invoice/:token/pay" element={<PublicInvoicePayPage />} />
       <Route path="/invoice/:token"  element={<PublicInvoicePage />} />
       <Route path="/estimate/:token" element={<PublicEstimatePage />} />
 

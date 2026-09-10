@@ -793,7 +793,11 @@ const TABS = [
   { key: 'dashboard',         seg: '',                  label: 'Dashboard',          Icon: LayoutDashboard },
   { key: 'appointments',      seg: 'appointments',      label: 'Appointments',       Icon: Calendar        },
   { key: 'estimates',         seg: 'estimates',         label: 'Estimates',          Icon: FileText        },
-  { key: 'sell-invoices',     seg: 'sales-invoices',    label: 'Sales Invoices',     Icon: ReceiptText     },
+  /* The LABEL is 'Spinoto Invoices'; the URL segment stays 'sales-invoices'.
+     Renaming the segment would break every bookmark and every link already
+     pointing at /hub/sales-invoices, and it is not what was asked for — this
+     is a wording change on the sidebar, not a route change. */
+  { key: 'sell-invoices',     seg: 'sales-invoices',    label: 'Spinoto Invoices',   Icon: ReceiptText     },
   { key: 'customer-invoices', seg: 'customer-invoices', label: 'Customer Invoices',  Icon: Receipt         },
   { key: 'services-pricing',  seg: 'services',          label: 'Services & Pricing', Icon: Wrench          },
 ];

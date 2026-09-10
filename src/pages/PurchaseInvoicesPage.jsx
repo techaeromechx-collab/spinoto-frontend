@@ -10,6 +10,7 @@ import DetailSkeleton from '../components/DetailSkeleton.jsx';
 import { useMediaQuery, MOBILE_LIST_QUERY } from '../hooks/useMediaQuery.js';
 import { useDetailRail } from '../hooks/useDetailRail.js';
 import { getRoundingFunction } from '../lib/math.js';
+import { splitGstLines } from '../lib/gstSplit.js';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
 import { useDebouncedSearch, useAbortController, isAbortError } from '../hooks/useDebouncedSearch.js';
@@ -936,7 +937,11 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                 <tbody>
                   {items.length === 0 ? (
                     <tr><td colSpan={showMargin ? 10 : 7} style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)' }}>No items</td></tr>
-                  ) : items.map((it, i) => {
+                  ) : (() => {
+                    /* Allocated across the invoice so the CGST and SGST columns
+                       each close on the figure declared below. lib/gstSplit.js */
+                    const halves = splitGstLines(items.map(x => parseFloat(x.gst_amount ?? 0)));
+                    return items.map((it, i) => {
                     const custRate = parseFloat(it.customer_rate ?? 0);
                     const hubRate = parseFloat(it.hub_rate ?? 0);
                     const qty = parseFloat(it.quantity ?? 1);
@@ -978,13 +983,13 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                             shows only on a mixed-slab invoice — otherwise it is
                             already in the column header. */}
                         <td style={{ textAlign: 'right', fontSize: 12 }}>
-                          {gstPct > 0 ? fmt(gstAmt / 2) : '—'}
+                          {gstPct > 0 ? fmt(halves[i].cgst) : '—'}
                           {gstPct > 0 && !uniformHalfPct && (
                             <span className="pi-doc-rate">{halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%</span>
                           )}
                         </td>
                         <td style={{ textAlign: 'right', fontSize: 12 }}>
-                          {gstPct > 0 ? fmt(gstAmt / 2) : '—'}
+                          {gstPct > 0 ? fmt(halves[i].sgst) : '—'}
                           {gstPct > 0 && !uniformHalfPct && (
                             <span className="pi-doc-rate">{halfPct.toFixed(halfPct % 1 === 0 ? 0 : 1)}%</span>
                           )}
@@ -992,7 +997,8 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
                         <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(hubRate * qty + gstAmt)}</td>
                       </tr>
                     );
-                  })}
+                  });
+                  })()}
                 </tbody>
               </table>
             </div>

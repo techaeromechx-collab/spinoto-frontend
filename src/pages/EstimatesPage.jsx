@@ -19,6 +19,8 @@ import { usePageSearch } from '../lib/pageSearchStore.js';
 import { usePageCrumb } from '../lib/pageCrumbStore.js';
 import useSync from '../hooks/useSync.js';
 import { applyTransactionDiscount } from '../lib/transactionDiscount.js';
+import { getDiscountBasis } from '../lib/discountBasis.js';
+import { splitGstLines } from '../lib/gstSplit.js';
 import { CreateAppointmentModal } from './AppointmentsPage.jsx';
 import AdvancePaymentModal from '../components/AdvancePaymentModal.jsx';
 import WhatsAppSendMenu from '../components/WhatsAppSendMenu.jsx';
@@ -31,6 +33,8 @@ import {
   // which is what buys the width for the summary to sit beside Bill To and
   // Vehicle rather than underneath them. See est-doc-il in the stylesheet.
   Phone, MapPin, Tag, Layers, Landmark, Calendar, Gauge, Loader2,
+  // Warning shown before rejecting a line whose work is already completed.
+  AlertTriangle,
 } from 'lucide-react';
 import '../styles/listLayout.css';
 import '../styles/EstimatesPage.css';
@@ -465,11 +469,19 @@ function LineItemDiscountPopup({ item, onSave, onClose }) {
 // Customer Approval Modal
 // ═════════════════════════════════════════════════════════════════════════════
 function CustomerApprovalModal({ estimate, onClose, onDone }) {
+  /* Three answers, not two: yes, no, and NOT YET ASKED.
+     This used to start every line at `customer_approved === true`, so a line
+     nobody had answered opened pre-set to Reject — and saving the form then
+     rejected it. Harmless while every line was auto-approved on creation;
+     not harmless now that a line added mid-job starts undecided on purpose. */
   const [approvals, setApprovals] = react.useState(() =>
     (estimate.items || []).map(item => ({
       item_id: item.id,
-      approved: item.customer_approved === true,
+      approved: item.customer_approved === true ? true
+              : item.customer_approved === false ? false
+              : null,
       description: item.description,
+      work_status: item.work_status,
     }))
   );
   const [saving, setSaving] = react.useState(false);
@@ -480,15 +492,35 @@ function CustomerApprovalModal({ estimate, onClose, onDone }) {
     setApprovals(prev => prev.map(a => a.item_id === id ? { ...a, approved: !a.approved } : a));
   }
 
+  // Lines still unanswered are LEFT OUT of the request rather than sent as a
+  // refusal. The server updates only the items it is given, so an undecided
+  // line survives the save untouched and keeps waiting for the customer.
+  const decided = approvals.filter(a => a.approved === true || a.approved === false);
+
+  // Rejecting work that has already been carried out takes the amount off the
+  // hub's invoice as well as the customer's, because both pick their lines the
+  // same way. Worth saying out loud before it happens.
+  const rejectingFinished = approvals.filter(
+    a => a.approved === false && a.work_status === 'completed'
+  );
+
   async function submit(e) {
     e.preventDefault();
+    if (!decided.length) {
+      setError('Choose Approve or Reject on at least one item.');
+      return;
+    }
     setSaving(true); setError(null);
     try {
-      await api(`/api/estimates/${estimate.id}/customer-approval`, {
+      const r = await api(`/api/estimates/${estimate.id}/customer-approval`, {
         method: 'POST',
-        body: { approvals: approvals.map(a => ({ item_id: a.item_id, approved: a.approved })) },
+        body: { approvals: decided.map(a => ({ item_id: a.item_id, approved: a.approved })) },
       });
-      onDone();
+      // The server re-syncs the invoices itself now. It reports what it managed
+      // and what it refused — a paid invoice is never quietly reduced — and that
+      // sentence is the only place the user finds out, so it is passed up rather
+      // than dropped.
+      onDone(r?.resync_message || null);
     } catch (err) {
       setError(err.message || 'Failed to save approvals.');
       setSaving(false);
@@ -499,20 +531,39 @@ function CustomerApprovalModal({ estimate, onClose, onDone }) {
     <div className="modal-backdrop">
       <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 500, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
-          <h3>Mark Customer Approval</h3>
+          <h3>{estimate.status === 'work_completed' ? 'Update Customer Approval' : 'Mark Customer Approval'}</h3>
           <button className="modal-close" onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={submit} style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0, overflow: 'hidden' }}>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>
-            Set the customer's decision for each item below.
+            Set the customer's decision for each item below. Anything you leave
+            unanswered stays as it is.
           </p>
+          {rejectingFinished.length > 0 && (
+            <div style={{
+              flexShrink: 0, display: 'flex', gap: 10, alignItems: 'flex-start',
+              padding: '10px 12px', borderRadius: 8,
+              border: '1.5px solid #fca5a5', background: '#fff5f5',
+            }}>
+              <AlertTriangle size={15} style={{ color: '#b91c1c', flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontSize: 12.5, color: '#7f1d1d', lineHeight: 1.5 }}>
+                <strong>
+                  {rejectingFinished.length === 1
+                    ? 'This work is already completed.'
+                    : `${rejectingFinished.length} of these are already completed.`}
+                </strong>{' '}
+                Rejecting comes off the customer's invoice <em>and</em> the hub's
+                payment for work that was actually carried out.
+              </span>
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', minHeight: 0, paddingRight: 4 }}>
             {approvals.map(a => (
               <div key={a.item_id} style={{
                 display: 'flex', alignItems: 'center', gap: 12,
                 padding: '10px 14px', borderRadius: 8,
-                border: `1.5px solid ${a.approved ? '#86efac' : '#fca5a5'}`,
-                background: a.approved ? '#f0fdf4' : '#fff5f5',
+                border: `1.5px solid ${a.approved === true ? '#86efac' : a.approved === false ? '#fca5a5' : '#e5e7eb'}`,
+                background: a.approved === true ? '#f0fdf4' : a.approved === false ? '#fff5f5' : 'transparent',
                 transition: 'all 0.15s',
               }}>
                 <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
@@ -526,9 +577,9 @@ function CustomerApprovalModal({ estimate, onClose, onDone }) {
                       display: 'flex', alignItems: 'center', gap: 5,
                       padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
                       cursor: 'pointer', transition: 'all 0.15s',
-                      border: a.approved ? '1.5px solid #16a34a' : '1.5px solid #d1d5db',
-                      background: a.approved ? '#16a34a' : '#fff',
-                      color: a.approved ? '#fff' : '#6b7280',
+                      border: a.approved === true ? '1.5px solid #16a34a' : '1.5px solid #d1d5db',
+                      background: a.approved === true ? '#16a34a' : '#fff',
+                      color: a.approved === true ? '#fff' : '#6b7280',
                     }}
                   >
                     <CheckCircle2 size={13} /> Approve
@@ -540,9 +591,9 @@ function CustomerApprovalModal({ estimate, onClose, onDone }) {
                       display: 'flex', alignItems: 'center', gap: 5,
                       padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600,
                       cursor: 'pointer', transition: 'all 0.15s',
-                      border: !a.approved ? '1.5px solid #dc2626' : '1.5px solid #d1d5db',
-                      background: !a.approved ? '#dc2626' : '#fff',
-                      color: !a.approved ? '#fff' : '#6b7280',
+                      border: a.approved === false ? '1.5px solid #dc2626' : '1.5px solid #d1d5db',
+                      background: a.approved === false ? '#dc2626' : '#fff',
+                      color: a.approved === false ? '#fff' : '#6b7280',
                     }}
                   >
                     <XCircle size={13} /> Reject
@@ -703,6 +754,12 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     appointment_id: editEstimate?.appointment_id || initialAppointmentId || '',
     hub_id: editEstimate?.hub_id ? String(editEstimate.hub_id) : (isHubUser ? userHubId : ''),
     notes: editEstimate?.notes || '',
+    /* On edit this is whatever the estimate reads, which is already
+       COALESCE(e.odometer_km, a.odometer_km) — so an estimate that never had
+       its own reading opens showing the appointment's, and saving keeps it
+       instead of quietly losing it. '' rather than 0: an empty box means "not
+       recorded", and 0 km is a real reading on a new vehicle. */
+    odometer_km: editEstimate?.odometer_km != null ? String(editEstimate.odometer_km) : '',
   });
   // Hub reassignment confirmation: { message, flags } after a 409 from PATCH
   const [hubConfirm, setHubConfirm] = react.useState(null);
@@ -912,7 +969,18 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
     // The appointments list already has all vehicle IDs — no extra fetch needed
     const appt = appointments.find(a => String(a.id) === String(appt_id));
-    setForm(f => ({ ...f, appointment_id: appt_id, hub_id: appt?.hub_id ? String(appt.hub_id) : f.hub_id }));
+    /* Odometer comes across with the hub. Only when the box is still EMPTY:
+       picking a different appointment must not wipe a reading somebody has
+       already typed, and the reading taken at the counter beats the one entered
+       at booking. */
+    setForm(f => ({
+      ...f,
+      appointment_id: appt_id,
+      hub_id: appt?.hub_id ? String(appt.hub_id) : f.hub_id,
+      odometer_km: f.odometer_km === '' && appt?.odometer_km != null
+        ? String(appt.odometer_km)
+        : f.odometer_km,
+    }));
     // hub_id change is handled by the useEffect below — no explicit call needed
 
     // Build vehicle context for pricing lookup
@@ -1263,10 +1331,19 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
     items: items.map(it => {
       const c = computeItem(discountMode !== 'line_item'
         ? { ...it, discount_type: null, discount_value: 0 } : it);
-      return { amount: c.amount, gst_percent: Number(it.gst_percent) || 0 };
+      /* inc alongside amount: the helper needs the line's INCLUSIVE value and
+         deriving it from a rounded ex-GST figure loses a paisa. c.total is
+         that value, already computed. */
+      return { amount: c.amount, inc: c.total, gst_percent: Number(it.gst_percent) || 0 };
     }),
     discountType:  discountMode === 'transaction' ? txDiscountType : null,
     discountValue: discountMode === 'transaction' ? txDiscountValue : 0,
+    /* The estimate being edited, or undefined for a new one — in which case
+       getDiscountBasis returns today's rule, which is what this estimate will
+       be saved under. Reading an existing estimate's own created_at is what
+       stops an old estimate showing new figures the moment it is opened. */
+    basis: getDiscountBasis(editEstimate?.created_at),
+    incOf: it => it.inc,
   });
   const txDiscountAmount = txCalc.discountAmount;
   const grandTotal = discountMode === 'transaction' ? txCalc.grandTotal : itemsTotal;
@@ -1296,6 +1373,10 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       const payload = {
         hub_id: Number(form.hub_id),
         notes: form.notes.trim() || null,
+        // Empty box → null, which clears the estimate's own reading and lets it
+        // fall back to the appointment's rather than blanking the row. A typed
+        // 0 is a real reading and is sent as 0.
+        odometer_km: form.odometer_km === '' ? null : Number(form.odometer_km),
         discount_mode: discountMode,
         transaction_discount_type: discountMode === 'transaction' ? txDiscountType : null,
         transaction_discount_value: discountMode === 'transaction' ? txDiscountValue : 0,
@@ -1380,7 +1461,12 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
           }
         }
       }
-      onSaved(res.item || res.estimate || res, hubInfo);
+      /* 202 = the edit was NOT applied, it was queued for Spinoto's approval
+         (a hub session — see updateEstimate). Passed through as its own third
+         argument rather than folded into `item`, because the caller has to say
+         something completely different: nothing changed, and nothing will until
+         somebody approves it. */
+      onSaved(res.item || res.estimate || res, hubInfo, res.pending_approval ? res : null);
     } catch (err) {
       // Hub reassignment needs an explicit confirmation — show our own modal
       // with the backend's message instead of failing.
@@ -1670,6 +1756,30 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                   </>
                 )}
               </div>
+            </div>
+
+            {/* ── Odometer ─────────────────────────────────────────────────
+                Prefilled from the appointment when it has one, and editable —
+                a car has usually done a few more km between booking and
+                arriving. What is typed here wins on the estimate, the purchase
+                invoice and the customer invoice, because every one of them
+                reads COALESCE(estimate, appointment).
+
+                Not cosmetic: km-based warranty claims are validated against
+                this figure, and with none recorded that check cannot run at
+                all. Every one of the 495 appointments and 344 invoices in the
+                system currently has it blank. */}
+            <div className="form-field">
+              <label>Odometer <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(km, optional)</span></label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="form-input"
+                value={form.odometer_km}
+                onChange={e => setForm(f => ({ ...f, odometer_km: e.target.value }))}
+                placeholder="e.g. 42500"
+              />
             </div>
 
             {/* Notes */}
@@ -2233,7 +2343,10 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '8px 12px' }}>
                     <span style={{ fontSize: 12, color: '#92400e', fontWeight: 600 }}>Sub Total:</span>
                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{fmt(itemsTotal)}</span>
-                    <span style={{ fontSize: 12, color: '#92400e', fontWeight: 600, marginLeft: 12 }}>Discount:</span>
+                    {/* "(incl. GST)" is the whole point. ₹500 entered here
+                        takes ₹500 off what the customer pays — under the old
+                        rule it took ₹590, and nothing on this row said so. */}
+                    <span style={{ fontSize: 12, color: '#92400e', fontWeight: 600, marginLeft: 12 }}>Discount (incl. GST):</span>
                     <input
                       type="number" min="0" step="any"
                       value={txDiscountValue}
@@ -2254,9 +2367,22 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                   </div>
                 )}
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Grand Total (inc GST):</span>
                   <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--primary)' }}>{fmt(grandTotal)}</span>
+                  {/* What the customer actually saves, spelled out beside the
+                      total as it is typed. The figure above was always here and
+                      always correct; what was missing was anything confirming
+                      that the number in the Discount box is the number coming
+                      off the bill. Nobody can now enter a discount and be
+                      surprised by the total. */}
+                  {totalDiscount > 0 && (
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: '#15803d',
+                                   background: '#f0fdf4', border: '1px solid #bbf7d0',
+                                   borderRadius: 999, padding: '2px 10px' }}>
+                      Customer saves {fmt(totalDiscount)}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -2272,6 +2398,154 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
           </form>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Pending change request banner ────────────────────────────────────────────
+//
+// A hub's proposed edit, shown on the estimate it would change, with the two
+// buttons that decide it. Migration 180 has the account of why a hub's edit is
+// a request rather than a write.
+//
+// AT MODULE SCOPE, NOT NESTED IN THE DETAIL COMPONENT.
+// A component declared inside another is a new type on every render, so React
+// unmounts and remounts the whole subtree — which here would blow away the
+// reject box mid-sentence, every time the parent re-rendered. The same mistake
+// cost this codebase a working dropdown once already.
+function ChangeRequestBanner({ estimateId, requestId, summary, status, isHubUser, showToast, onDone }) {
+  const [detail, setDetail]   = react.useState(null);
+  const [busy, setBusy]       = react.useState(false);
+  const [rejecting, setRejecting] = react.useState(false);
+  const [reason, setReason]   = react.useState('');
+
+  // The live preflight comes from the server, not from what the list row
+  // happened to carry: an invoice can be paid between the list loading and
+  // somebody reading this banner, and "Approve" must not be offered for
+  // something that will refuse.
+  react.useEffect(() => {
+    let cancelled = false;
+    api(`/api/estimate-change-requests/${requestId}`)
+      .then(r => { if (!cancelled) setDetail(r); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [requestId]);
+
+  const blockers = detail?.blockers || [];
+  const before   = detail?.item?.before_totals || {};
+  const after    = detail?.item?.after_totals  || {};
+  const failed   = status === 'failed';
+  const applying = status === 'applying';
+
+  async function decide(path, body) {
+    setBusy(true);
+    try {
+      await api(`/api/estimate-change-requests/${requestId}/${path}`, { method: 'POST', body });
+      showToast(path === 'approve'
+        ? 'Approved. The estimate and its invoices have been updated.'
+        : 'Rejected. The hub has been told why.');
+      await onDone();
+    } catch (err) {
+      showToast(err.message || `Could not ${path} the request.`, 'error');
+      await onDone();
+    } finally {
+      setBusy(false);
+      setRejecting(false);
+    }
+  }
+
+  const money = n => (n == null ? null : `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  const ciBefore = before.customer_invoice?.total;
+  const estAfter = after.estimate;
+
+  const tone = failed
+    ? { bg: '#fef2f2', border: '#fca5a5', text: '#991b1b' }
+    : { bg: '#fffbeb', border: '#fcd34d', text: '#92400e' };
+
+  return (
+    <div className="est-no-print" style={{
+      background: tone.bg, border: `1px solid ${tone.border}`, borderRadius: 10,
+      padding: '12px 14px', marginBottom: 14, color: tone.text,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 13.5 }}>
+        <AlertCircle size={16} style={{ flexShrink: 0 }} />
+        {failed
+          ? 'This change was only partly applied'
+          : applying
+            ? 'This change is being applied…'
+            : isHubUser
+              ? 'Your change is waiting for Spinoto'
+              : `${detail?.item?.hub_name || 'The hub'} requested a change`}
+      </div>
+
+      <div style={{ fontSize: 13, marginTop: 6, lineHeight: 1.6 }}>
+        <b>{summary}</b>
+        {ciBefore != null && estAfter != null && (
+          <>
+            {' — '}
+            <span style={{ textDecoration: 'line-through', opacity: 0.7 }}>{money(ciBefore)}</span>
+            {' → '}
+            <b style={{ fontSize: 14 }}>{money(estAfter)}</b>
+          </>
+        )}
+        <div style={{ fontSize: 12, marginTop: 3, opacity: 0.9 }}>
+          Requested by {detail?.item?.requested_by_name || 'the hub'}
+          {/* Every figure on this page below the banner is the OLD one. Saying
+              so is the difference between a notice and a trap. */}
+          {' · '}The amounts shown below are the current ones — they change only if this is approved.
+        </div>
+      </div>
+
+      {failed && detail?.item?.decision_note && (
+        <div style={{ fontSize: 12, marginTop: 8, background: '#fff', border: '1px solid #fca5a5', borderRadius: 7, padding: '7px 10px' }}>
+          {detail.item.decision_note}
+        </div>
+      )}
+
+      {/* Blockers are shown BEFORE the buttons and instead of Approve — the
+          reviewer learns an invoice is paid while reading, not after clicking. */}
+      {blockers.length > 0 && (
+        <ul style={{ margin: '9px 0 0', paddingLeft: 18, fontSize: 12.5 }}>
+          {blockers.map((b, i) => <li key={i}>{b}</li>)}
+        </ul>
+      )}
+
+      {!isHubUser && !applying && (
+        <div style={{ marginTop: 11 }}>
+          {rejecting ? (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              <input
+                className="lb-control"
+                autoFocus
+                style={{ flex: '1 1 260px', minWidth: 220 }}
+                placeholder="Why? The hub sees this."
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && reason.trim().length >= 3) decide('reject', { reason: reason.trim() }); }}
+              />
+              <button className="btn btn-danger" disabled={busy || reason.trim().length < 3}
+                onClick={() => decide('reject', { reason: reason.trim() })}>
+                {busy ? 'Rejecting…' : 'Send rejection'}
+              </button>
+              <button className="btn btn-ghost" disabled={busy} onClick={() => { setRejecting(false); setReason(''); }}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+              {blockers.length === 0 && (
+                <button className="btn btn-primary" disabled={busy}
+                  onClick={() => decide('approve')}>
+                  {busy ? 'Applying…' : (failed ? 'Retry' : 'Approve & update all three')}
+                </button>
+              )}
+              <button className="btn btn-danger" disabled={busy} onClick={() => setRejecting(true)}>
+                Reject
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2628,6 +2902,11 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
       setEstimate(res.item);
       // Notify parent list to sync its shallow copy
       onUpdated && onUpdated(res.item);
+      /* A line only reaches an invoice once it is BOTH approved and completed,
+         so finishing one moves the bill. The server re-syncs both invoices
+         itself and says what it managed — including what it refused to touch,
+         which is the half worth reading. Silent when nothing needed doing. */
+      if (res?.resync_message) showToast(res.resync_message);
     } catch (err) {
       showToast(err.message || 'Failed to update work status', 'error');
     }
@@ -2687,9 +2966,25 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   const detailDiscountMode = estimate.discount_mode || 'none';
   const detailTxDiscountType = estimate.transaction_discount_type || 'percent';
   const detailTxDiscountValue = parseFloat(estimate.transaction_discount_value) || 0;
+  /* Which discount rule THIS estimate was raised under — see lib/discountBasis.
+     Read from its created_at, never from today, so opening an old estimate
+     after the cutover still shows the figures it was quoted at. */
+  const detailBasis = getDiscountBasis(estimate.created_at);
+  const detailInclusive = detailBasis === 'inclusive';
 
   // Totals + dynamic GST slab grouping
   let subtotalEx = 0, totalGst = 0, grandTotal = 0, totalDiscount = 0;
+  /* The TAXABLE base — what GST was actually charged on.
+     ────────────────────────────────────────────────────────────────────────
+     Separate from subtotalEx because on a transaction discount the two are
+     different numbers doing different jobs: subtotalEx is what the Subtotal
+     ROW PRINTS (pre-discount, so the column reads top to bottom), and this is
+     what the maths BALANCES against. Conflating them is what put a
+     "Rounding −₹30.00" line under a ₹30 discount — see roundingAdj below.
+
+     Null outside the transaction-discount branch, where no such split exists
+     and subtotalEx is already the taxable base. */
+  let taxableBase = null;
   const gstSlabMap = {}; // { '18': { cgst: n, sgst: n }, '5': { ... } }
   // Exclude rejected items from all totals (customer_approved === false means rejected)
   const activeItems = items.filter(it => it.customer_approved !== false);
@@ -2727,6 +3022,7 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
      Rebuilt from the per-line results so a bill mixing 18% and 28% has each
      slab reduced in proportion to its own share, not to a blended rate. */
   let txDiscountAmount = 0;
+  const txShareById = {};
   if (detailDiscountMode === 'transaction' && detailTxDiscountValue > 0) {
     const calc = applyTransactionDiscount({
       items: activeItems.map(it => {
@@ -2734,11 +3030,26 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
         const gstPct = parseFloat(it.gst_percent) || 0;
         const preDiscountIncRate = exRate > 0 ? r2(exRate * (1 + gstPct / 100)) : 0;
         const c = computeItem({ ...it, unit_rate: it.customer_rate ?? it.unit_rate, inc_rate: preDiscountIncRate });
-        return { amount: c.amount, gst_percent: gstPct };
+        return { amount: c.amount, inc: c.total, gst_percent: gstPct };
       }),
       discountType:  detailTxDiscountType,
       discountValue: detailTxDiscountValue,
+      // This estimate's own rule — an issued document keeps it for ever.
+      basis: detailBasis,
+      incOf: it => it.inc,
     });
+
+    /* Each line's share of the whole-bill discount, keyed by item id.
+       ─────────────────────────────────────────────────────────────────────
+       Keyed rather than indexed because the calc runs over activeItems
+       (rejected lines excluded) while the table below renders `items` — the
+       two arrays do not line up, and an index would quietly put one line's
+       discount against another's name.
+
+       The PRINTED estimate shows this figure (documentAdapter). Without it
+       here the screen and the paper would disagree about the same estimate,
+       which is the whole class of bug this work exists to end. */
+    calc.lines.forEach((l, i) => { txShareById[activeItems[i].id] = l.share; });
 
     txDiscountAmount = calc.discountAmount;
     /* grossExGst, not subtotalExGst.
@@ -2755,7 +3066,14 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
            845.76 − 84.58 + 137.02 = 898.20
        The totals themselves are untouched; only which of the two the subtotal
        row displays has changed. */
-    subtotalEx = calc.grossExGst;
+    /* WHAT THE SUBTOTAL ROW PRINTS.
+       On the inclusive basis it is the pre-discount INCLUSIVE total, so the
+       column reads Items − Discount = Grand Total. On the legacy basis it is
+       the pre-discount ex-GST figure, exactly as before — those documents are
+       issued and must not change. */
+    subtotalEx = detailInclusive ? calc.grossIncGst : calc.grossExGst;
+    // The discounted taxable value — NOT printed, only balanced against.
+    taxableBase = calc.subtotalExGst;
     totalGst   = calc.totalGst;
     grandTotal = calc.grandTotal;
 
@@ -2778,15 +3096,38 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   }
   totalDiscount = r2(totalDiscount);
 
-  /* Rounding adjustment: the gap between the printed total and the sum of the
-     printed components. Should be 0.00, or ±0.01 from per-line rounding.
+  /* Rounding adjustment: the gap between the grand total and the sum of the
+     parts it is built from. Should be 0.00, or ±0.01 from per-line rounding.
+     An estimate has no whole-rupee round-off — that is a customer/purchase
+     invoice thing (round_off column, utils/invoiceRounding.js) — so anything
+     other than a paisa here means the arithmetic disagrees with itself.
 
-     `+ txDiscountAmount` was removed from this sum, and leaving it would have
-     been the loudest possible bug: the discount now lives INSIDE subtotalEx
-     rather than being subtracted after it, so adding it back made this equal
-     the whole discount — and the invoice would have printed a "Rounding ₹500"
-     line under the total. */
-  const roundingAdj = r2(grandTotal - subtotalEx - totalGst);
+     BALANCED AGAINST taxableBase, NOT subtotalEx
+     ────────────────────────────────────────────
+     On a transaction discount those are different numbers, and using the wrong
+     one printed the discount a second time under the label "Rounding":
+
+         845.76 − 146.84 against a grand total of 962.60  →  Rounding −30.00
+
+     which is exactly the ₹30 discount, because subtotalEx is the PRE-discount
+     figure the Subtotal row prints and the tax was charged on the ₹815.76
+     that remained. Balanced against taxableBase it comes out at 0.00 and the
+     row correctly hides itself.
+
+     The comment that used to sit here said `+ txDiscountAmount` had been
+     removed because "the discount now lives INSIDE subtotalEx". That was true
+     when it was written; a later change repointed subtotalEx at grossExGst so
+     the Subtotal row would read correctly, and this line was never revisited.
+     Naming the taxable base explicitly is what stops that happening a third
+     time — neither variable has to be remembered as "the one that means the
+     other thing today". */
+  const roundingAdj = r2(grandTotal - (taxableBase ?? subtotalEx) - totalGst);
+  /* On the inclusive basis the printed column is
+         Items (incl. GST) − Discount = Grand Total
+     and the tax rows sit inside that total rather than adding to it. The check
+     above still holds — it balances the GRAND TOTAL against the taxable base
+     and the tax, which is basis-independent — so nothing more is needed here.
+     Written down because the next reader will check. */
   // Sort slabs descending by rate (18% first, then 12%, 5%, etc.)
   const gstSlabs = Object.values(gstSlabMap).sort((a, b) => b.pct - a.pct);
 
@@ -2808,7 +3149,22 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
     const half = rates[0] / 2;
     return half.toFixed(half % 1 === 0 ? 0 : 1);
   })();
-  const hasDiscountInDetail = totalDiscount > 0;
+  /* The Discount column shows for a LINE-ITEM discount (its original job) and
+     now also for a whole-bill one, whose per-line share was previously computed
+     and thrown away — leaving the column hidden on screen while the printed
+     estimate showed it. Only on the inclusive basis: a legacy estimate's share
+     is an ex-GST figure that never appeared on that document. */
+  /* CGST/SGST per line, allocated across the whole estimate so the two columns
+     each close on the figure the summary declares. Computed with the SAME
+     computeItem the rows below use — a second way of arriving at the line's tax
+     is how the cell and the column total come to disagree. See lib/gstSplit. */
+  const lineHalves = splitGstLines(items.map(it => {
+    const exR = parseFloat(it.customer_rate ?? it.unit_rate) || 0;
+    const g   = parseFloat(it.gst_percent) || 0;
+    return computeItem({ ...it, unit_rate: exR, inc_rate: exR > 0 ? r2(exR * (1 + g / 100)) : 0 }).gst_amount;
+  }));
+  const hasTxShares = detailInclusive && Object.values(txShareById).some(v => v > 0.005);
+  const hasDiscountInDetail = totalDiscount > 0 || hasTxShares;
 
   const approvedCount = items.filter(i => i.customer_approved === true).length;
   const rejectedCount = items.filter(i => i.customer_approved === false).length;
@@ -3084,6 +3440,28 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
               Dropping that column is what buys the width for Summary to sit
               HERE rather than below the line items, where it was one more thing
               between the items and the actions. */}
+
+          {/* ── Pending change request ────────────────────────────────────────
+              FIRST thing in the document, above Bill To, and est-no-print so it
+              never reaches a customer's copy.
+
+              Above everything because the figures below it are the OLD ones —
+              a reader who takes in ₹986.00 before noticing a banner further
+              down has already been misled, and this whole feature exists to
+              stop the estimate and its invoices quietly saying different
+              things. */}
+          {estimate.change_request_id && (
+            <ChangeRequestBanner
+              estimateId={estimate.id}
+              requestId={estimate.change_request_id}
+              summary={estimate.change_request_summary}
+              status={estimate.change_request_status}
+              isHubUser={isHubUser}
+              showToast={showToast}
+              onDone={load}
+            />
+          )}
+
           <div className="est-doc-meta">
 
             <div className="est-doc-col">
@@ -3187,10 +3565,25 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
               <div className="est-doc-sum">
 
                 <div className="est-doc-sumrow">
-                  <span>Subtotal (ex-GST)</span><b>{fmt(subtotalEx)}</b>
+                  {/* Inclusive basis: the top line is the price the customer
+                      was quoted, so Items − Discount reaches the Grand Total.
+                      Legacy estimates keep the ex-GST wording, where that
+                      subtraction does not hold. */}
+                  <span>{detailInclusive && txDiscountAmount > 0 ? 'Items (incl. GST)' : 'Subtotal (ex-GST)'}</span>
+                  <b>{fmt(subtotalEx)}</b>
                 </div>
 
-                {hasDiscountInDetail && (
+                {/* The LINE-level discount total, and only when there is one.
+                    This used to be gated on hasDiscountInDetail, which is also
+                    true for a whole-bill discount — so a transaction-level
+                    discount printed BOTH rows, the first of them reading
+                    "Total Discount  −₹0.00" above the real figure. The two are
+                    mutually exclusive by design (an estimate is line-item OR
+                    transaction, never both), so each row now tests its own
+                    number. hasDiscountInDetail still governs the Discount
+                    COLUMN in the table, where a whole-bill share does belong —
+                    it appears there per line, labelled "Bill share". */}
+                {totalDiscount > 0 && (
                   <div className="est-doc-sumrow est-doc-sumrow--disc">
                     <span>Total Discount</span><b>{'\u2212'}{fmt(totalDiscount)}</b>
                   </div>
@@ -3202,6 +3595,13 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                     <b>{'\u2212'}{fmt(txDiscountAmount)}</b>
                   </div>
                 )}
+
+                {/* The taxable value — see the same row on the customer
+                    invoice. taxableBase is the post-discount figure GST was
+                    charged on; subtotalEx above is the pre-discount price. */}
+                <div className="est-doc-sumrow">
+                  <span>Taxable value</span><b>{fmt(taxableBase ?? r2(grandTotal - totalGst))}</b>
+                </div>
 
                 {gstSlabs.map(slab => {
                   const halfLabel = (slab.pct / 2).toFixed(slab.pct % 2 === 0 ? 0 : 1);
@@ -3293,18 +3693,32 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                           <td style={{ textAlign: 'right', fontSize: 13, color: '#166534', fontWeight: 600 }}>{fmt(preDiscIncRate)}</td>
                           {hasDiscountInDetail && (
                             <td style={{ textAlign: 'center' }}>
-                              {c.discountAmount > 0 ? (
+                              {(() => {
+                                /* One figure: this line's own discount plus its
+                                   share of any whole-bill one. Matching the
+                                   customer invoice and the printed estimate,
+                                   which both show a single Disc. number. */
+                                const share = detailInclusive ? (txShareById[it.id] || 0) : 0;
+                                const shown = r2(c.discountAmount + share);
+                                if (!(shown > 0.005)) {
+                                  return <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>;
+                                }
+                                return (
                                 <div className="est-discount-cell" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                                   <span style={{ fontSize: 12, fontWeight: 600, color: '#b45309', whiteSpace: 'nowrap' }}>
-                                    {fmt(c.discountAmount)}
+                                    {fmt(shown)}
                                   </span>
                                   <span style={{ fontSize: 11, color: '#92400e', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                                    {it.discount_type === 'percent' ? `${it.discount_value}%` : 'Flat'}
+                                    {/* A whole-bill share has no rule of its own;
+                                        labelling it "Flat" would invite the reader
+                                        to check it against an amount nobody typed. */}
+                                    {c.discountAmount > 0
+                                      ? (it.discount_type === 'percent' ? `${it.discount_value}%` : 'Flat')
+                                      : 'Bill share'}
                                   </span>
                                 </div>
-                              ) : (
-                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>
-                              )}
+                                );
+                              })()}
                             </td>
                           )}
                           <td style={{ textAlign: 'right', fontSize: 13 }}>{fmt(c.amount)}</td>
@@ -3313,13 +3727,13 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                               shows only on a mixed-slab estimate — otherwise it
                               is already in the column header. */}
                           <td style={{ textAlign: 'right', fontSize: 13 }}>
-                            {gstPct > 0 ? fmt(c.gst_amount / 2) : '—'}
+                            {gstPct > 0 ? fmt(lineHalves[idx].cgst) : '—'}
                             {gstPct > 0 && !uniformHalfPct && (
                               <span className="est-doc-rate">{(gstPct / 2).toFixed(1)}%</span>
                             )}
                           </td>
                           <td style={{ textAlign: 'right', fontSize: 13 }}>
-                            {gstPct > 0 ? fmt(c.gst_amount / 2) : '—'}
+                            {gstPct > 0 ? fmt(lineHalves[idx].sgst) : '—'}
                             {gstPct > 0 && !uniformHalfPct && (
                               <span className="est-doc-rate">{(gstPct / 2).toFixed(1)}%</span>
                             )}
@@ -3332,15 +3746,20 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                           </td>
                           {['fully_approved', 'partially_approved', 'work_in_progress', 'work_completed'].includes(status) && (
                             <td className="est-no-print" style={{ textAlign: 'center' }}>
+                              {/* The control follows the LINE, not the estimate.
+                                  It used to drop to a read-only badge as soon as
+                                  the ESTIMATE reached work_completed — which was
+                                  fine while that status meant every line was
+                                  finished. It no longer does: a line approved
+                                  after the job was closed sits at pending on a
+                                  work_completed estimate, and there was then no
+                                  way to mark it done. The API has always accepted
+                                  work_completed here; only the screen refused. */}
                               {it.customer_approved === true ? (
-                                status === 'work_completed' ? (
-                                  <WorkStatusBadge status={it.work_status || 'pending'} />
-                                ) : (
-                                  <WorkStatusSelect
-                                    value={it.work_status || 'pending'}
-                                    onChange={val => handleWorkStatusChange(it.id, val)}
-                                  />
-                                )
+                                <WorkStatusSelect
+                                  value={it.work_status || 'pending'}
+                                  onChange={val => handleWorkStatusChange(it.id, val)}
+                                />
                               ) : (
                                 <WorkStatusBadge status={it.customer_approved === false ? 'rejected' : 'pending'} />
                               )}
@@ -3483,10 +3902,18 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 CUSTOMER_DECISION_STAFF_ONLY); this is so the portal does not
                 offer a button that can only fail. The hub still submits the
                 estimate and still updates per-item work status. */}
-            {!isHubUser && ['sent_to_customer', 'partially_approved', 'fully_approved', 'work_in_progress'].includes(status) && (
+            {/* work_completed is in this list for the same reason the server
+                accepts it: it is where almost every real estimate ends up, and
+                a decision can still change there. The customer refuses a line
+                after seeing the car; a line added mid-job is still waiting to
+                be asked about. Without it the screen showed the state and
+                offered no way to alter it, and deleting the line was the only
+                move left. */}
+            {!isHubUser && ['sent_to_customer', 'partially_approved', 'fully_approved',
+                            'work_in_progress', 'work_completed'].includes(status) && (
               <button className="btn btn-primary" disabled={actionBusy}
                 onClick={() => setShowApproval(true)}>
-                Mark Customer Approval
+                {status === 'work_completed' ? 'Update Customer Approval' : 'Mark Customer Approval'}
               </button>
             )}
 
@@ -3598,7 +4025,11 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           <CustomerApprovalModal
             estimate={estimate}
             onClose={() => setShowApproval(false)}
-            onDone={() => { setShowApproval(false); load(); showToast('Customer approvals saved.'); }}
+            onDone={(syncMsg) => {
+              setShowApproval(false);
+              load();
+              showToast(['Customer approvals saved.', syncMsg].filter(Boolean).join(' '));
+            }}
           />
         )}
         {showRevision && (
@@ -3612,9 +4043,18 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
           <EstimateModal
             editEstimate={estimate}
             onClose={() => setShowEdit(false)}
-            onSaved={async (item, hubInfo) => {
+            onSaved={async (item, hubInfo, queued) => {
               setShowEdit(false);
               await load();
+              /* Queued for approval (hub session). No sync warning, because
+                 there is nothing out of sync — the estimate did not move
+                 either. This replaces the dead-end that used to appear here,
+                 which told a hub its invoices could not be updated and left it
+                 to telephone somebody. */
+              if (queued) {
+                showToast(queued.message || 'Sent to Spinoto for approval.');
+                return;
+              }
               if (hubInfo) {
                 // Hub reassignment — spell out exactly what happened
                 if (hubInfo.piDeleted && hubInfo.piRegenerated) {
@@ -3842,6 +4282,11 @@ export default function EstimatesPage() {
   // useCallback because usePageSearch compares this by identity.
   const onSearchChange = react.useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
   const [statusFilter, setStatusFilter] = react.useState(ls.statusFilter ?? '');
+  /* The "Change requested" chip. Not persisted with the other filters on
+     purpose: it is a to-do list, not a view preference, and a filter that is
+     silently still on tomorrow makes an estimate list look empty. */
+  const [changeReqOnly, setChangeReqOnly] = react.useState(false);
+  const [changeReqCount, setChangeReqCount] = react.useState(0);
   const [vehicleTypeFilter, setVehicleTypeFilter] = react.useState(ls.vehicleTypeFilter ?? '');
   // A hub login is pinned to its own hub and cannot widen it, so user.hub_id
   // must win over anything restored from sessionStorage — the saved value can
@@ -3996,6 +4441,7 @@ export default function EstimatesPage() {
       if (statusFilter) q.set('status', statusFilter);
       if (hubFilter.length > 0) q.set('hub_ids', hubFilter.join(','));
       if (vehicleTypeFilter) q.set('vehicle_type', vehicleTypeFilter);
+      if (changeReqOnly) q.set('change_requested', '1');
       q.set('page', String(page));
       q.set('limit', String(pageSize));
 
@@ -4017,9 +4463,31 @@ export default function EstimatesPage() {
       showToast('Failed to load estimates.', 'error');
       setLoading(false);
     }
-  }, [search, statusFilter, hubFilter, vehicleTypeFilter, page, pageSize, showToast, abortSignal]);
+  }, [search, statusFilter, hubFilter, vehicleTypeFilter, changeReqOnly, page, pageSize, showToast, abortSignal]);
 
   react.useEffect(() => { fetchEstimates(); }, [fetchEstimates]);
+
+  /* How many change requests are waiting. Refetched alongside the list, so
+     approving one drops the count immediately rather than leaving a chip
+     advertising work that is already done.
+
+     The endpoint returns null for a hub session — a hub cannot decide these,
+     and a number it can never move is noise. Chip hidden in that case. */
+  const refreshChangeReqCount = react.useCallback(async () => {
+    if (isHubUser) return;
+    try {
+      const r = await api('/api/estimate-change-requests?status=pending&limit=1');
+      setChangeReqCount(r.pending_count ?? 0);
+    } catch { /* a missing count must never break the list */ }
+  }, [isHubUser]);
+  react.useEffect(() => { refreshChangeReqCount(); }, [refreshChangeReqCount, estimates]);
+
+  /* The chip turns itself off when it empties. Otherwise approving the last
+     request leaves the filter on and the list reading "No estimates match your
+     filters" — which looks like the page broke, not like you finished. */
+  react.useEffect(() => {
+    if (changeReqOnly && changeReqCount === 0) setChangeReqOnly(false);
+  }, [changeReqOnly, changeReqCount]);
 
   /* ── The list keeps itself current ───────────────────────────────────────
      This page subscribed to nothing, so an estimate approved by the customer
@@ -4246,6 +4714,40 @@ export default function EstimatesPage() {
               </div>
             )}
 
+            {/* ── Change requests waiting ────────────────────────────────
+                Staff only, and only when there ARE any: a permanent chip
+                reading "(0)" is furniture, and people stop seeing it. Appearing
+                only when it means something is what makes it get read.
+
+                A real <button> with a `.est-chip--on` modifier at (0,1,0) would
+                lose to listLayout.css's `button.lb-control` at (0,1,1) — the
+                specificity trap that left the Follow-ups chips unable to show
+                which one was active. Styled inline here, so there is nothing to
+                out-rank. */}
+            {!isHubUser && changeReqCount > 0 && (
+              <button
+                type="button"
+                onClick={() => { setChangeReqOnly(v => !v); setPage(1); }}
+                title={changeReqOnly ? 'Show all estimates' : 'Show only estimates with a change waiting for approval'}
+                style={{
+                  flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 7,
+                  padding: '0 12px', height: 34, borderRadius: 8, cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+                  border: `1px solid ${changeReqOnly ? '#f59e0b' : 'var(--border)'}`,
+                  background: changeReqOnly ? '#f59e0b' : '#fffbeb',
+                  color: changeReqOnly ? '#fff' : '#92400e',
+                }}
+              >
+                <AlertCircle size={14} />
+                Change requested
+                <span style={{
+                  minWidth: 18, padding: '0 5px', borderRadius: 999, fontSize: 11.5, fontWeight: 800,
+                  background: changeReqOnly ? 'rgba(255,255,255,.28)' : '#f59e0b',
+                  color: '#fff', textAlign: 'center',
+                }}>{changeReqCount}</span>
+              </button>
+            )}
+
             <select
               className="lb-control"
               value={statusFilter}
@@ -4339,7 +4841,7 @@ export default function EstimatesPage() {
               <div className="lb-empty">
                 <FileText size={32} style={{ opacity: 0.3, marginBottom: 10 }} />
                 <p style={{ margin: 0 }}>
-                  {search || statusFilter || hubFilter ? 'No estimates match your filters.' : 'No estimates yet. Create your first one above.'}
+                  {changeReqOnly ? 'No change requests waiting.' : (search || statusFilter || hubFilter ? 'No estimates match your filters.' : 'No estimates yet. Create your first one above.')}
                 </p>
               </div>
             ) : isNarrow ? (

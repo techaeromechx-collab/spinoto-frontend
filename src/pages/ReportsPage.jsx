@@ -9,6 +9,7 @@ import {
   LayoutDashboard, Users, TrendingUp, IndianRupee,
   ChevronUp, ChevronDown, Minus, RefreshCw, Calendar, FileDown,
   X, CheckCircle2, Clock, AlertCircle, Phone, ChevronRight, Search, Info, Filter, RotateCcw,
+  Car,
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { jsPDF } from 'jspdf';
@@ -147,6 +148,14 @@ export function hubKey(hubId) {
  * strikes them through instead of hiding them, so it stays obvious that a hub
  * was excluded rather than simply having no invoices.
  */
+const ZERO_METRICS = {
+  revenue: 0, collected: 0, hub_payable: 0, hub_payable_approved: 0,
+  our_take: 0, our_take_est: 0, outstanding_to_hub: 0, invoice_count: 0,
+};
+
+/** The sentinel for "no vehicle type recorded", matching the API's own key. */
+export const NO_VTYPE_KEY = 'none';
+
 export function applyHubExclusions(hubRev, excluded) {
   const all = hubRev?.items || [];
   const ex = excluded instanceof Set ? excluded : new Set(excluded || []);
@@ -154,10 +163,7 @@ export function applyHubExclusions(hubRev, excluded) {
   const kept = all.filter(r => !ex.has(hubKey(r.hub_id)));
   const removed = all.filter(r => ex.has(hubKey(r.hub_id)));
 
-  const ZERO = {
-    revenue: 0, collected: 0, hub_payable: 0, hub_payable_approved: 0,
-    our_take: 0, our_take_est: 0, outstanding_to_hub: 0, invoice_count: 0,
-  };
+  const ZERO = ZERO_METRICS;
   const sum = rows => rows.reduce((acc, row) => ({
     revenue:              acc.revenue + Number(row.revenue || 0),
     collected:            acc.collected + Number(row.collected || 0),
@@ -169,6 +175,19 @@ export function applyHubExclusions(hubRev, excluded) {
     invoice_count:        acc.invoice_count + Number(row.invoice_count || 0),
   }), { ...ZERO });
 
+  // The vehicle-type split, summed from the KEPT hubs only — not from the
+  // API's total_by_type. Excluding a hub has to move these rows too, or the
+  // split and the totals directly above it in the same card would disagree the
+  // moment anyone used the exclusion filter, which is exactly the kind of
+  // quiet mismatch this page exists to avoid.
+  const byType = {};
+  for (const row of kept) {
+    for (const [k, t] of Object.entries(row.by_type || {})) {
+      if (!byType[k]) byType[k] = { ...ZERO_METRICS };
+      for (const f of Object.keys(ZERO_METRICS)) byType[k][f] += Number(t[f] || 0);
+    }
+  }
+
   return {
     items: kept,                 // what the totals are built from
     rows: all,                   // what the table renders, excluded ones included
@@ -176,6 +195,10 @@ export function applyHubExclusions(hubRev, excluded) {
     removed,                     // for the "excluding X" banner
     removedTotal: sum(removed),
     isFiltered: removed.length > 0,
+    byType,                      // per-type figures, rendered inside the total card
+    // The bucket list, straight from the API so a type with no rows in this
+    // period still appears (and reads as a zero, which is information).
+    vehicleTypes: hubRev?.vehicle_types || [],
   };
 }
 
@@ -228,6 +251,29 @@ export function buildCsvExport(tab, { hubRev, sortedUsers, byUserCount, from }) 
         Number(t.outstanding_to_hub || 0), Number(t.our_take || 0),
         Number(t.invoice_count || 0),
       ]);
+    }
+    // One line per vehicle type under the TOTAL, mirroring the split the card
+    // now shows on screen. Written into the Hub column rather than a new
+    // Vehicle Type column: adding a column would push every existing figure
+    // one to the right and break any sheet somebody has already built against
+    // this file. The "— of which" prefix is what marks them as a breakdown of
+    // the row above rather than more hubs.
+    //
+    // Only when there is more than one type: a single "of which" line that
+    // repeats TOTAL exactly is noise.
+    const byType = hubRev?.byType || {};
+    const typeOrder = (hubRev?.vehicleTypes || []).filter(v => byType[v.key]);
+    if (typeOrder.length > 1) {
+      for (const v of typeOrder) {
+        const t = byType[v.key];
+        rows.push([
+          `— of which ${v.name}`,
+          Number(t.revenue || 0), Number(t.collected || 0),
+          Number(t.hub_payable || 0), Number(t.hub_payable_approved || 0),
+          Number(t.outstanding_to_hub || 0), Number(t.our_take || 0),
+          Number(t.invoice_count || 0),
+        ]);
+      }
     }
     return {
       name: `spinoto-hub-revenue-${from || 'all'}.csv`,
@@ -498,8 +544,17 @@ export default function ReportsPage() {
     if (hubId) params.set('hub_id', hubId);
     const qs = params.toString() ? `?${params.toString()}` : '';
     api(`/api/reports/hub-revenue${qs}`)
-      .then(r => setHubRev({ items: r.items || [], total: r.total || { revenue: 0, collected: 0, hub_payable: 0, hub_payable_approved: 0, our_take: 0, our_take_est: 0, outstanding_to_hub: 0, invoice_count: 0 } }))
-      .catch(() => setHubRev({ items: [], total: { revenue: 0, collected: 0, hub_payable: 0, hub_payable_approved: 0, our_take: 0, our_take_est: 0, outstanding_to_hub: 0, invoice_count: 0 } }))
+      // vehicle_types travels with the payload rather than being fetched
+      // separately: the toggle and the numbers it filters have to come from
+      // one response, or a slow second request leaves the buttons describing
+      // data that is not on screen yet.
+      .then(r => setHubRev({
+        items: r.items || [],
+        total: r.total || { ...ZERO_METRICS },
+        vehicle_types: r.vehicle_types || [],
+        total_by_type: r.total_by_type || {},
+      }))
+      .catch(() => setHubRev({ items: [], total: { ...ZERO_METRICS }, vehicle_types: [], total_by_type: {} }))
       .finally(() => setHubRevLoading(false));
   }, [tab, dateRange, hubId]); // eslint-disable-line
 
@@ -1603,6 +1658,8 @@ export default function ReportsPage() {
                         <li><b>Outstanding to Hub</b> = for each of those same Purchase Invoices, take what's owed minus what's already been paid, and add that up (never counting less than zero for any single one)</li>
                         <li><b>Our take</b> = same formula as the Payouts page's "Total Take Rate": for every item on an approved, tech-rate purchase invoice, (customer rate − hub rate) × quantity, summed up. Commission-mode jobs contribute ₹0 here, same as on Payouts.</li>
                         <li><b>Customer invoices</b> = COUNT of customer invoices in that set</li>
+                        <li><b>Vehicle type</b> comes from the job's appointment, or — for a standalone estimate with no appointment — from the estimate's own vehicle details. Same resolution the Customer Invoices list uses, so the two screens agree.</li>
+                        <li><b>Not set</b> is a job where neither the appointment nor the estimate recorded a vehicle type. It is shown rather than dropped, so the types always add up to the total above.</li>
                       </ul>
                       <div style={{ marginTop: 6 }}>
                         Revenue/Collected/Total PI Amount/Outstanding are grouped by the customer invoice's hub and scoped to the date range above (invoice created date). Our take is grouped by the purchase invoice's own hub and scoped by the PI's created date. Unlike Payouts, this report still respects the date range and hub filter above.
@@ -1670,6 +1727,105 @@ export default function ReportsPage() {
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Customer invoice{hubView.total.invoice_count !== 1 ? 's' : ''}</div>
                   </div>
                 </div>
+
+                {/* ── By vehicle type ────────────────────────────────────────
+                    Inside this card rather than beside it, because it is the
+                    same six figures cut a second way — not a different report.
+                    Read-only: there is no per-type filter, so nothing here
+                    changes the numbers above it, and no reader has to work out
+                    whether a control is currently on.
+
+                    Hidden when the data holds only one type. A "split" with a
+                    single row repeats the totals directly above it, wearing a
+                    heading — worse than showing nothing.
+
+                    Rolled up from the KEPT hubs (see applyHubExclusions), so
+                    excluding a hub moves these rows and the totals together.
+                    Two figures in one card that disagree is the failure mode
+                    this whole tab exists to avoid. */}
+                {Object.keys(hubView.byType).length > 1 && (
+                  <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8,
+                      fontSize: 11, fontWeight: 700, letterSpacing: '.04em',
+                      textTransform: 'uppercase', color: 'var(--text-muted)',
+                    }}>
+                      <Car size={13} style={{ color: '#0891b2' }} />
+                      By vehicle type
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 12 }}>
+                            <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>Vehicle type</th>
+                            <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, textAlign: 'right' }}>Revenue</th>
+                            <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, textAlign: 'right' }}>Share</th>
+                            <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, textAlign: 'right' }}>Collected</th>
+                            <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, textAlign: 'right', color: '#7c3aed' }}>Our Take</th>
+                            <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, textAlign: 'right' }}>Invoices</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {hubView.vehicleTypes.filter(v => hubView.byType[v.key]).map((v, i, arr) => {
+                            const t = hubView.byType[v.key];
+                            const last = i === arr.length - 1;
+                            // Share of the CURRENT total, which already has any
+                            // excluded hubs taken out — so the percentages add to
+                            // 100 against the figure shown above, not against a
+                            // wider one the reader cannot see.
+                            const share = hubView.total.revenue > 0
+                              ? (t.revenue / hubView.total.revenue) * 100 : 0;
+                            const border = last ? 'none' : '1px solid var(--border)';
+                            return (
+                              <tr key={v.key}>
+                                <td style={{ padding: '8px 10px', borderBottom: border, fontWeight: 700 }}>
+                                  {v.name}
+                                  {v.key === NO_VTYPE_KEY && (
+                                    <span
+                                      title="Neither the appointment nor the estimate recorded a vehicle type for these jobs"
+                                      style={{ marginLeft: 7, fontSize: 11, fontWeight: 500, color: 'var(--text-muted)' }}
+                                    >
+                                      — type not recorded
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '8px 10px', borderBottom: border, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                                  {inr(t.revenue)}
+                                </td>
+                                <td style={{ padding: '8px 10px', borderBottom: border, textAlign: 'right', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                                  {/* The bar is why this column earns its place:
+                                      6.4% against 93.6% is a glance, where two
+                                      numbers are a comparison. */}
+                                  <span style={{
+                                    display: 'inline-block', verticalAlign: 'middle', marginRight: 8,
+                                    width: 80, height: 5, borderRadius: 3,
+                                    background: 'var(--bg-soft, #f1f5f9)', overflow: 'hidden',
+                                  }}>
+                                    <span style={{
+                                      display: 'block', height: '100%',
+                                      width: `${Math.max(0, Math.min(100, share))}%`,
+                                      background: '#3b82f6',
+                                    }} />
+                                  </span>
+                                  {share.toFixed(1)}%
+                                </td>
+                                <td style={{ padding: '8px 10px', borderBottom: border, textAlign: 'right', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                                  {inr(t.collected)}
+                                </td>
+                                <td style={{ padding: '8px 10px', borderBottom: border, textAlign: 'right', fontWeight: 700, color: '#7c3aed', fontVariantNumeric: 'tabular-nums' }}>
+                                  {inr(t.our_take)}
+                                </td>
+                                <td style={{ padding: '8px 10px', borderBottom: border, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                  {t.invoice_count}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Per-hub breakdown */}
