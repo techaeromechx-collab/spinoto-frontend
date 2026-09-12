@@ -2024,21 +2024,36 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // ── Load vehicle master data once ─────────────────────────────────────────
+  /* ── Load vehicle master data once ─────────────────────────────────────────
+     allSettled, NOT all — and the difference is the whole bug it fixes.
+
+     Promise.all rejects on the FIRST failure and discards the other four
+     results. With a single .catch(() => {}) swallowing it, one endpoint the
+     caller happens to lack permission for emptied every list here: vehicle
+     types, body types, segments, CC categories AND the state dropdown that
+     starts the location cascade. On the hub portal that is exactly what
+     happened — /api/cc-categories answers 403 to a hub login, and so the
+     "create a direct estimate" wizard showed no location and no vehicle data
+     at all, for a reason nothing on screen could explain.
+
+     Five independent lists have no business failing as one. Each now lands or
+     doesn't on its own, and a list that cannot be fetched is simply empty —
+     which is a dropdown with nothing in it, not a form with nothing in it. */
   useEffect(() => {
-    Promise.all([
+    Promise.allSettled([
       api('/api/vehicles/types'),
       api('/api/vehicles/body-types'),
       api('/api/vehicles/segments'),
       api('/api/cc-categories?limit=100'),
       api('/api/locations/states'),
     ]).then(([vt, bt, sg, cc, st]) => {
-      setVTypes(vt.items || []);
-      setBodyTypes(bt.items || []);
-      setSegments(sg.items || []);
-      setCcCats(cc.items || []);
-      setLocStates(st.items || []);
-    }).catch(() => { });
+      const rows = (res) => (res.status === 'fulfilled' ? (res.value?.items || []) : []);
+      setVTypes(rows(vt));
+      setBodyTypes(rows(bt));
+      setSegments(rows(sg));
+      setCcCats(rows(cc));
+      setLocStates(rows(st));
+    });
   }, []);
 
   // ── Customer search (debounced) ───────────────────────────────────────────

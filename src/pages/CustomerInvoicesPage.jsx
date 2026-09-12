@@ -449,23 +449,52 @@ function AddPaymentModal({ invoiceId, balance, onClose, onSuccess, showToast }) 
 }
 
 // ── Vehicle History Modal ─────────────────────────────────────────────────────
+/**
+ * Look up a vehicle's past invoices — by ANY part of its registration number.
+ *
+ * ── Why a fragment resolves to a list of cars, not a list of invoices ────────
+ * "5656" can be two different vehicles with two different owners. Pouring both
+ * histories into one list produces a running total that belongs to nobody and
+ * a chronology that never happened. So a fragment answers with the CARS it
+ * matched; the invoices follow once it is clear which one is meant.
+ *
+ * One match skips that step entirely — there is no choice to make, and making
+ * the advisor confirm the only possible answer is a click that teaches them to
+ * click without reading.
+ *
+ * ── Why "Show all" exists anyway ─────────────────────────────────────────────
+ * Sometimes the merge is the point: same customer, two cars, "what have they
+ * spent with us". That is a deliberate act with the registration printed on
+ * every row, not the accidental default.
+ */
 function VehicleHistoryModal({ onClose }) {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState('');
+  // The fragment that produced the current picker, kept so "Back to matches"
+  // can return to it without re-typing. Null whenever there is nothing to go
+  // back to — which is what decides whether the link is shown at all.
+  const [fromMatches, setFromMatches] = useState(null);
   useEscapeClose(onClose);
 
-  async function search(e) {
-    e?.preventDefault();
-    const vnum = query.trim().toUpperCase();
-    if (!vnum) return;
+  async function run(term, { all = false, remember = null } = {}) {
+    const v = String(term || '').trim();
+    if (!v) return;
     setLoading(true); setErr(''); setResult(null);
     try {
-      const r = await api(`/api/customer-invoices/vehicle-history/${encodeURIComponent(vnum)}`);
+      const r = await api(
+        `/api/customer-invoices/vehicle-history/${encodeURIComponent(v)}${all ? '?all=1' : ''}`
+      );
       setResult(r);
+      setFromMatches(remember);
     } catch (ex) { setErr(ex.message || 'Search failed'); }
     finally { setLoading(false); }
+  }
+
+  function search(e) {
+    e?.preventDefault();
+    run(query, { remember: null });
   }
 
   const STATUS_COLOR = {
@@ -476,7 +505,12 @@ function VehicleHistoryModal({ onClose }) {
   };
 
   const items = result?.items || [];
+  const vehicles = result?.vehicles || [];
   const grandTotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
+  // Merged view: the same fragment matched several cars and the user asked to
+  // see them together. That is the ONLY case where the registration has to be
+  // on every row, so it is the only case where the column appears.
+  const merged = result?.mode === 'all';
 
   return (
     <div className="modal-backdrop">
@@ -490,17 +524,18 @@ function VehicleHistoryModal({ onClose }) {
 
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)' }}>
-            Look up all past customer invoices by vehicle registration number.
+            Search the whole registration number, or any part of it — <strong>5656</strong> finds
+            every vehicle whose number contains it.
           </p>
 
           <form style={{ display: 'flex', gap: 8 }} onSubmit={search}>
             <input
               className="form-input"
               style={{ flex: 1, textTransform: 'uppercase' }}
-              placeholder="e.g. MH12AB1234"
+              placeholder="e.g. MH12AB1234 — or just 1234"
               value={query}
               autoFocus
-              onChange={e => { setQuery(e.target.value); setResult(null); }}
+              onChange={e => { setQuery(e.target.value); setResult(null); setFromMatches(null); }}
             />
             <button
               type="submit"
@@ -518,16 +553,105 @@ function VehicleHistoryModal({ onClose }) {
             </div>
           )}
 
-          {result && (
+          {/* Too short to mean anything — said before the search runs rather
+              than after it returns half the yard. */}
+          {result?.mode === 'too_short' && (
+            <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+              Type at least <strong>{result.min}</strong> characters — one or two match almost every vehicle.
+            </div>
+          )}
+
+          {result?.mode === 'none' && (
+            <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+              No vehicle found containing <strong>{result.query}</strong>
+            </div>
+          )}
+
+          {/* ── The picker ────────────────────────────────────────────────────
+              Owner name and visit count on each row, because a registration
+              alone does not tell you which of two cars you meant — the name
+              does. */}
+          {result?.mode === 'multi' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <strong style={{ color: 'var(--text)' }}>{vehicles.length}</strong> vehicles contain
+                {' '}<strong style={{ color: 'var(--text)' }}>{result.query}</strong> — pick one
+                {result.truncated && ', or narrow the search'}
+              </div>
+              {result.truncated && (
+                <div style={{ fontSize: 12, color: '#92400e', background: '#fef3c7', borderRadius: 8, padding: '8px 12px' }}>
+                  Showing the {vehicles.length} most recent. There are more — type a longer part of the number.
+                </div>
+              )}
+              <div style={{ maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {vehicles.map(v => (
+                  <button
+                    key={v.vehicle_key}
+                    type="button"
+                    onClick={() => run(v.vehicle_number, { remember: result.query })}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+                      border: '1.5px solid var(--border)', borderRadius: 10, padding: '11px 14px',
+                      background: 'var(--surface, #fff)', cursor: 'pointer',
+                    }}
+                  >
+                    <span style={{
+                      fontSize: 13, fontWeight: 800, letterSpacing: '.03em',
+                      background: '#f3ecff', color: '#5b21b6', padding: '4px 9px', borderRadius: 6,
+                    }}>
+                      {v.vehicle_number}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>
+                        {v.customer_name || 'Unknown owner'}
+                      </span>
+                      <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)' }}>
+                        {v.visits} visit{v.visits !== 1 ? 's' : ''}
+                        {v.last_visit ? ` · last ${fmtDate(v.last_visit)}` : ''}
+                        {v.mobile ? ` · ${v.mobile}` : ''}
+                      </span>
+                    </span>
+                    <ChevronRight size={16} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ alignSelf: 'flex-start' }}
+                onClick={() => run(result.query, { all: true, remember: result.query })}
+              >
+                Show all {vehicles.length} together
+              </button>
+            </div>
+          )}
+
+          {/* ── The invoices ─────────────────────────────────────────────── */}
+          {(result?.mode === 'single' || result?.mode === 'all') && (
             items.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-muted)', fontSize: 13 }}>
                 No invoices found for <strong>{result.vehicle_number}</strong>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {fromMatches && (
+                  <button
+                    type="button"
+                    onClick={() => run(fromMatches, { remember: null })}
+                    style={{
+                      alignSelf: 'flex-start', background: 'none', border: 0, padding: 0,
+                      color: '#7c3aed', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    ← Back to the {fromMatches} matches
+                  </button>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                   <span style={{ color: 'var(--text-muted)' }}>
-                    <strong style={{ color: 'var(--text)' }}>{items.length}</strong> invoice{items.length !== 1 ? 's' : ''} for {result.vehicle_number}
+                    <strong style={{ color: 'var(--text)' }}>{items.length}</strong> invoice{items.length !== 1 ? 's' : ''}
+                    {merged
+                      ? ` across ${result.vehicle_count} vehicles`
+                      : ` for ${result.vehicle_number}`}
                   </span>
                   <span style={{ fontWeight: 700 }}>Total spent: {fmt(grandTotal)}</span>
                 </div>
@@ -537,10 +661,18 @@ function VehicleHistoryModal({ onClose }) {
                     return (
                       <div key={inv.id} style={{ border: '1.5px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             <span style={{ fontSize: 11, fontWeight: 700, background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 5 }}>
                               #{inv.id}
                             </span>
+                            {/* Only on the merged view — on a single car's
+                                history it would repeat the heading on every
+                                row and say nothing. */}
+                            {merged && inv.vehicle_number && (
+                              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.03em', background: '#f3ecff', color: '#5b21b6', padding: '2px 8px', borderRadius: 5 }}>
+                                {inv.vehicle_number}
+                              </span>
+                            )}
                             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{fmtDate(invoiceDate(inv))}</span>
                             {(inv.hub_full_name || inv.hub_name) && (
                               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>📍 {inv.hub_full_name || inv.hub_name}</span>

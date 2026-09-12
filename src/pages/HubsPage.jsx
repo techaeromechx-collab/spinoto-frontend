@@ -8,6 +8,8 @@ import {
   Network, Search, ToggleLeft, ToggleRight,
   Layers, ChevronDown, ChevronUp, Clock, FileText, Upload, Trash2, Percent, Lock,
   Image, CreditCard, Car, Ruler, Wrench,
+  // Warns that a Spinoto Commission % retires the Service/Parts rates.
+  AlertTriangle,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
@@ -508,6 +510,31 @@ function HubModal({ hub, onClose, onSaved }) {
     if (form.tech_rate_parts   !== '' && (isNaN(pts) || pts < 0 || pts > 100)) e.tech_rate_parts   = 'Must be 0–100';
     const com = parseFloat(form.commission_percent);
     if (form.commission_percent !== '' && (isNaN(com) || com < 0 || com > 100)) e.commission_percent = 'Must be 0–100';
+
+    /* ── The two rate blocks are ONE CHOICE, not two optional fields ────────
+       Purchase invoice creation reads them like this:
+
+         commission_percent > 0  →  the whole invoice bills on commission,
+                                    and the Service/Parts rates are ignored
+         otherwise               →  Service rate on services, Parts rate on parts
+
+       Nothing on this form said so, so a hub was set up with all three filled
+       — 15 / 15 / 15 — and every invoice quietly billed on commission while
+       the screen showed three rates that looked like they were all in use.
+
+       Refusing the combination is the only honest answer. Greying the fields
+       out would hide a number somebody deliberately typed; a warning alone
+       would be ignored and the hub saved anyway. The error names BOTH fields,
+       because from here there is no way to know which one they meant. */
+    const comSet = form.commission_percent !== '' && !isNaN(com) && com > 0;
+    const svcSet = form.tech_rate_service  !== '' && !isNaN(svc) && svc > 0;
+    const ptsSet = form.tech_rate_parts    !== '' && !isNaN(pts) && pts > 0;
+    if (comSet && (svcSet || ptsSet)) {
+      const msg = 'Use one or the other — a Spinoto Commission % makes the Service and Parts rates unused. Clear whichever does not apply.';
+      e.commission_percent = msg;
+      if (svcSet) e.tech_rate_service = 'Not used while Spinoto Commission % is set';
+      if (ptsSet) e.tech_rate_parts   = 'Not used while Spinoto Commission % is set';
+    }
     const cap = parseInt(form.vehicle_capacity, 10);
     if (form.vehicle_capacity !== '' && (isNaN(cap) || cap < 0)) e.vehicle_capacity = 'Must be 0 or more';
     const area = parseFloat(form.workshop_area_sqft);
@@ -953,10 +980,40 @@ function HubModal({ hub, onClose, onSaved }) {
           </div>
 
           {/* ── Spinoto Commission Rate ── */}
+          {/* The label now says what it DOES, not merely that it is optional.
+              "Optional" was true and useless: it did not say that filling it
+              switches the hub's whole billing mode and retires the two rates
+              above. */}
           <div className="hb-section-sep">
             <Percent size={12} /> Spinoto Commission
-            <span className="hb-section-opt">(Optional — Spinoto's % take on invoices)</span>
+            <span className="hb-section-opt">(Instead of the rates above — one flat % on everything)</span>
           </div>
+          {/* Shown the moment both are filled, so the conflict is visible
+              while it is being created rather than only when Save is pressed.
+              Same rule the validator enforces; stated in the words the person
+              typing needs. */}
+          {(() => {
+            const com = parseFloat(form.commission_percent);
+            const svc = parseFloat(form.tech_rate_service);
+            const pts = parseFloat(form.tech_rate_parts);
+            const comSet = form.commission_percent !== '' && !isNaN(com) && com > 0;
+            const bothSet = comSet && ((form.tech_rate_service !== '' && !isNaN(svc) && svc > 0)
+                                    || (form.tech_rate_parts   !== '' && !isNaN(pts) && pts > 0));
+            if (!bothSet) return null;
+            return (
+              <div style={{
+                display: 'flex', gap: 8, alignItems: 'flex-start',
+                background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e',
+                borderRadius: 8, padding: '9px 12px', fontSize: 12, lineHeight: 1.45, marginBottom: 10,
+              }}>
+                <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  Both are filled. A Spinoto Commission % takes over the whole invoice —
+                  the Service and Parts rates above would never be used. Clear one of them.
+                </span>
+              </div>
+            );
+          })()}
           <div className="hb-row-2">
             <Field label="Commission %" error={errors.commission_percent}>
               <div className="hb-pct-wrap">
