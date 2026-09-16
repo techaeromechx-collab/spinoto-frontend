@@ -3950,7 +3950,20 @@ export default function LeadsPage() {
   const { input: searchInput, setInput: setSearchInput, search } =
     useDebouncedSearch(searchParams.get('search') || ls.search || '', { minChars: 1 });
   const setSearch = setSearchInput;
-  const [statusFilters, setStatusFilters] = useState(ls.statusFilters ?? []); // multi-select array
+  /* ?status=Lost opens this list already filtered — the Reports page's status
+     breakdown links straight here, and a breakdown you cannot act on is a
+     picture rather than a tool.
+
+     The URL WINS over the remembered filter, and only on the first render.
+     Remembered state is for coming back to where you were; an explicit link is
+     somebody asking for something specific right now, and silently restoring
+     last week's filter over it is the more surprising of the two. Comma
+     separated, matching the shape the list already sends to the server. */
+  const [statusFilters, setStatusFilters] = useState(() => {
+    const fromUrl = searchParams.get('status');
+    if (fromUrl) return fromUrl.split(',').map(v => v.trim()).filter(Boolean);
+    return ls.statusFilters ?? [];
+  }); // multi-select array
   // Assignee filter — multi-select array, same pattern as statusFilters.
   // 'unassigned' is a pseudo-value alongside real assignee ids (as strings).
   const [assigneeFilters, setAssigneeFilters] = useState(ls.assigneeFilters ?? []);

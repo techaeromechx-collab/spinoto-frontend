@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
+  // PieChart/Pie/Cell went with the Lead Status donut — see
+  // LeadStatusBreakdown below for why a ranked list replaced it.
+  Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   LineChart, Line, FunnelChart, Funnel, LabelList,
 } from 'recharts';
@@ -10,6 +12,8 @@ import {
   ChevronUp, ChevronDown, Minus, RefreshCw, Calendar, FileDown,
   X, CheckCircle2, Clock, AlertCircle, Phone, ChevronRight, Search, Info, Filter, RotateCcw,
   Car,
+  // Operations cards on the Overview tab: appointments, estimates, money in.
+  CalendarCheck, FileText, Wallet,
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { jsPDF } from 'jspdf';
@@ -17,6 +21,11 @@ import autoTable from 'jspdf-autotable';
 import '../styles/ReportsPage.css';
 
 // ── Colours ────────────────────────────────────────────────────────────────────
+/* Kept although nothing reads it today: it was the donut's per-slice palette,
+   and recycling seven colours across thirteen statuses is exactly what made
+   that chart unreadable. Anything reaching for it again should read the note
+   on LeadStatusBreakdown first — colour by MEANING, not one hue per row. */
+// eslint-disable-next-line no-unused-vars
 const CHART_COLORS = ['#3B82F6', '#06B6D4', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899'];
 
 // ── Date range presets ─────────────────────────────────────────────────────────
@@ -213,6 +222,24 @@ export function applyHubExclusions(hubRev, excluded) {
  * filter reproduces them, and a link that quietly shows something else is
  * worse than no link.
  */
+/**
+ * Average revenue per job — what one visit at this hub is worth.
+ *
+ * Revenue ÷ invoices, and deliberately NOT revenue ÷ cars. A car that came back
+ * three times is three jobs; dividing by distinct vehicles would answer a
+ * different question (what a customer is worth) and the two are easy to confuse
+ * when they sit in the same table. This column is about the size of a bill.
+ *
+ * An em dash, not ₹0, when there are no invoices: zero revenue over zero jobs
+ * has no average, and printing ₹0 invites the reader to compare it against the
+ * hubs that do have one.
+ */
+function avgPerJob(revenue, invoiceCount) {
+  const n = Number(invoiceCount) || 0;
+  if (n <= 0) return null;
+  return Number(revenue || 0) / n;
+}
+
 export function hubInvoicesLink(hubId, { from, to } = {}) {
   if (hubId === null || hubId === undefined) return null;
   const q = new URLSearchParams();
@@ -238,6 +265,10 @@ export function buildCsvExport(tab, { hubRev, sortedUsers, byUserCount, from }) 
       Number(r.outstanding_to_hub || 0),
       Number(r.our_take || 0),
       Number(r.invoice_count || 0),
+      // Rounded to the rupee. The sheet is read, not re-divided, and a
+      // trailing .3333 in a currency column is noise the reader has to
+      // mentally discard on every row.
+      Math.round(avgPerJob(r.revenue, r.invoice_count) ?? 0),
     ]);
     // A totals line, so the file reconciles against the summary cards above the
     // table without the reader re-adding the column. Skipped for a single hub,
@@ -250,6 +281,7 @@ export function buildCsvExport(tab, { hubRev, sortedUsers, byUserCount, from }) 
         Number(t.hub_payable || 0), Number(t.hub_payable_approved || 0),
         Number(t.outstanding_to_hub || 0), Number(t.our_take || 0),
         Number(t.invoice_count || 0),
+        Math.round(avgPerJob(t.revenue, t.invoice_count) ?? 0),
       ]);
     }
     // One line per vehicle type under the TOTAL, mirroring the split the card
@@ -272,13 +304,14 @@ export function buildCsvExport(tab, { hubRev, sortedUsers, byUserCount, from }) 
           Number(t.hub_payable || 0), Number(t.hub_payable_approved || 0),
           Number(t.outstanding_to_hub || 0), Number(t.our_take || 0),
           Number(t.invoice_count || 0),
+          Math.round(avgPerJob(t.revenue, t.invoice_count) ?? 0),
         ]);
       }
     }
     return {
       name: `spinoto-hub-revenue-${from || 'all'}.csv`,
       headers: ['Hub', 'Revenue', 'Collected', 'Total PI Amount', 'Approved',
-                'Outstanding to Hub', 'Our Take', 'Invoices'],
+                'Outstanding to Hub', 'Our Take', 'Invoices', 'Avg / Job'],
       rows,
       empty: items.length === 0,
     };
@@ -287,18 +320,166 @@ export function buildCsvExport(tab, { hubRev, sortedUsers, byUserCount, from }) 
   const users = sortedUsers || [];
   return {
     name: `spinoto-report-${from || 'all'}.csv`,
-    headers: ['Name', 'Email', 'Leads', 'Converted', 'Conv. %', 'Pipeline', 'Realized'],
+    // CI Total rides along with the two new columns: exported without it,
+    // Collected has nothing to be compared against and the spreadsheet loses
+    // the one subtraction anybody actually does with these figures.
+    headers: ['Name', 'Email', 'Leads', 'Converted', 'Conv. %', 'Pipeline', 'Realized', 'CI Total', 'Collected', 'Paid Invoices'],
     rows: users.map(u => [
       u.user_name || '—', u.email,
       u.total_leads, u.converted_leads,
       pct(u.converted_leads, u.total_leads),
       inr(u.total_revenue), inr(u.realized_revenue),
+      inr(u.ci_total), inr(u.collected), Number(u.paid_invoices || 0),
     ]),
     empty: (byUserCount ?? users.length) === 0,
   };
 }
 
 const REPORT_TABS = ['overview', 'leads', 'by-user', 'analytics', 'hub-revenue'];
+
+/**
+ * Lead Status Breakdown — a ranked list, not a pie.
+ *
+ * ── Why the donut went ───────────────────────────────────────────────────────
+ * Thirteen statuses. Four of them under 1%, drawn as hairlines nobody can see,
+ * hover or click. A palette of eight colours recycled across thirteen slices,
+ * so two different statuses came out the same purple and the legend could not
+ * be matched to the ring. No figure printed anywhere: the most-asked question
+ * on the page — how many are Lost — took thirteen hovers to answer.
+ *
+ * A pie is for three or four parts of one whole. This is a ranked list, and a
+ * ranked list is what it should look like.
+ *
+ * ── Three colours, by meaning ────────────────────────────────────────────────
+ * Not one colour per row. Green won, blue still working, grey finished. Colour
+ * carries a fact you can act on instead of being a lookup key back to a legend.
+ * The flags come from lead_statuses (see the endpoint), so adding a status
+ * needs no change here.
+ *
+ * ── The tail is folded, not dropped ──────────────────────────────────────────
+ * Everything under 1% collapses into one line that names them and can be
+ * opened. Dropped, the percentages would not sum to 100 and the total would
+ * contradict the lead count elsewhere on the page.
+ */
+function LeadStatusBreakdown({ items, onPick }) {
+  const [showTail, setShowTail] = useState(false);
+
+  const rows = (items || []).map(r => ({
+    name: r.name,
+    value: Number(r.value) || 0,
+    group: r.is_won ? 'won' : (r.is_closed ? 'closed' : 'open'),
+  }));
+  const total = rows.reduce((a, r) => a + r.value, 0);
+  if (!rows.length || total === 0) {
+    return (
+      <>
+        <h3 className="rp-chart-title">Lead Status Breakdown</h3>
+        <div className="rp-empty">No data for this period</div>
+      </>
+    );
+  }
+
+  // Bars are scaled against the BIGGEST row, not against the total. Against
+  // the total, a 34% leader would fill a third of the track and everything
+  // below 5% would be a stub — the comparison the eye is actually making is
+  // row against row.
+  const max = Math.max(...rows.map(r => r.value));
+  const pctOf = (v) => (v * 100) / total;
+
+  // 1% of the leads in view, never a fixed count: on a narrow date range ten
+  // statuses might each hold 8% and none of them is noise.
+  const big = rows.filter(r => pctOf(r.value) >= 1);
+  const tail = rows.filter(r => pctOf(r.value) < 1);
+
+  const GROUPS = [
+    { key: 'won',    label: 'Won',     color: '#16a34a' },
+    { key: 'open',   label: 'Working', color: '#4f86f7' },
+    { key: 'closed', label: 'Closed',  color: '#94a3b8' },
+  ];
+
+  const Row = ({ r, color }) => (
+    <button
+      type="button"
+      onClick={() => onPick && onPick(r.name)}
+      title={`Open ${r.value.toLocaleString('en-IN')} leads in ${r.name}`}
+      style={{
+        display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 90px 58px 46px',
+        gap: 10, alignItems: 'center', width: '100%', textAlign: 'left',
+        background: 'none', border: 0, padding: '5px 0', cursor: onPick ? 'pointer' : 'default',
+        font: 'inherit', color: 'inherit',
+      }}
+    >
+      <span style={{
+        fontSize: 12.5, color: 'var(--text)', overflow: 'hidden',
+        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>{r.name}</span>
+      <span style={{ display: 'block', height: 9, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+        {/* Minimum 3% width so a status with one lead is still a visible mark
+            rather than nothing at all — the point the donut failed on. */}
+        <span style={{
+          display: 'block', height: '100%', borderRadius: 99, background: color,
+          width: `${Math.max(3, (r.value / max) * 100)}%`,
+        }} />
+      </span>
+      <span style={{ fontSize: 12.5, fontWeight: 700, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+        {r.value.toLocaleString('en-IN')}
+      </span>
+      <span style={{ fontSize: 11.5, color: 'var(--text-muted)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+        {pctOf(r.value).toFixed(1)}%
+      </span>
+    </button>
+  );
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+        <h3 className="rp-chart-title" style={{ margin: 0 }}>Lead Status Breakdown</h3>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          <strong style={{ color: 'var(--text)', fontSize: 15 }}>{total.toLocaleString('en-IN')}</strong> leads
+        </span>
+      </div>
+
+      {GROUPS.map(g => {
+        const inGroup = big.filter(r => r.group === g.key);
+        if (!inGroup.length) return null;
+        return (
+          <div key={g.key}>
+            <div style={{
+              fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase',
+              color: 'var(--text-muted)', margin: '12px 0 2px',
+            }}>{g.label}</div>
+            {inGroup.map(r => <Row key={r.name} r={r} color={g.color} />)}
+          </div>
+        );
+      })}
+
+      {tail.length > 0 && (
+        showTail
+          ? (
+            <div>
+              <div style={{
+                fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase',
+                color: 'var(--text-muted)', margin: '12px 0 2px',
+              }}>Under 1%</div>
+              {tail.map(r => (
+                <Row key={r.name} r={r}
+                  color={GROUPS.find(g => g.key === r.group)?.color || '#94a3b8'} />
+              ))}
+            </div>
+          )
+          : (
+            <button type="button" onClick={() => setShowTail(true)}
+              style={{
+                background: 'none', border: 0, padding: 0, marginTop: 12, cursor: 'pointer',
+                fontSize: 12, fontWeight: 600, color: 'var(--primary)', textAlign: 'left',
+              }}>
+              + {tail.length} more under 1% — {tail.map(r => r.name).join(', ')}
+            </button>
+          )
+      )}
+    </>
+  );
+}
 
 export default function ReportsPage() {
   // The tab lives in the URL so other pages can deep-link into it — the
@@ -372,7 +553,22 @@ export default function ReportsPage() {
   const [compareOn, setCompareOn] = useState(false);
   const [userSearch, setUserSearch] = useState('');
 
+  const navigate = useNavigate();
+
+  /* Clicking a status row opens the leads list already filtered to it.
+     Without this the breakdown is decoration: it can tell you 1,708 leads are
+     Lost and then leave you to go and find them by hand.
+
+     The status travels as a query parameter rather than as router state so the
+     resulting view can be bookmarked, refreshed and pasted to somebody else —
+     router state survives none of those. */
+  const goToLeadsWithStatus = useCallback((statusName) => {
+    if (!statusName || statusName === '(No status)') return;
+    navigate(`/leads?status=${encodeURIComponent(statusName)}`);
+  }, [navigate]);
+
   const [summary, setSummary] = useState(null);
+  const [pipeline, setPipeline] = useState(null);
   const [statusData, setStatusData] = useState([]);
   const [revData, setRevData] = useState([]);
   const [byUser, setByUser] = useState([]);
@@ -472,12 +668,19 @@ export default function ReportsPage() {
     if (prev) { params.set('prev_from', prev.from); params.set('prev_to', prev.to); }
     const qs = params.toString() ? `?${params.toString()}` : '';
     try {
-      const [sum, st, rev, usr] = await Promise.all([
+      /* allSettled for the new one only would be inconsistent, so the whole
+         set stays on Promise.all — EXCEPT that pipeline-summary is fetched
+         with its own catch. It needs the revenue permission, and a viewer who
+         has leads but not revenue must still get the rest of the page rather
+         than an error screen. Null simply hides its cards. */
+      const [sum, st, rev, usr, pipe] = await Promise.all([
         api(`/api/reports/summary${qs}`),
         api(`/api/reports/status-distribution${qs}`),
         api(`/api/reports/category-revenue${qs}`),
         api(`/api/reports/by-user${qs}`),
+        api(`/api/reports/pipeline-summary${qs}`).catch(() => null),
       ]);
+      setPipeline(pipe);
       setSummary(sum);
       setScope(sum.scope || usr.scope || 'all');
       setStatusData(st.items || []);
@@ -910,30 +1113,30 @@ export default function ReportsPage() {
                 trend={trendPct(summary.customer_invoice_total, summary.prev?.customer_invoice_total)}
                 prevValue={summary.prev ? inr(summary.prev.customer_invoice_total) : undefined}
                 compareOn={compareOn} />
+              {/* The operations half. No trend arrows on these three: the
+                  comparison endpoint only returns previous-period figures for
+                  the lead and invoice cards, and an arrow computed from
+                  nothing is worse than no arrow. */}
+              {pipeline && (
+                <>
+                  <KpiCard label="Appointments" value={Number(pipeline.appointments).toLocaleString('en-IN')}
+                    icon={CalendarCheck} accent="#6366f1"
+                    sub={`${Number(pipeline.appointments_invoiced).toLocaleString('en-IN')} invoiced`} />
+                  <KpiCard label="Estimates" value={Number(pipeline.estimates).toLocaleString('en-IN')}
+                    icon={FileText} accent="#8b5cf6"
+                    sub={`${inr(pipeline.estimates_value)} quoted`} />
+                  <KpiCard label="Collected" value={inr(pipeline.collected)}
+                    icon={Wallet} accent="#16a34a"
+                    sub={`${inr(pipeline.outstanding)} outstanding`} />
+                </>
+              )}
             </div>
           )}
 
           {/* Charts */}
           <div className="rp-charts-grid">
             <div className="rp-chart-card">
-              <h3 className="rp-chart-title">Lead Status Breakdown</h3>
-              {statusData.length === 0
-                ? <div className="rp-empty">No data for this period</div>
-                : (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie data={statusData} cx="50%" cy="50%"
-                        innerRadius={65} outerRadius={90}
-                        paddingAngle={4} dataKey="value">
-                        {statusData.map((_, i) => (
-                          <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={v => [v, 'Leads']} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
+              <LeadStatusBreakdown items={statusData} onPick={goToLeadsWithStatus} />
             </div>
 
             <div className="rp-chart-card">
@@ -960,6 +1163,62 @@ export default function ReportsPage() {
               })()}
             </div>
           </div>
+
+          {/* ── Value by Stage ─────────────────────────────────────────────
+              What a job is worth at each point it passes through: quoted on
+              the estimate, agreed with the hub, billed to the customer, and
+              received. Four numbers that lived on four screens.
+
+              Margin is the one this page could not show at all. Billed minus
+              hub cost is the whole business model in a single figure and it
+              was nowhere on a page called Reports. */}
+          {pipeline && (
+            <div className="rp-chart-card" style={{ marginTop: 18 }}>
+              <h3 className="rp-chart-title" style={{ margin: 0 }}>Value by Stage</h3>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 18px' }}>
+                Quoted, agreed with the hub, billed to the customer, and actually received.
+              </div>
+
+              {/* Four columns on a wide screen, wrapping to two on a narrow
+                  one — a KPI that has to be scrolled sideways is a KPI nobody
+                  reads. */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+                gap: 18,
+              }}>
+                {[
+                  { k: 'Quoted (Estimates)', v: inr(pipeline.estimates_value),
+                    s: `${Number(pipeline.estimates).toLocaleString('en-IN')} estimates`, c: 'var(--text)' },
+                  { k: 'Hub Cost (PI)', v: inr(pipeline.hub_cost),
+                    s: `${Number(pipeline.purchase_invoices).toLocaleString('en-IN')} purchase invoices`, c: 'var(--text)' },
+                  { k: 'Billed (CI)', v: inr(pipeline.billed),
+                    s: `${Number(pipeline.customer_invoices).toLocaleString('en-IN')} invoices`, c: 'var(--text)' },
+                  { k: 'Collected', v: inr(pipeline.collected),
+                    s: `${inr(pipeline.outstanding)} still owed`, c: '#15803d' },
+                ].map(col => (
+                  <div key={col.k}>
+                    <div style={{
+                      fontSize: 10.5, fontWeight: 800, letterSpacing: '.07em',
+                      textTransform: 'uppercase', color: 'var(--text-muted)',
+                    }}>{col.k}</div>
+                    <div style={{ fontSize: 19, fontWeight: 800, marginTop: 6, color: col.c }}>{col.v}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>{col.s}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{
+                marginTop: 16, paddingTop: 13, borderTop: '1px dashed var(--border)',
+                fontSize: 12.5, color: 'var(--text-muted)',
+              }}>
+                Billed minus hub cost is your margin —{' '}
+                <strong style={{ color: 'var(--text)', fontSize: 14 }}>{inr(pipeline.margin)}</strong>
+              </div>
+            </div>
+          )}
+
+
         </div>
       )}
 
@@ -1037,19 +1296,29 @@ export default function ReportsPage() {
                   <th className="rp-th rp-th--sort" onClick={() => toggleSort('ci_total')}>
                     CI Total <SortIcon col="ci_total" />
                   </th>
+                  {/* Money actually received, beside the money billed. The two
+                      sit together on purpose: the gap between them is what is
+                      still owed on this person's jobs, and that reads at a
+                      glance only when they are adjacent. */}
+                  <th className="rp-th rp-th--sort" onClick={() => toggleSort('collected')}>
+                    Collected <SortIcon col="collected" />
+                  </th>
+                  <th className="rp-th rp-th--sort" onClick={() => toggleSort('paid_invoices')}>
+                    Paid Inv. <SortIcon col="paid_invoices" />
+                  </th>
                   <th className="rp-th" style={{ width: 32 }} />
                 </tr>
               </thead>
               <tbody>
                 {sortedUsers.length === 0 && (
-                  <tr><td colSpan={8} className="rp-td-empty">No user data available</td></tr>
+                  <tr><td colSpan={10} className="rp-td-empty">No user data available</td></tr>
                 )}
                 {userSearch && sortedUsers.length > 0 &&
                   sortedUsers.filter(u =>
                     (u.user_name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
                     (u.email || '').toLowerCase().includes(userSearch.toLowerCase())
                   ).length === 0 && (
-                    <tr><td colSpan={8} className="rp-td-empty">No members match "{userSearch}"</td></tr>
+                    <tr><td colSpan={10} className="rp-td-empty">No members match "{userSearch}"</td></tr>
                   )}
                 {sortedUsers.filter(u =>
                   !userSearch ||
@@ -1098,6 +1367,20 @@ export default function ReportsPage() {
                       </td>
                       <td className="rp-td rp-td--num">
                         <span style={{ fontWeight: 600, color: '#0f766e' }}>{inr(u.ci_total)}</span>
+                      </td>
+                      {/* Bolder than CI Total, and a different green: of the
+                          two this is the real one — an invoice raised is a
+                          hope, a payment is money in the account. */}
+                      <td className="rp-td rp-td--num">
+                        <span style={{ fontWeight: 700, color: '#15803d' }}>{inr(u.collected)}</span>
+                      </td>
+                      <td className="rp-td rp-td--num">
+                        {/* Muted at zero rather than hidden: "nobody has paid
+                            this person's jobs yet" is a real answer, and a
+                            blank cell reads as missing data. */}
+                        <span style={{ color: Number(u.paid_invoices) > 0 ? 'var(--text)' : 'var(--text-muted)' }}>
+                          {Number(u.paid_invoices || 0)}
+                        </span>
                       </td>
                       <td className="rp-td rp-td--chevron">
                         <ChevronRight size={14} className="rp-row-chevron" />
@@ -1726,6 +2009,19 @@ export default function ReportsPage() {
                     <div style={{ fontSize: 20, fontWeight: 700 }}>{hubView.total.invoice_count}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Customer invoice{hubView.total.invoice_count !== 1 ? 's' : ''}</div>
                   </div>
+                  {/* The average across everything currently in view — so it
+                      moves when a hub is excluded, exactly like every other
+                      figure in this block. A reader comparing one hub's Avg /
+                      Job against the table needs the line to compare it to. */}
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>
+                      {(() => {
+                        const a = avgPerJob(hubView.total.revenue, hubView.total.invoice_count);
+                        return a === null ? '—' : inr(a);
+                      })()}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Average per job</div>
+                  </div>
                 </div>
 
                 {/* ── By vehicle type ────────────────────────────────────────
@@ -1763,6 +2059,11 @@ export default function ReportsPage() {
                             <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, textAlign: 'right' }}>Collected</th>
                             <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, textAlign: 'right', color: '#7c3aed' }}>Our Take</th>
                             <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, textAlign: 'right' }}>Invoices</th>
+                            {/* Same column as the hub table above. Leaving it
+                                off here would mean one half of the card can
+                                answer "how big is a job" and the other half
+                                cannot, on the same screen. */}
+                            <th style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600, textAlign: 'right' }}>Avg / Job</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1818,6 +2119,14 @@ export default function ReportsPage() {
                                 <td style={{ padding: '8px 10px', borderBottom: border, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                                   {t.invoice_count}
                                 </td>
+                                <td style={{ padding: '8px 10px', borderBottom: border, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                                  {(() => {
+                                    const a = avgPerJob(t.revenue, t.invoice_count);
+                                    return a === null
+                                      ? <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                      : inr(a);
+                                  })()}
+                                </td>
                               </tr>
                             );
                           })}
@@ -1849,8 +2158,13 @@ export default function ReportsPage() {
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#ea580c' }}>Outstanding to Hub</th>
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', color: '#7c3aed' }}>Our Take</th>
                           <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Invoices</th>
+                          {/* Beside Invoices, because it is Revenue divided by
+                              it — the two columns either side are the working,
+                              so the figure can be checked by eye rather than
+                              taken on trust. */}
+                          <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>Avg / Job</th>
                           {/* Header for the per-row exclude toggle. Without it
-                              the head has 8 cells and the body has 9, and every
+                              the head has 9 cells and the body has 10, and every
                               column below drifts one to the left. */}
                           <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)', width: 34 }} />
                         </tr>
@@ -1911,6 +2225,14 @@ export default function ReportsPage() {
                               </td>
                               <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right' }}>
                                 {row.invoice_count}
+                              </td>
+                              <td style={{ padding: '9px 10px', borderBottom: '1px solid var(--border)', ...cell, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                                {(() => {
+                                  const a = avgPerJob(row.revenue, row.invoice_count);
+                                  return a === null
+                                    ? <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                    : inr(a);
+                                })()}
                               </td>
                               <td style={{ padding: '9px 6px', borderBottom: '1px solid var(--border)', textAlign: 'right', width: 34 }}>
                                 <button

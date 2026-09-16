@@ -9,6 +9,8 @@ import {
   Car, Network, MessageCircle, Plus, Trash2, FileText, Building2,
   IndianRupee, BarChart3, Wallet, AlertCircle, RefreshCw, CheckCircle2,
   ArrowDown,
+  // Customer's area / city / state row.
+  MapPin,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
 import CustomerPaymentsTab from '../components/CustomerPaymentsTab.jsx';
@@ -663,8 +665,22 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
   const [editing,     setEditing]    = useState(startEditing);
   const [editForm,    setEditForm]   = useState({
     display_name: '', whatsapp: '', email: '', notes: '',
+    /* ── Location ──────────────────────────────────────────────────────────
+       These were the cause of a quiet data loss, not just a missing feature.
+       PUT /api/customers/:mobile is an unconditional upsert that writes
+       state_id, city_id and area_id from the request body — and the body IS
+       this object. With the three keys absent they arrived as undefined, the
+       server turned them into null, and editing a customer's NAME silently
+       erased a location somebody had recorded when the lead was taken.
+       216 of the 232 profiles carry one. */
+    state_id: '', city_id: '', area_id: '',
     is_b2b: false, b2b_company_name: '', b2b_gst_number: '', b2b_address: '',
   });
+  // Option lists for the three pickers. Cities depend on the state and areas
+  // on the city, so they are loaded on demand rather than all at once.
+  const [locStates, setLocStates] = useState([]);
+  const [locCities, setLocCities] = useState([]);
+  const [locAreas,  setLocAreas]  = useState([]);
   const [editSaving,  setEditSaving] = useState(false);
   const [editErr,     setEditErr]    = useState('');
   const [showB2bConfirm, setShowB2bConfirm] = useState(false);
@@ -773,6 +789,11 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
           b2b_company_name:  r.item.default_b2b_company_name || '',
           b2b_gst_number:    r.item.default_b2b_gst_number   || '',
           b2b_address:       r.item.default_b2b_address      || '',
+          // Strings, not numbers: a <select> compares its value as a string,
+          // and a numeric 7 never matches option value="7".
+          state_id: r.item.state_id != null ? String(r.item.state_id) : '',
+          city_id:  r.item.city_id  != null ? String(r.item.city_id)  : '',
+          area_id:  r.item.area_id  != null ? String(r.item.area_id)  : '',
         });
       })
       .catch(e => { setErr(e.message); setLoading(false); });
@@ -844,6 +865,53 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
     } finally {
       setEditSaving(false);
     }
+  }
+
+  /* ── Location pickers ────────────────────────────────────────────────────
+     States load once. Cities and areas load for whatever is selected, and are
+     re-fetched when the customer record changes so an already-saved city is
+     in the list before the select renders — otherwise the field looks empty
+     on a customer who has one, which is worse than showing nothing at all.
+
+     Each loader swallows its own failure and leaves the list empty. A dropdown
+     that cannot be filled is a dropdown with no options; it must not take the
+     whole customer page down with it. */
+  useEffect(() => {
+    let alive = true;
+    api('/api/locations/states')
+      .then(r => { if (alive) setLocStates(r.items || []); })
+      .catch(() => { if (alive) setLocStates([]); });
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    if (!editForm.state_id) { setLocCities([]); return () => { alive = false; }; }
+    api(`/api/locations/cities?state_id=${encodeURIComponent(editForm.state_id)}`)
+      .then(r => { if (alive) setLocCities(r.items || []); })
+      .catch(() => { if (alive) setLocCities([]); });
+    return () => { alive = false; };
+  }, [editForm.state_id]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!editForm.city_id) { setLocAreas([]); return () => { alive = false; }; }
+    api(`/api/locations/areas?city_id=${encodeURIComponent(editForm.city_id)}`)
+      .then(r => { if (alive) setLocAreas(r.items || []); })
+      .catch(() => { if (alive) setLocAreas([]); });
+    return () => { alive = false; };
+  }, [editForm.city_id]);
+
+  // Changing a state clears the city and the area below it, and a city clears
+  // the area. Left alone they would keep a city that does not belong to the
+  // new state — a combination the form would happily save.
+  function setLoc(level, value) {
+    setEditForm(f => ({
+      ...f,
+      ...(level === 'state' ? { state_id: value, city_id: '', area_id: '' } : {}),
+      ...(level === 'city'  ? { city_id: value, area_id: '' } : {}),
+      ...(level === 'area'  ? { area_id: value } : {}),
+    }));
   }
 
   async function handleDelete() {
@@ -966,6 +1034,12 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                   b2b_company_name:  data.default_b2b_company_name || '',
                   b2b_gst_number:    data.default_b2b_gst_number   || '',
                   b2b_address:       data.default_b2b_address      || '',
+                  // Carried through unchanged. Absent, saving from this
+                  // editor would null the customer's location — see the note
+                  // on editForm's initial state.
+                  state_id: data.state_id != null ? String(data.state_id) : '',
+                  city_id:  data.city_id  != null ? String(data.city_id)  : '',
+                  area_id:  data.area_id  != null ? String(data.area_id)  : '',
                 });
                 setEditErr(''); setDelConfirm(false); setEditing(true);
               }}>
@@ -979,6 +1053,19 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
               )}
               {data.default_is_b2b && data.default_b2b_gst_number && (
                 <div className="cds-info-row"><FileText size={12}/><span className="cds-info-lbl">GSTIN</span><span className="cds-info-val">{data.default_b2b_gst_number}</span></div>
+              )}
+              {/* Area, city, state — narrowest first, because that is the part
+                  anybody actually uses: "Gota" locates a customer, "Gujarat"
+                  does not. Shown whenever ANY level is set, so a profile with
+                  a state and no area still says what it knows instead of
+                  nothing. The API has always returned these; the page simply
+                  never printed them. */}
+              {(data.area_name || data.city_name || data.state_name) && (
+                <div className="cds-info-row"><MapPin size={12}/><span className="cds-info-lbl">Location</span>
+                  <span className="cds-info-val">
+                    {[data.area_name, data.city_name, data.state_name].filter(Boolean).join(', ')}
+                  </span>
+                </div>
               )}
               {customerSince && (
                 <div className="cds-info-row"><Calendar size={12}/><span className="cds-info-lbl">Customer Since</span><span className="cds-info-val">{fmtDate(customerSince)}</span></div>
@@ -1003,6 +1090,12 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                   b2b_company_name:  data.default_b2b_company_name || '',
                   b2b_gst_number:    data.default_b2b_gst_number   || '',
                   b2b_address:       data.default_b2b_address      || '',
+                  // Carried through unchanged. Absent, saving from this
+                  // editor would null the customer's location — see the note
+                  // on editForm's initial state.
+                  state_id: data.state_id != null ? String(data.state_id) : '',
+                  city_id:  data.city_id  != null ? String(data.city_id)  : '',
+                  area_id:  data.area_id  != null ? String(data.area_id)  : '',
                 });
                 setEditErr('');
                 setEditingB2b(true);
@@ -1232,6 +1325,39 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                     <input className="aveh-input" placeholder="Email address (optional)" autoComplete="off"
                       value={editForm.email}
                       onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}/>
+                  </div>
+                  {/* Where the customer is. Three levels, each narrowing the
+                      next — the same cascade the appointment wizard uses, so
+                      a location captured there and one edited here can never
+                      be a state and a city that do not belong together. */}
+                  <div className="aveh-field">
+                    <label>State</label>
+                    <select className="aveh-input" value={editForm.state_id}
+                      onChange={e => setLoc('state', e.target.value)}>
+                      <option value="">Not set</option>
+                      {locStates.map(o => <option key={o.id} value={String(o.id)}>{o.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="aveh-field">
+                    <label>City</label>
+                    {/* Disabled rather than hidden while empty: a field that
+                        vanishes reads as missing, a greyed one reads as
+                        "pick the state first", which is the actual rule. */}
+                    <select className="aveh-input" value={editForm.city_id}
+                      disabled={!editForm.state_id}
+                      onChange={e => setLoc('city', e.target.value)}>
+                      <option value="">{editForm.state_id ? 'Not set' : 'Select a state first'}</option>
+                      {locCities.map(o => <option key={o.id} value={String(o.id)}>{o.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="aveh-field">
+                    <label>Area</label>
+                    <select className="aveh-input" value={editForm.area_id}
+                      disabled={!editForm.city_id}
+                      onChange={e => setLoc('area', e.target.value)}>
+                      <option value="">{editForm.city_id ? 'Not set' : 'Select a city first'}</option>
+                      {locAreas.map(o => <option key={o.id} value={String(o.id)}>{o.name}</option>)}
+                    </select>
                   </div>
                   <div className="aveh-field">
                     <label>Notes</label>
