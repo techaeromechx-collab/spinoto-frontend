@@ -1071,6 +1071,13 @@ export default function ReportsPage() {
           onClick={() => setTab('hub-revenue')}>
           <IndianRupee size={14} /> Hub Revenue
         </button>
+        {/* Not a tab — a link out. The GST return covers a statutory period and
+            must not inherit this page's free from/to range, so it lives on its
+            own route with its own month/quarter picker. */}
+        <button className="rp-tab rp-tab--link" onClick={() => navigate('/reports/gstr1')}
+          title="Outward supplies return, by month or quarter">
+          <FileText size={14} /> GSTR-1 <ChevronRight size={13} />
+        </button>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════

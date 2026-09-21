@@ -1,0 +1,58 @@
+/* Party statement. Tokens throughout so it follows the theme. */
+.lg-wrap { padding: 2px 0 8px; }
+.lg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.lg-head h3 { margin: 0; font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -0.02em; }
+.lg-head p  { margin: 5px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.lg-chip { font-size: 11px; font-weight: 600; color: var(--text-muted); background: var(--bg-soft); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-variant-numeric: tabular-nums; }
+.lg-chip--dim { border-color: transparent; font-weight: 500; }
+
+.lg-note, .lg-foot, .lg-error { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; line-height: 1.55; border-radius: 9px; padding: 9px 11px; margin: 0 0 12px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-muted); }
+.lg-note svg, .lg-foot svg, .lg-error svg { flex-shrink: 0; margin-top: 2px; }
+.lg-foot { margin: 12px 0 0; }
+.lg-error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.lg-empty { padding: 34px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+.lg-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.lg-sum { background: var(--panel); border: 1px solid var(--border); border-radius: 11px; padding: 11px 13px; display: flex; flex-direction: column; gap: 4px; }
+.lg-sum span   { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.lg-sum strong { font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.lg-sum--closing { background: var(--bg-soft); border-color: var(--text-muted); }
+.lg-sum--owed { background: var(--primary); border-color: var(--primary); }
+.lg-sum--owed span   { color: rgba(255,255,255,0.8); }
+.lg-sum--owed strong { color: #fff; }
+
+.lg-ageing { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: 11px; margin-bottom: 12px; }
+.lg-ageing__label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-right: 4px; }
+.lg-age { display: flex; flex-direction: column; gap: 2px; padding: 4px 11px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); min-width: 92px; }
+.lg-age span   { font-size: 10.5px; color: var(--text-muted); }
+.lg-age strong { font-size: 13px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.lg-age--on strong { color: var(--text); }
+.lg-age--bad { border-color: #fecaca; background: #fef2f2; }
+.lg-age--bad strong { color: #b91c1c; }
+[data-theme="dark"] .lg-age--bad { background: #3b1414; border-color: #7f1d1d; }
+[data-theme="dark"] .lg-age--bad strong { color: #fca5a5; }
+
+.lg-tablewrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; overflow-x: auto; background: var(--panel); }
+.lg-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.lg-table th { padding: 9px 12px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); background: var(--bg-soft); border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.lg-table td { padding: 9px 12px; color: var(--text); vertical-align: middle; }
+.lg-table tbody tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
+.lg-table tbody tr:hover td { background: var(--bg-soft); }
+.lg-table th.num, .lg-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lg-date { white-space: nowrap; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.lg-ref  { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lg-part { color: var(--text-muted); }
+.lg-bal  { font-weight: 700; }
+.lg-bal em { font-style: normal; font-size: 10px; font-weight: 700; color: var(--text-muted); margin-left: 3px; }
+.lg-td-empty { padding: 34px !important; text-align: center; color: var(--text-muted); }
+/* The opening row is not a transaction — it is where the story starts. */
+.lg-tr--opening td { background: var(--bg-soft); font-style: italic; }
+.lg-tr--credit_note .lg-ref, .lg-tr--debit_note .lg-ref { color: #b45309; }
+[data-theme="dark"] .lg-tr--credit_note .lg-ref, [data-theme="dark"] .lg-tr--debit_note .lg-ref { color: #fcd34d; }
+
+@media (max-width: 720px) {
+  .lg-table { min-width: 640px; }
+  .lg-summary { grid-template-columns: 1fr 1fr; }
+}
+
+.lg-actions { display: flex; gap: 6px; flex-wrap: wrap; }

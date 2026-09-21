@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
-  User, Building2, Palette, Printer, UserCog, Bell, Shield, ArrowLeft, Lock, KeyRound,
+  User, Building2, Palette, Printer, UserCog, Bell, Shield, ArrowLeft, Lock, KeyRound, Scale,
   MessageCircle, Percent,
 } from 'lucide-react';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
@@ -20,6 +20,7 @@ import InvoiceThemeSettings from '../components/settings/InvoiceThemeSettings.js
 import PrintSettings from '../components/settings/PrintSettings.jsx';
 import RemindersSettings from '../components/settings/RemindersSettings.jsx';
 import AccountingPeriodSettings from '../components/settings/AccountingPeriodSettings.jsx';
+import OpeningBalancesSettings from '../components/settings/OpeningBalancesSettings.jsx';
 import ApiKeysSettings from '../components/settings/ApiKeysSettings.jsx';
 import WhatsAppSettings from '../components/settings/WhatsAppSettings.jsx';
 import PaymentSettings from '../components/settings/PaymentSettings.jsx';
@@ -47,6 +48,10 @@ export default function SettingsPage() {
   // Closing the books is an accounting decision, not a system-admin one, so
   // it gets its own delegable permission rather than riding on super-admin.
   const canManageBooksLock  = useCan('MANAGE_BOOKS_LOCK');
+  /* Read is wider than write: anyone who can see invoices can see the opening
+     figures, because a balance you cannot see is one you cannot question.
+     Changing them needs MANAGE_OPENING_BALANCE, which the panel checks itself. */
+  const canSeeOpeningBalances = useCan('MANAGE_OPENING_BALANCE', 'VIEW_INVOICE');
   // Issuing a key grants a system outside Spinoto standing read access to the
   // master data — with pricing:read, to the whole price list. A commercial
   // decision, so its own delegable permission rather than riding on
@@ -72,6 +77,11 @@ export default function SettingsPage() {
     { key: 'manage-users',  label: 'Manage Users',    Icon: UserCog,  show: canManageUsers },
     { key: 'reminders',     label: 'Reminders',       Icon: Bell,     show: canManageReminders },
     { key: 'accounting',    label: 'Accounting Period', Icon: Lock,   show: canManageBooksLock },
+    /* Beside the accounting period on purpose: both are one-time finance setup
+       that somebody does once and rarely revisits. Visible to anyone who can
+       see invoices, because reading the figures is useful even when changing
+       them is not permitted. */
+    { key: 'opening-balances', label: 'Opening Balances', Icon: Scale, show: canSeeOpeningBalances },
     { key: 'api-keys',      label: 'API Keys',        Icon: KeyRound, show: canManageApiKeys },
     // Next to API Keys: both are integration configuration rather than
     // day-to-day operation, and both are opened rarely by one or two people.
@@ -154,6 +164,7 @@ export default function SettingsPage() {
         {activeTab === 'manage-users' && canManageUsers && <UsersPage />}
         {activeTab === 'reminders'    && canManageReminders && <RemindersSettings />}
         {activeTab === 'accounting'   && canManageBooksLock && <AccountingPeriodSettings />}
+        {activeTab === 'opening-balances' && canSeeOpeningBalances && <OpeningBalancesSettings />}
         {activeTab === 'api-keys'     && canManageApiKeys  && <ApiKeysSettings />}
         {activeTab === 'payments'     && canManagePayments && <PaymentSettings />}
         {activeTab === 'whatsapp'     && canManageWhatsApp && <WhatsAppSettings />}

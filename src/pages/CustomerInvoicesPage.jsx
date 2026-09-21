@@ -11,6 +11,7 @@ import { useDetailRail } from '../hooks/useDetailRail.js';
 import InvoiceExtrasEditor from '../components/InvoiceExtrasEditor.jsx';
 import InvoiceDateDialog from '../components/InvoiceDateDialog.jsx';
 import CollectPaymentModal from '../components/CollectPaymentModal.jsx';
+import CreditNoteModal from '../components/CreditNoteModal.jsx';
 import { PaymentLinksPanel } from '../components/PaymentsAdminTabs.jsx';
 import { openDocumentPdf, downloadDocumentPdf, openAdvanceVoucher } from '../lib/documentPdf.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
@@ -38,6 +39,8 @@ import {
   MessageCircle,
   // Odometer reading, matching the estimate drawer's choice of icon.
   Gauge,
+  // Credit note — a minus on a document, which is what one is.
+  FileMinus,
 } from 'lucide-react';
 
 /**
@@ -1039,6 +1042,17 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
      So this is now opt-in per role, revocable in one click, and the server
      enforces the same answer the UI shows. */
   const canCollectOnline = useCan('COLLECT_PAYMENT');
+  /* MANAGE_CREDIT_NOTE is granted to no role by default (migration 185), so
+     this button is invisible until somebody is deliberately given it. A credit
+     note reduces revenue and tax. */
+  const hasCreditNotePerm = useCan('MANAGE_CREDIT_NOTE');
+  /* Shown once the invoice is actually issued. Deliberately NOT gated on a
+     remaining balance the way the payment buttons are: the commonest credit
+     note of all is against an invoice that was already paid in full, and
+     hiding it there would hide it exactly when it is needed. */
+  const canCreditNote = hasCreditNotePerm && inv &&
+    ['approved', 'partially_paid', 'paid'].includes(inv.status);
+  const [showCreditNote, setShowCreditNote] = useState(false);
   /* A link is a public URL that keeps working for whoever it is forwarded to,
      which is a different risk from taking a payment on a device you are
      holding — hence its own permission rather than riding on COLLECT_PAYMENT.
@@ -1276,6 +1290,17 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
               dead button is worse than none. Because the condition is shared,
               the caret can never be left standing over an empty menu.
               `ci-internal` keeps the whole cluster off the printed invoice. */}
+          {canCreditNote && (
+            <button
+              type="button"
+              className="btn ci-internal"
+              onClick={() => setShowCreditNote(true)}
+              title="Reduce what this customer owes, without editing the invoice"
+            >
+              <FileMinus size={15} /> Credit Note
+            </button>
+          )}
+
           {canAddPayment && balance > 0.001 && (
             <div className="ci-paysplit ci-internal">
               <button
@@ -2327,6 +2352,16 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
               balance={balance}
               showToast={showToast}
               onClose={() => setShowAddPayment(false)}
+              onSuccess={async () => { await load(); onRefreshList(); }}
+            />
+          )}
+
+          {showCreditNote && (
+            <CreditNoteModal
+              invoice={inv}
+              items={items}
+              showToast={showToast}
+              onClose={() => setShowCreditNote(false)}
               onSuccess={async () => { await load(); onRefreshList(); }}
             />
           )}

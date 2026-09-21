@@ -30,6 +30,8 @@ import PayoutsPage from './pages/PayoutsPage.jsx';
 import PaymentsPage from './pages/PaymentsPage.jsx';
 import BulkUploadPage from './pages/BulkUploadPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
+import Gstr1Page from './pages/Gstr1Page.jsx';
+import PayablesPage from './pages/PayablesPage.jsx';
 // UsersPage/SuperAdminsPage are no longer routed to directly — they're
 // rendered as tabs inside SettingsPage.jsx now (/users and /super-admins
 // below just redirect there).
@@ -314,6 +316,14 @@ export default function App() {
                 {/* Operations */}
                 <Route path="/bulk-upload"      element={<RequirePermission codes={['BULK_UPLOAD']}><BulkUploadPage /></RequirePermission>} />
                 <Route path="/reports"          element={<RequirePermission codes={['VIEW_REPORTS']}><ReportsPage /></RequirePermission>} />
+                {/* Its own route rather than a Reports tab: a GST return covers a
+                    statutory period, and sitting it under the reports page's free
+                    from/to filter would invite filing the wrong window. */}
+                <Route path="/reports/gstr1"    element={<RequirePermission codes={['VIEW_REPORTS']}><Gstr1Page /></RequirePermission>} />
+                {/* Gated on seeing purchase invoices, not on managing payouts:
+                    this answers "who are we behind on", which is a question the
+                    people chasing it need before anyone is authorised to pay. */}
+                <Route path="/payables"         element={<RequirePermission codes={['VIEW_PURCHASE_INVOICE','VIEW_HUB_PAYOUTS','MANAGE_HUBS']}><PayablesPage /></RequirePermission>} />
 
                 {/* User & permission management — folded into the Settings
                     module (see /settings below). Old links/bookmarks keep

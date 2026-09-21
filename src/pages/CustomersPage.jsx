@@ -11,10 +11,13 @@ import {
   ArrowDown,
   // Customer's area / city / state row.
   MapPin,
+  // Ledger tab — the scales, same icon the opening balances screen uses.
+  Scale,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
 import CustomerPaymentsTab from '../components/CustomerPaymentsTab.jsx';
 import CustomerOverviewTab from '../components/CustomerOverviewTab.jsx';
+import LedgerPanel from '../components/LedgerPanel.jsx';
 import WhatsAppThread from '../components/WhatsAppThread.jsx';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
 import { useListScrollRestore } from '../hooks/useListScrollRestore.js';
@@ -178,6 +181,37 @@ function AddVehicleModal({ mobile, onClose, onSaved, initial = null }) {
   const [segments,    setSegments]    = useState([]);
   const [ccCategories, setCcCategories] = useState([]);
   const [saving,      setSaving]      = useState(false);
+
+  /* ── Promoting a plate that only exists on documents ──────────────────
+     `initial` means this vehicle was read off a past appointment or invoice
+     and has no saved record of its own. The commonest reason anybody opens
+     it is that the plate is WRONG.
+
+     Before this, a corrected plate created a second vehicle and left the
+     wrong one on the appointment, the estimate and the invoice — the banner
+     promised "save it to make it editable" and delivered an orphan. So the
+     same correction the edit screen offers is offered here. */
+  const originalPlate = (initial?.vehicle_number || '').trim().toUpperCase();
+  const [usage, setUsage] = useState(null);
+  const [propagateNumber, setPropagateNumber] = useState(true);
+  const plateChanged = !!originalPlate &&
+    form.vehicle_number.trim().toUpperCase() !== originalPlate;
+
+  /* What still carries the original plate. Fetched on open rather than on
+     change, so the tick box appears the instant the number is edited instead
+     of after a round trip. */
+  useEffect(() => {
+    if (!originalPlate) return;
+    api(`/api/customers/${encodeURIComponent(mobile)}/vehicle-usage?number=${encodeURIComponent(originalPlate)}`)
+      .then(setUsage)
+      .catch(() => setUsage({ appointments: 0, estimates: 0, invoices: 0 }));
+  }, []);
+
+  const usageParts = usage ? [
+    usage.appointments > 0 && `${usage.appointments} appointment${usage.appointments !== 1 ? 's' : ''}`,
+    usage.estimates    > 0 && `${usage.estimates} estimate${usage.estimates !== 1 ? 's' : ''}`,
+    usage.invoices     > 0 && `${usage.invoices} invoice${usage.invoices !== 1 ? 's' : ''}`,
+  ].filter(Boolean) : [];
   const [err,         setErr]         = useState('');
 
   useEffect(() => {
@@ -231,6 +265,11 @@ function AddVehicleModal({ mobile, onClose, onSaved, initial = null }) {
           color:           form.color           || null,
           year:            form.year ? parseInt(form.year, 10) : null,
           notes:           form.notes           || null,
+          /* Sent only when the plate actually changed AND the box is ticked.
+             Promoting under a different number is also a legitimate way to
+             add a second vehicle, so the correction is never assumed. */
+          original_vehicle_number: plateChanged ? originalPlate : null,
+          propagate_vehicle_number: plateChanged && propagateNumber && usageParts.length > 0,
         },
       });
       onSaved();
@@ -252,9 +291,10 @@ function AddVehicleModal({ mobile, onClose, onSaved, initial = null }) {
         </div>
         <div className="aveh-body">
           {err && <div className="aveh-err">{err}</div>}
-          {initial && !err && (
+          {initial && !err && !plateChanged && (
             <div className="aveh-hint">
-              Seen on a past appointment/invoice — save it to make it editable.
+              Seen on a past appointment/invoice. Save it to make it editable —
+              or correct the number here and it will be fixed on those records too.
             </div>
           )}
 
@@ -264,6 +304,27 @@ function AddVehicleModal({ mobile, onClose, onSaved, initial = null }) {
               value={form.vehicle_number}
               onChange={e => set('vehicle_number', e.target.value.toUpperCase())}/>
           </div>
+
+          {/* Ticked by default, unlike the edit screen. There the plate is
+              already saved and changing it is often a genuinely different
+              car; here it was only ever read off a document, so a changed
+              number almost always means "that was typed wrong". */}
+          {plateChanged && usage && usageParts.length > 0 && (
+            <label className="aveh-checkbox-row">
+              <input type="checkbox" checked={propagateNumber}
+                onChange={e => setPropagateNumber(e.target.checked)}/>
+              <span>
+                Correct <strong>{originalPlate}</strong> to <strong>{form.vehicle_number.trim().toUpperCase()}</strong>
+                {' '}on {usageParts.join(', ')} for this customer.
+                {' '}Untick to add it as a separate vehicle instead.
+              </span>
+            </label>
+          )}
+          {plateChanged && usage && usageParts.length === 0 && (
+            <div className="aveh-hint">
+              Nothing else uses {originalPlate} — this will just be saved as a new vehicle.
+            </div>
+          )}
 
           <div className="aveh-field aveh-field--full">
             <label>Vehicle Type</label>
@@ -1637,6 +1698,9 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
             <button className={`cust-tab${tab === 'payments' ? ' cust-tab--on' : ''}`} onClick={() => setTab('payments')}>
               <Wallet size={11}/> Payments {payments.length > 0 && <span className="cust-tab-count">{payments.length}</span>}
             </button>
+            <button className={`cust-tab${tab === 'ledger' ? ' cust-tab--on' : ''}`} onClick={() => setTab('ledger')}>
+              <Scale size={11}/> Ledger
+            </button>
             <button className={`cust-tab${tab === 'timeline' ? ' cust-tab--on' : ''}`} onClick={() => setTab('timeline')}>
               🕐 Activity Log {timeline.length > 0 && <span className="cust-tab-count">{timeline.length}</span>}
             </button>
@@ -1644,6 +1708,10 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
 
           {/* ── Tab content ── */}
           <div className="cust-tab-content">
+
+            {/* Keyed on mobile because that IS the customer identity in this
+                system — customer_profiles has no id. See ledger.controller.js. */}
+            {tab === 'ledger' && <LedgerPanel partyType="customer" partyKey={data.mobile} />}
 
             {tab === 'overview' && (
               <CustomerOverviewTab
