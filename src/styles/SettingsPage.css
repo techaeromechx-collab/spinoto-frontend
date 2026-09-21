@@ -1,3 +1,679 @@
+/* ── Settings ─────────────────────────────────────────────────────────────
+   Settings is a 240px fixed sidebar with the sections stacked vertically,
+   and a scrolling pane beside it. Both halves own their own scroll, which is
+   why .content is flattened above: two nested scrollbars on one page is the
+   thing that makes a settings screen feel broken.
+
+   RESTORED 21 Sep 2026. These rules were lost when the Opening Balances
+   block below was added — the file was rewritten rather than appended to,
+   which took every .settings-* rule with it. With them gone the nav has no
+   flex-direction, so the sections flow inline and wrap into a ragged row
+   across the top of the page. Recovered verbatim from the 18 Aug build in
+   frontend/dist, so this is the original layout and not a reconstruction.
+
+   If you add a new settings section, add its styles BELOW, never by
+   replacing this file. */
+
+
+.content:has(.settings-page) {
+  padding:0;
+  max-width:none;
+  height:100%;
+  overflow:hidden;
+}
+.settings-page { display:flex; height:100%; }
+.settings-sidebar {
+  width:240px;
+  flex-shrink:0;
+  height:100%;
+  overflow-y:auto;
+  box-sizing:border-box;
+  background:var(--bg);
+  border-right:1px solid var(--border);
+  padding:20px 14px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.settings-back-link {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:13px;
+  font-weight:600;
+  color:var(--text-muted);
+  text-decoration:none;
+  padding:8px 10px;
+  border-radius:8px;
+  margin-bottom:10px;
+  transition:background .12s ease,color .12s ease;
+}
+.settings-back-link:hover { background:var(--bg-soft); color:var(--text); }
+.settings-sidebar-title {
+  font-size:13px;
+  font-weight:700;
+  color:var(--text-muted);
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  padding:4px 10px 12px;
+}
+.settings-nav {
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.settings-content {
+  flex:1;
+  min-width:0;
+  height:100%;
+  overflow-y:auto;
+  box-sizing:border-box;
+  padding:28px 32px;
+}
+.settings-nav-item {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:9px 10px;
+  border-radius:8px;
+  border:none;
+  background:transparent;
+  color:var(--text);
+  font-size:13px;
+  font-weight:500;
+  text-align:left;
+  cursor:pointer;
+  transition:background .12s ease;
+}
+.settings-nav-item:hover { background:var(--bg-soft); }
+.settings-nav-item--active {
+  background:var(--primary-soft, #eef2ff);
+  color:var(--primary, #4f46e5);
+  font-weight:700;
+}
+.settings-content { flex:1; min-width:0; }
+.settings-content:has(.its-split) { padding:0; overflow:hidden; }
+
+@media (max-width: 768px){
+  .content:has(.settings-page) { height:auto; overflow:visible; }
+  .settings-page { flex-direction:column; height:auto; }
+  .settings-sidebar {
+    width:100%;
+    height:auto;
+    border-right:none;
+    border-bottom:1px solid var(--border);
+  }
+  .settings-nav { flex-direction:row; flex-wrap:wrap; }
+  .settings-content { height:auto; overflow:visible; }
+}
+
+@media (max-width: 1100px){
+  .settings-content:has(.its-split) { overflow:auto; }
+}
+
+
+/* ── Invoice Theme Settings (.its-*) and shared settings cards (.set-*) ────
+   RESTORED 21 Sep 2026, from the same loss as the .settings-* block above.
+
+   .its-* is the Invoice Settings screen: the two-column split with the
+   config rail on the left and the live invoice preview on the right, the
+   zoom bar, the theme swatches and the collapsible sections. Without these
+   the split never forms, so the preview falls out of its pane and the whole
+   config rail collapses to nothing — the config controls are still rendered,
+   they simply have no width.
+
+   .set-* is the shared card/alert/row furniture used by Account, Manage
+   Business, Print, Reminders, Accounting Period and Payments. Those screens
+   lost their card framing in the same incident.
+
+   Recovered verbatim from the 18 Aug build in frontend/dist. */
+
+.settings-content:has(.its-split) { padding:0; overflow:hidden; }
+.its-split {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 440px;
+  height:100%;
+  min-height:0;
+}
+.its-loading {
+  padding:40px;
+  text-align:center;
+  color:var(--text-muted);
+  font-size:13px;
+}
+.its-preview-pane {
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  min-height:0;
+  background:var(--bg-soft, #f6f7f9);
+  border-right:1px solid var(--border);
+}
+.its-preview-bar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px 20px;
+  border-bottom:1px solid var(--border);
+  background:var(--bg);
+  flex-shrink:0;
+}
+.its-preview-label {
+  font-size:13px;
+  font-weight:700;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.its-preview-spin {
+  font-size:11px;
+  font-weight:500;
+  color:var(--text-muted);
+}
+.its-save-btn {
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.its-alert { margin:12px 20px 0; }
+.its-paper-wrap {
+  flex:1;
+  min-height:0;
+  overflow:auto;
+  padding:20px;
+  display:flex;
+  justify-content:safe center;
+  align-items:flex-start;
+}
+.its-paper-sizer { position:relative; flex-shrink:0; }
+.its-paper {
+  position:absolute;
+  top:0;
+  left:0;
+  width:794px;
+  height:1123px;
+  border:none;
+  background:#fff;
+  box-shadow:0 2px 14px #0000001f;
+  transform-origin:top left;
+  pointer-events:none;
+}
+.its-zoom {
+  display:flex;
+  align-items:center;
+  gap:2px;
+  margin-left:auto;
+  margin-right:10px;
+  border:1px solid var(--border);
+  border-radius:7px;
+  padding:2px;
+}
+.its-zoom button {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:26px;
+  height:24px;
+  border:none;
+  background:transparent;
+  color:var(--text);
+  border-radius:5px;
+  cursor:pointer;
+}
+.its-zoom button:hover:not(:disabled) { background:var(--bg-soft); }
+.its-zoom button:disabled { opacity:.35; cursor:default; }
+.its-zoom-val {
+  min-width:42px;
+  text-align:center;
+  font-size:11px;
+  font-weight:600;
+  color:var(--text-muted);
+  font-variant-numeric:tabular-nums;
+}
+.its-preview-err {
+  padding:60px 20px;
+  color:var(--text-muted);
+  font-size:13px;
+}
+.its-store {
+  overflow-y:auto;
+  overflow-x:hidden;
+  min-height:0;
+  background:var(--bg);
+  padding-bottom:40px;
+}
+.its-store-head {
+  position:sticky;
+  top:0;
+  z-index:2;
+  background:var(--bg);
+  padding:16px 18px 12px;
+  font-size:13px;
+  font-weight:700;
+  border-bottom:1px solid var(--border);
+}
+.its-doctabs {
+  display:flex;
+  gap:4px;
+  padding:12px 18px 0;
+}
+.its-doctab {
+  flex:1;
+  min-width:0;
+  padding:7px 6px;
+  border-radius:7px;
+  border:1px solid var(--border);
+  background:transparent;
+  color:var(--text-muted);
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+  line-height:1.25;
+}
+.its-doctab:hover { background:var(--bg-soft); }
+.its-doctab--on {
+  background:var(--primary, #4f46e5);
+  border-color:var(--primary, #4f46e5);
+  color:#fff;
+}
+.its-strip {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:8px;
+  padding:14px 18px;
+  border-bottom:1px solid var(--border);
+}
+.its-fields {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding:4px 0 8px 24px;
+  border-left:2px solid var(--border);
+  margin-left:6px;
+}
+.its-fields-label {
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:.3px;
+  text-transform:uppercase;
+  color:var(--text-muted, #6b7280);
+  margin-bottom:2px;
+}
+.its-logo-box--wide { width:118px; height:54px; }
+.its-two {
+  display:grid;
+  grid-template-columns:2fr 1fr;
+  gap:8px;
+}
+.its-textarea {
+  resize:vertical;
+  font-family:inherit;
+  line-height:1.5;
+}
+.its-strip-card {
+  border:2px solid var(--border);
+  border-radius:8px;
+  padding:4px;
+  background:var(--surface, #fff);
+  cursor:pointer;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  transition:border-color .12s ease;
+  min-width:0;
+  overflow:hidden;
+}
+.its-strip-card:hover { border-color:var(--primary, #4f46e5); }
+.its-strip-card--on { border-color:var(--primary, #4f46e5); box-shadow:0 0 0 1px var(--primary, #4f46e5); }
+.its-strip-label {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+  font-size:9.5px;
+  font-weight:600;
+  line-height:1.25;
+  min-height:24px;
+  text-align:center;
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+.its-thumb {
+  position:relative;
+  height:86px;
+  border-radius:5px;
+  overflow:hidden;
+  background:#fff;
+  border:1px solid var(--border);
+}
+.its-thumb-frame {
+  width:794px;
+  height:1123px;
+  border:none;
+  pointer-events:none;
+  zoom:.147;
+  background:#fff;
+}
+.its-thumb-ph {
+  position:absolute;
+  top:0;
+  right:0;
+  bottom:0;
+  left:0;
+  background:#f1f2f4;
+}
+.its-sec { border-bottom:1px solid var(--border); }
+.its-sec-head {
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:13px 18px;
+  background:transparent;
+  border:none;
+  cursor:pointer;
+  font-size:13px;
+  font-weight:600;
+  color:var(--text);
+  text-align:left;
+}
+.its-sec-head:hover { background:var(--bg-soft); }
+.its-sec-title {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex:1;
+  min-width:0;
+}
+.its-badge {
+  background:var(--primary-soft, #eef2ff);
+  color:var(--primary, #4f46e5);
+  font-size:10px;
+  font-weight:700;
+  border-radius:10px;
+  padding:1px 7px;
+}
+.its-sec-chev {
+  transition:transform .15s ease;
+  flex-shrink:0;
+  opacity:.6;
+}
+.its-sec--open .its-sec-chev { transform:rotate(180deg); }
+.its-sec-body {
+  padding:4px 18px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.its-sub {
+  font-size:11px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  color:var(--text-muted);
+  margin-top:8px;
+}
+.its-label { font-size:12px; font-weight:600; }
+.its-hint {
+  font-size:11px;
+  color:var(--text-muted);
+  line-height:1.5;
+  margin:0;
+}
+.its-hint--warn { color:#b45309; }
+.its-hint--muted { opacity:.7; }
+.its-hint--center { text-align:center; padding:0 0 12px; }
+.its-check {
+  display:flex;
+  align-items:center;
+  gap:9px;
+  font-size:12.5px;
+  cursor:pointer;
+  line-height:1.4;
+}
+.its-check input { cursor:pointer; flex-shrink:0; }
+.its-check--disabled { opacity:.5; cursor:not-allowed; }
+.its-input {
+  width:100%;
+  box-sizing:border-box;
+  padding:7px 9px;
+  border:1px solid var(--border);
+  border-radius:7px;
+  background:var(--bg);
+  color:var(--text);
+  font-size:12.5px;
+  font-family:inherit;
+}
+.its-cta {
+  width:100%;
+  padding:9px;
+  border-radius:8px;
+  border:none;
+  background:var(--primary, #4f46e5);
+  color:#fff;
+  font-size:12.5px;
+  font-weight:600;
+  cursor:pointer;
+}
+.its-cta:disabled { opacity:.5; cursor:not-allowed; }
+.its-swatches {
+  display:flex;
+  flex-wrap:wrap;
+  gap:9px;
+  align-items:center;
+}
+.its-swatch {
+  width:28px;
+  height:28px;
+  border-radius:50%;
+  border:2px solid transparent;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0;
+}
+.its-swatch--on { border-color:var(--text); }
+.its-swatch-custom {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:11px;
+  color:var(--text-muted);
+  cursor:pointer;
+}
+.its-swatch-custom input {
+  width:28px;
+  height:28px;
+  border:none;
+  background:none;
+  padding:0;
+  cursor:pointer;
+}
+.its-custom {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.its-custom-row {
+  display:flex;
+  align-items:center;
+  gap:7px;
+}
+.its-icon-btn {
+  background:transparent;
+  border:none;
+  color:var(--text-muted);
+  cursor:pointer;
+  padding:4px;
+  border-radius:5px;
+  display:flex;
+  flex-shrink:0;
+}
+.its-icon-btn:hover { background:var(--bg-soft); color:#b91c1c; }
+.its-add-link {
+  background:none;
+  border:none;
+  color:var(--primary, #4f46e5);
+  font-size:12px;
+  font-weight:600;
+  cursor:pointer;
+  padding:4px 0;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  align-self:flex-start;
+}
+.its-logo-row {
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+.its-logo-box {
+  width:62px;
+  height:62px;
+  border-radius:9px;
+  border:1px dashed var(--border);
+  background:var(--bg-soft);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  flex-shrink:0;
+  color:var(--text-muted);
+}
+.its-logo-box img {
+  max-width:100%;
+  max-height:100%;
+  object-fit:contain;
+}
+.its-logo-actions {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  align-items:flex-start;
+}
+.set-card {
+  max-width:620px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:var(--bg);
+  padding:18px 20px 20px;
+}
+.set-card-hd { margin-bottom:6px; }
+.set-card-t {
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:14px;
+  font-weight:700;
+  color:var(--text);
+}
+.set-card-t svg { color:var(--text-muted); }
+.set-card-lede {
+  margin:0 0 14px;
+  font-size:12.5px;
+  line-height:1.55;
+  color:var(--text-muted);
+}
+.set-state {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 13px;
+  border-radius:9px;
+  font-size:13px;
+  margin-bottom:14px;
+}
+.set-state--on {
+  background:#f0fdf4;
+  border:1px solid #bbf7d0;
+  color:#166534;
+}
+.set-state--off {
+  background:#fffbeb;
+  border:1px solid #fde68a;
+  color:#92400e;
+}
+.set-alert {
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  padding:9px 12px;
+  border-radius:8px;
+  font-size:12.5px;
+  line-height:1.5;
+  margin-bottom:12px;
+}
+.set-alert--bad {
+  background:#fef2f2;
+  border:1px solid #fecaca;
+  color:#991b1b;
+}
+.set-alert--ok {
+  background:#f0fdf4;
+  border:1px solid #bbf7d0;
+  color:#166534;
+}
+.set-row {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.set-suffix {
+  font-size:13px;
+  font-weight:700;
+  color:var(--text-muted);
+  margin-left:-2px;
+}
+.set-card-note {
+  margin:12px 0 0;
+  font-size:11.5px;
+  line-height:1.55;
+  color:var(--text-muted);
+}
+.set-danger {
+  margin-top:18px;
+  padding-top:14px;
+  border-top:1px solid var(--border);
+}
+.set-danger-btn { color:#b91c1c; }
+.set-danger-btn:hover { background:#fef2f2; }
+.set-confirm {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+  flex-wrap:wrap;
+  padding:12px 14px;
+  border:1px solid #fecaca;
+  border-radius:10px;
+  background:#fef2f2;
+  font-size:12.5px;
+  color:#991b1b;
+}
+.set-confirm .set-card-note { color:#b91c1c; }
+.set-confirm-acts {
+  display:flex;
+  gap:8px;
+  align-items:center;
+  margin-left:auto;
+}
+.set-btn--danger {
+  background:#dc2626;
+  border:1px solid #dc2626;
+  color:#fff;
+}
+.set-btn--danger:hover:not(:disabled) { background:#b91c1c; }
+
+@media (max-width: 1100px) {
+  .settings-content:has(.its-split) { overflow:auto; }
+  .its-split { grid-template-columns:1fr; height:auto; }
+  .its-preview-pane { border-right:none; border-bottom:1px solid var(--border); }
+  .its-store { overflow:visible; }
+}
 
 /* ── Opening balances ─────────────────────────────────────────────────────
    A worklist, not a form: thirteen parties on one screen is a job somebody

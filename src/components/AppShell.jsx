@@ -234,7 +234,7 @@ const NAV_ITEMS = [
   // VIEW_HUB_PAYOUTS was missing, so the permission named for this screen did
   // nothing at all.
   { label: 'Hub Payouts',       to: '/payouts',           permissions: ['VIEW_HUB_PAYOUTS','MANAGE_HUBS','VIEW_PURCHASE_INVOICE','VIEW_PAYMENTS'], icon: Wallet, section: 'ACCOUNTING' },
-  { label: 'Hub Payables',      to: '/payables',          permissions: ['VIEW_PURCHASE_INVOICE','VIEW_HUB_PAYOUTS','MANAGE_HUBS'], icon: Wallet, section: 'ACCOUNTING' },
+  { label: 'Hub Ledger',        to: '/payables',          permissions: ['VIEW_PURCHASE_INVOICE','VIEW_HUB_PAYOUTS','MANAGE_HUBS'], icon: Wallet, section: 'ACCOUNTING' },
   // Money IN, beside the two screens for money out.
   //
   // Gated on VIEW_PAYMENTS alone, not the usual any-of list. COLLECT_PAYMENT is

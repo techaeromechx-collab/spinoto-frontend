@@ -58,7 +58,7 @@ export default function PayablesPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const exportCsv = () => data && downloadCSV('hub-payables.csv',
+  const exportCsv = () => data && downloadCSV('hub-ledger.csv',
     data.items.map(r => [r.hub_name, r.open_invoices, r.outstanding, dmy(r.oldest), r.oldest_days]),
     ['Hub', 'Open invoices', 'Outstanding', 'Oldest invoice', 'Days waiting']);
 
@@ -70,7 +70,7 @@ export default function PayablesPage() {
         <div className="pay-header__left">
           <span className="pay-header__icon"><Wallet size={19} /></span>
           <div>
-            <h1 className="pay-title">Hub payables</h1>
+            <h1 className="pay-title">Hub Ledger</h1>
             <p className="pay-sub">What we owe, and how long they have been waiting</p>
           </div>
         </div>

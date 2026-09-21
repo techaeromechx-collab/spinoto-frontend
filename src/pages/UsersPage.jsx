@@ -565,6 +565,7 @@ function UserDetail({ user, me, catalog, users, departments, allRoles = [], read
   const [editModal, setEditModal]   = useState(false);
   const [editName, setEditName]     = useState(user.name);
   const [editEmail, setEditEmail]   = useState(user.email);
+  const [editMobile, setEditMobile] = useState(user.mobile || '');
   const [editDept, setEditDept]     = useState(user.department || '');
   const [editRoleId, setEditRoleId] = useState(user.role_id ?? null);
   useBodyLock(pwModal);
@@ -673,7 +674,7 @@ function UserDetail({ user, me, catalog, users, departments, allRoles = [], read
         <div className="up-action-row">
           <button
             className="up-action-btn"
-            onClick={() => { setEditName(user.name); setEditEmail(user.email); setEditDept(user.department || ''); setEditRoleId(user.role_id ?? null); setEditModal(true); }}
+            onClick={() => { setEditName(user.name); setEditEmail(user.email); setEditMobile(user.mobile || ''); setEditDept(user.department || ''); setEditRoleId(user.role_id ?? null); setEditModal(true); }}
             disabled={busy}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -941,6 +942,11 @@ function UserDetail({ user, me, catalog, users, departments, allRoles = [], read
               const patch = {
                 name:       editName.trim(),
                 email:      editEmail.trim().toLowerCase(),
+                // Null, not '', when the box is emptied. The API treats a
+                // present-but-null mobile as "clear this field" and an absent
+                // one as "leave it alone" ('mobile' in data, users.controller
+                // $14), so sending '' would store an empty string forever.
+                mobile:     editMobile.trim() || null,
                 department: editDept || null,
                 role_id:    editRoleId ?? null,
               };
@@ -975,6 +981,16 @@ function UserDetail({ user, me, catalog, users, departments, allRoles = [], read
                 required
                 value={editEmail}
                 onChange={(e) => setEditEmail(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, background: 'var(--bg)', color: 'var(--text)' }}
+              />
+            </div>
+            <div className="up-field" style={{ marginTop: 10 }}>
+              <label>Mobile <span className="up-optional">optional</span></label>
+              <input
+                type="tel"
+                placeholder="+91 98765 43210"
+                value={editMobile}
+                onChange={(e) => setEditMobile(e.target.value)}
                 style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', fontSize: 14, background: 'var(--bg)', color: 'var(--text)' }}
               />
             </div>
