@@ -60,13 +60,62 @@ const HUB_STATUS_TABS = [
  * 1st by approved value, so an ORDER BY on one status could not serve the
  * others.
  */
-function rankHubs(all, status) {
-  return (all || [])
-    .map(h => ({
+/* The payload is now one row per hub PER VEHICLE TYPE, so a hub appears up to
+   three times (2W, 4W, and 'other' for invoices with no appointment behind
+   them). Roll those rows back up into one line per hub, keeping only the
+   buckets the vehicle filter asks for.
+
+   'all' must include 'other'. Those invoices are real money — dropping them
+   would make the card disagree with the invoice list, and the difference
+   would be invisible. 2W and 4W deliberately exclude it: an invoice with no
+   vehicle type cannot honestly be claimed by either. */
+/* "All Time" and "This Month" tell you the shape of the window but not where
+   it actually falls, and on a young dataset that matters — All Time here is
+   about eleven weeks, not years. Print the real dates.
+
+   Read literally, not through the Date constructor: the server sends a plain
+   YYYY-MM-DD, and `new Date('2026-07-02')` is parsed as UTC midnight, which
+   renders as 1 July in any timezone west of Greenwich. Same trap the GSTR-1
+   page had. */
+function hubRangeLabel(range) {
+  if (!range?.from || !range?.to) return '';
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const part = (v) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+    if (!m) return null;
+    return { y: m[1], mo: MON[Number(m[2]) - 1], d: String(Number(m[3])) };
+  };
+  const a = part(range.from), b = part(range.to);
+  if (!a || !b) return '';
+  // Same month and year reads better without repeating either.
+  if (a.y === b.y && a.mo === b.mo) return `${a.d} \u2013 ${b.d} ${b.mo} ${b.y}`;
+  if (a.y === b.y)                  return `${a.d} ${a.mo} \u2013 ${b.d} ${b.mo} ${b.y}`;
+  return `${a.d} ${a.mo} ${a.y} \u2013 ${b.d} ${b.mo} ${b.y}`;
+}
+
+function rankHubs(all, status, vehicle = 'all') {
+  const byHub = new Map();
+  for (const h of all || []) {
+    if (vehicle !== 'all' && h.vehicle !== vehicle) continue;
+    const prev = byHub.get(h.hub_id) || {
       hub_id: h.hub_id,
       hub_name: h.hub_name,
-      count: Number(h[`${status}_count`] || 0),
-      value: Number(h[`${status}_value`] || 0),
+      // Spinoto's cut. Both rates travel; the card shows one figure when they
+      // agree and both when they do not.
+      rate_parts:   h.tech_rate_parts   == null ? null : Number(h.tech_rate_parts),
+      rate_service: h.tech_rate_service == null ? null : Number(h.tech_rate_service),
+      count: 0, value: 0,
+    };
+    prev.count += Number(h[`${status}_count`] || 0);
+    prev.value += Number(h[`${status}_value`] || 0);
+    byHub.set(h.hub_id, prev);
+  }
+  return [...byHub.values()]
+    .map(h => ({
+      ...h,
+      // Value per invoice. Guarded: a hub with no invoices in this slice would
+      // otherwise divide by zero and render NaN.
+      avg: h.count > 0 ? h.value / h.count : 0,
     }))
     // Value first; count breaks a value tie; name breaks that, so the order is
     // stable across refetches instead of drifting with whatever Postgres
@@ -99,6 +148,12 @@ export default function DashboardPage() {
   // Not to be confused with hubFilter above, whose 'all' means All Time. The
   // two are unrelated: hubStatus picks a status, hubFilter picks a period.
   const [hubStatus,      setHubStatus]      = useState('all');
+  // 2W / 4W / all. 'all' by default — the whole business first, the split one
+  // click away, same principle as hubStatus above.
+  const [hubVehicle,     setHubVehicle]     = useState('all');
+  // The window the server actually queried, so the card can print it rather
+  // than the browser guessing what "All Time" resolved to.
+  const [hubRange,       setHubRange]       = useState(null);
   const [hubLoading,     setHubLoading]     = useState(false);
   const [hubPerfData,    setHubPerfData]    = useState(null);
   const [teamPerfFilter, setTeamPerfFilter] = useState('month');
@@ -228,6 +283,9 @@ export default function DashboardPage() {
     ]).then(([s, ds, l, sl, ev, apptsCreated]) => {
       setStats(s);
       setDashStats(ds);
+      // The first dashboard load carries the range too, so the card has a
+      // window to print before anyone touches the period dropdown.
+      if (ds?.hub_range) setHubRange(ds.hub_range);
       setLeads(l.items || []);
       setStatusList(sl.items || []);
       setTodayEvents(ev.items || []);
@@ -287,7 +345,8 @@ export default function DashboardPage() {
     if (!canViewDashHubPerformance) return;
     setHubLoading(true);
     api(`/api/reports/dashboard?period=${hubFilter}`)
-      .then(ds => setHubPerfData(ds?.hub_performance ?? null))
+      .then(ds => { setHubPerfData(ds?.hub_performance ?? null);
+                    if (ds?.hub_range) setHubRange(ds.hub_range); })
       .catch(() => setHubPerfData(null))
       .finally(() => setHubLoading(false));
   }, [hubFilter, canViewDashHubPerformance]);
@@ -685,7 +744,12 @@ export default function DashboardPage() {
         />
       </div>
               ) : id === 'row1' ? (
-      <div className={`db-${row1Cols}col`}>
+      /* Row 1 is a 3-column grid: Pipeline Overview takes one, Hub
+         Performance spans two. The Follow-ups card that used to sit here has
+         moved down beside Today's Call Log — both answer "who needs chasing
+         today", and the hub table needed the width more than it needed a
+         neighbour. */
+      <div className="db-3col">
 
         {/* Pipeline Overview — redesigned */}
         {canViewDashLeads && (
@@ -776,16 +840,32 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Hub Performance */}
+        {/* Hub Performance — double width. Five number columns plus a hub
+            name do not fit in a third of a row. */}
         {canViewDashHubPerformance && (
-          <div className="db-card">
+          <div className="db-card db-span2">
             <div className="db-card-hd">
               <div className="db-card-title">
                 <span className="db-card-dot" style={{ background: '#0ea5e9' }} />
                 <Building2 size={13} style={{ color: '#0ea5e9' }} />
                 Hub Performance
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                {/* 2W / 4W. Buttons rather than a second dropdown: there are
+                    only three choices and which one is live should be readable
+                    without opening anything first. */}
+                <div className="db-hub-veh" role="group" aria-label="Vehicle type">
+                  {[['all', 'All'], ['2W', '2W'], ['4W', '4W']].map(([k, lbl]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className={`db-hub-veh-btn${hubVehicle === k ? ' db-hub-veh-btn--on' : ''}`}
+                      aria-pressed={hubVehicle === k}
+                      onClick={() => setHubVehicle(k)}
+                    >{lbl}</button>
+                  ))}
+                </div>
+                <div style={{ textAlign: 'right' }}>
                 <select
                   className="db-pipeline-filter"
                   value={hubFilter}
@@ -795,6 +875,12 @@ export default function DashboardPage() {
                   <option value="month">This Month</option>
                   <option value="all">All Time</option>
                 </select>
+                {/* The window the server actually queried. "All Time" on this
+                    dataset is about eleven weeks, not years — worth showing. */}
+                {hubRangeLabel(hubRange) && (
+                  <div className="db-hub-range">{hubRangeLabel(hubRange)}</div>
+                )}
+                </div>
                 {/* Straight into the Hub Revenue report rather than the raw
                     invoice list — this card is a summary of that report, and
                     the tab is carried in the URL so the link survives a
@@ -829,7 +915,7 @@ export default function DashboardPage() {
             {(loading || hubLoading) ? <SkeletonList n={4} h={32} /> : (() => {
               const all = hubPerfData ?? dashStats?.hub_performance ?? [];
 
-              const rows = rankHubs(all, hubStatus);
+              const rows = rankHubs(all, hubStatus, hubVehicle);
 
               // "No all invoices in this period" is not a sentence — the All
               // tab needs the status word dropped entirely.
@@ -863,6 +949,8 @@ export default function DashboardPage() {
                     <span className="db-hub-hd-name">Hub</span>
                     <span className="db-hub-hd-num">Invoices</span>
                     <span className="db-hub-hd-num db-hub-hd-val">Value</span>
+                    <span className="db-hub-hd-num db-hub-hd-avg">Avg job</span>
+                    <span className="db-hub-hd-num db-hub-hd-share" title="Spinoto's share of the job">Share</span>
                   </div>
                   <div className="db-hub-scroll">
                   {rows.map((r, i) => (
@@ -880,6 +968,23 @@ export default function DashboardPage() {
                       <div className="db-hub-num db-hub-num--val">
                         {r.count === 0 ? '—' : `₹${fmtINRFull(r.value)}`}
                       </div>
+                      {/* Value ÷ invoices. Tragad bills roughly three times
+                          the others per job, which a list sorted by total
+                          value hides completely. */}
+                      <div className="db-hub-num db-hub-num--avg">
+                        {r.count === 0 ? '—' : `₹${fmtINRFull(Math.round(r.avg))}`}
+                      </div>
+                      {/* Spinoto's cut, from the hub's tech rate. One figure
+                          when parts and service agree, both when they do not:
+                          averaging two different rates would invent a rate
+                          nobody actually set. */}
+                      <div className="db-hub-num db-hub-num--share">
+                        {r.rate_service == null && r.rate_parts == null
+                          ? '—'
+                          : r.rate_parts === r.rate_service
+                            ? `${r.rate_service}%`
+                            : `${r.rate_parts ?? '—'} / ${r.rate_service ?? '—'}%`}
+                      </div>
                     </motion.div>
                   ))}
                   </div>
@@ -889,100 +994,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Follow-ups */}
-        {canViewDashFollowups && (
-          <div className="db-card db-followups" style={{ padding: 0 }}>
-            <div className="db-fu-hdr">
-              <div className="db-card-title">
-                <span className="db-card-dot" style={{ background: visibleEvents.length > 0 ? '#ef4444' : '#9ca3af' }} />
-                <Bell size={13} style={{ color: visibleEvents.length > 0 ? '#ef4444' : 'var(--text-muted)' }} />
-                Follow-ups
-                {visibleEvents.length > 0 && <span className="db-fu-badge">{visibleEvents.length}</span>}
-              </div>
-            </div>
-            <div className="db-fu-tabbar">
-              {[{ key: 'today', label: 'Today' }, { key: 'tomorrow', label: 'Tomorrow' },
-                { key: 'week', label: 'This Week' }, { key: 'custom', label: '📅 Custom' }].map(tab => (
-                <button key={tab.key}
-                  className={`db-fu-tab${fuFilter === tab.key ? ' db-fu-tab--active' : ''}`}
-                  onClick={() => { setFuFilter(tab.key); setShowCustom(tab.key === 'custom'); setEventsDone({}); setFuShowAll(false); }}>
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            {showCustom && (
-              <div className="db-fu-custom-row">
-                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="db-fu-date-input" />
-                <span className="db-fu-date-sep">→</span>
-                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="db-fu-date-input" />
-                <button onClick={applyCustomFilter} className="db-fu-apply-btn">Apply</button>
-              </div>
-            )}
-            {fuLoading ? (
-              <div className="db-fu-empty"><Clock size={16} /><span>Loading…</span></div>
-            ) : visibleEvents.length === 0 ? (
-              <div className="db-fu-caught-up">
-                <div className="db-fu-caught-text">
-                  <div className="db-fu-caught-title">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                      <circle cx="8" cy="8" r="8" fill="#dcfce7"/>
-                      <path d="M4.5 8.5l2.5 2.5 4.5-4.5" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    All caught up
-                  </div>
-                  <div className="db-fu-caught-sub">No pending follow-ups for today!</div>
-                </div>
-                <svg className="db-fu-caught-svg" viewBox="0 0 80 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="10" y="10" width="44" height="54" rx="5" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1.2"/>
-                  <rect x="22" y="5" width="20" height="10" rx="4" fill="#fff" stroke="#bbf7d0" strokeWidth="1.2"/>
-                  <rect x="26" y="7.5" width="12" height="3.5" rx="1.8" fill="#bbf7d0"/>
-                  <rect x="18" y="26" width="28" height="3" rx="1.5" fill="#bbf7d0"/>
-                  <rect x="18" y="33" width="20" height="3" rx="1.5" fill="#d1fae5"/>
-                  <rect x="18" y="40" width="24" height="3" rx="1.5" fill="#d1fae5"/>
-                  <circle cx="59" cy="52" r="16" fill="#16a34a"/>
-                  <path d="M51.5 52.5l5 5 9-9" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <circle cx="8" cy="16" r="2" fill="#86efac" opacity="0.5"/>
-                  <circle cx="66" cy="14" r="1.5" fill="#86efac" opacity="0.4"/>
-                </svg>
-              </div>
-            ) : (
-              <div className={`db-fu-list${!fuShowAll && visibleEvents.length > FU_LIMIT ? ' db-fu-list--collapsed' : ''}`}>
-                {(fuShowAll ? visibleEvents : visibleEvents.slice(0, FU_LIMIT)).map((ev, i) => {
-                  const cfg = getStatusCfg(ev.lead_current_status);
-                  const initials = (ev.lead_name || ev.lead_mobile || '?').charAt(0).toUpperCase();
-                  const today = now.toISOString().slice(0, 10);
-                  const isOverdue = ev.due_date < today;
-                  return (
-                    <motion.div key={ev.id} className="db-fu-row"
-                      initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.04 }}
-                      onClick={e => { if (!e.target.closest('button')) navigate('/leads', { state: { openLeadId: ev.lead_id } }); }}
-                      style={{ cursor: 'pointer' }}>
-                      <div className="db-lead-avatar" style={{ background: cfg.bg, color: cfg.color, borderRadius: 10 }}>{initials}</div>
-                      <div className="db-lead-info">
-                        <div className="db-lead-name">
-                          <span>{ev.lead_name || ev.lead_mobile}</span>
-                          {isOverdue && <span className="db-fu-overdue-tag">Overdue</span>}
-                        </div>
-                        <div className="db-lead-meta"><span className="db-meta-note">{ev.note}</span></div>
-                      </div>
-                      <div className="db-fu-actions">
-                        <span className="db-status-pill" style={{ background: cfg.bg, color: cfg.color }}>{ev.lead_current_status || 'New'}</span>
-                        <button className="db-fu-done-btn" onClick={() => markEventDone(ev.id)}><CheckCircle2 size={12} /> Done</button>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-                {visibleEvents.length > FU_LIMIT && (
-                  <button className={`db-fu-viewall${fuShowAll ? ' db-fu-viewall--open' : ''}`} onClick={() => setFuShowAll(s => !s)}>
-                    {fuShowAll ? 'Show less' : `View all ${visibleEvents.length} follow-ups`}
-                    <ChevronRight size={12} className="db-fu-viewall-icon" />
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
               ) : id === 'row2' ? (
@@ -1551,7 +1562,11 @@ export default function DashboardPage() {
         </div>
 
               ) : id === 'calls' && canViewDashCalls ? (
-        <div className="db-1col">
+        /* Today's Call Log and Follow-ups side by side: one is who was
+           called, the other is who still needs calling. A full row each made
+           the pair read as unrelated. Falls back to one column when the user
+           cannot see follow-ups. */
+        <div className={canViewDashFollowups ? 'db-2col' : 'db-1col'}>
           <div className="db-card">
             <div className="db-card-hd">
               <div className="db-card-title">
@@ -1650,6 +1665,101 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+        {/* Follow-ups */}
+        {canViewDashFollowups && (
+          <div className="db-card db-followups" style={{ padding: 0 }}>
+            <div className="db-fu-hdr">
+              <div className="db-card-title">
+                <span className="db-card-dot" style={{ background: visibleEvents.length > 0 ? '#ef4444' : '#9ca3af' }} />
+                <Bell size={13} style={{ color: visibleEvents.length > 0 ? '#ef4444' : 'var(--text-muted)' }} />
+                Follow-ups
+                {visibleEvents.length > 0 && <span className="db-fu-badge">{visibleEvents.length}</span>}
+              </div>
+            </div>
+            <div className="db-fu-tabbar">
+              {[{ key: 'today', label: 'Today' }, { key: 'tomorrow', label: 'Tomorrow' },
+                { key: 'week', label: 'This Week' }, { key: 'custom', label: '📅 Custom' }].map(tab => (
+                <button key={tab.key}
+                  className={`db-fu-tab${fuFilter === tab.key ? ' db-fu-tab--active' : ''}`}
+                  onClick={() => { setFuFilter(tab.key); setShowCustom(tab.key === 'custom'); setEventsDone({}); setFuShowAll(false); }}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {showCustom && (
+              <div className="db-fu-custom-row">
+                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="db-fu-date-input" />
+                <span className="db-fu-date-sep">→</span>
+                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="db-fu-date-input" />
+                <button onClick={applyCustomFilter} className="db-fu-apply-btn">Apply</button>
+              </div>
+            )}
+            {fuLoading ? (
+              <div className="db-fu-empty"><Clock size={16} /><span>Loading…</span></div>
+            ) : visibleEvents.length === 0 ? (
+              <div className="db-fu-caught-up">
+                <div className="db-fu-caught-text">
+                  <div className="db-fu-caught-title">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <circle cx="8" cy="8" r="8" fill="#dcfce7"/>
+                      <path d="M4.5 8.5l2.5 2.5 4.5-4.5" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    All caught up
+                  </div>
+                  <div className="db-fu-caught-sub">No pending follow-ups for today!</div>
+                </div>
+                <svg className="db-fu-caught-svg" viewBox="0 0 80 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="10" y="10" width="44" height="54" rx="5" fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1.2"/>
+                  <rect x="22" y="5" width="20" height="10" rx="4" fill="#fff" stroke="#bbf7d0" strokeWidth="1.2"/>
+                  <rect x="26" y="7.5" width="12" height="3.5" rx="1.8" fill="#bbf7d0"/>
+                  <rect x="18" y="26" width="28" height="3" rx="1.5" fill="#bbf7d0"/>
+                  <rect x="18" y="33" width="20" height="3" rx="1.5" fill="#d1fae5"/>
+                  <rect x="18" y="40" width="24" height="3" rx="1.5" fill="#d1fae5"/>
+                  <circle cx="59" cy="52" r="16" fill="#16a34a"/>
+                  <path d="M51.5 52.5l5 5 9-9" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <circle cx="8" cy="16" r="2" fill="#86efac" opacity="0.5"/>
+                  <circle cx="66" cy="14" r="1.5" fill="#86efac" opacity="0.4"/>
+                </svg>
+              </div>
+            ) : (
+              <div className={`db-fu-list${!fuShowAll && visibleEvents.length > FU_LIMIT ? ' db-fu-list--collapsed' : ''}`}>
+                {(fuShowAll ? visibleEvents : visibleEvents.slice(0, FU_LIMIT)).map((ev, i) => {
+                  const cfg = getStatusCfg(ev.lead_current_status);
+                  const initials = (ev.lead_name || ev.lead_mobile || '?').charAt(0).toUpperCase();
+                  const today = now.toISOString().slice(0, 10);
+                  const isOverdue = ev.due_date < today;
+                  return (
+                    <motion.div key={ev.id} className="db-fu-row"
+                      initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.04 }}
+                      onClick={e => { if (!e.target.closest('button')) navigate('/leads', { state: { openLeadId: ev.lead_id } }); }}
+                      style={{ cursor: 'pointer' }}>
+                      <div className="db-lead-avatar" style={{ background: cfg.bg, color: cfg.color, borderRadius: 10 }}>{initials}</div>
+                      <div className="db-lead-info">
+                        <div className="db-lead-name">
+                          <span>{ev.lead_name || ev.lead_mobile}</span>
+                          {isOverdue && <span className="db-fu-overdue-tag">Overdue</span>}
+                        </div>
+                        <div className="db-lead-meta"><span className="db-meta-note">{ev.note}</span></div>
+                      </div>
+                      <div className="db-fu-actions">
+                        <span className="db-status-pill" style={{ background: cfg.bg, color: cfg.color }}>{ev.lead_current_status || 'New'}</span>
+                        <button className="db-fu-done-btn" onClick={() => markEventDone(ev.id)}><CheckCircle2 size={12} /> Done</button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+                {visibleEvents.length > FU_LIMIT && (
+                  <button className={`db-fu-viewall${fuShowAll ? ' db-fu-viewall--open' : ''}`} onClick={() => setFuShowAll(s => !s)}>
+                    {fuShowAll ? 'Show less' : `View all ${visibleEvents.length} follow-ups`}
+                    <ChevronRight size={12} className="db-fu-viewall-icon" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         </div>
 
               ) : id === 'fustat' && canViewDashFollowups ? (

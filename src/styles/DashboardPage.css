@@ -283,6 +283,50 @@
   }
   .db-hub-num--val { width: 104px; font-size: 12.5px; font-weight: 800; color: var(--text); }
 
+  /* ── Avg job + Share (added 21 Sep 2026) ──────────────────────────────
+     Header and cell widths are declared in pairs. They were already drifting
+     once before (see the note on .db-hub-hd-val), so keep each pair together
+     and change both or neither. */
+  .db-hub-hd-avg,   .db-hub-num--avg   { width: 86px; }
+  .db-hub-num--avg  { font-weight: 600; color: var(--text); }
+  /* 80px, not 64: one hub is on 14.99 parts / 15.00 service, and the dual
+     form "14.99 / 15%" wrapped to two lines at the narrower width, which
+     dragged that one row taller than the rest. nowrap keeps it honest —
+     better a tight column than a ragged list. */
+  .db-hub-hd-share, .db-hub-num--share { width: 80px; }
+  .db-hub-num--share {
+    font-weight: 700; color: var(--primary); white-space: nowrap;
+  }
+
+  /* The window the period dropdown actually resolved to. Sits under the
+     select, right-aligned with it. */
+  .db-hub-range {
+    margin-top: 3px; font-size: 10.5px; font-weight: 600;
+    color: var(--text-muted); letter-spacing: .02em; white-space: nowrap;
+  }
+
+  /* 2W / 4W / All. A segmented control rather than a second dropdown — three
+     options, and which is active should be legible without opening it. */
+  .db-hub-veh {
+    display: inline-flex; flex-shrink: 0;
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .db-hub-veh-btn {
+    border: none; background: transparent; cursor: pointer;
+    font-family: inherit; font-size: 11px; font-weight: 600;
+    color: var(--text-muted); padding: 5px 11px;
+    border-right: 1px solid var(--border); transition: background .12s, color .12s;
+  }
+  .db-hub-veh-btn:last-child { border-right: none; }
+  .db-hub-veh-btn:hover      { color: var(--primary); }
+  .db-hub-veh-btn--on        { background: var(--primary); color: #fff; }
+  .db-hub-veh-btn--on:hover  { color: #fff; }
+
+  /* Hub Performance spans two of row 1's three columns. Declared on the card
+     rather than the grid so the grid stays a plain 3-col and only the one
+     card that needs the width asks for it. */
+  .db-span2 { grid-column: span 2; }
+
   /* ── Follow-ups ───────────────────────────────────────────────────────── */
   .db-followups { border: 1px solid var(--border); }
   .db-fu-hdr {
@@ -581,6 +625,8 @@
   /* ── Responsive ───────────────────────────────────────────────────────── */
   @media (max-width: 1200px) {
     .db-3col    { grid-template-columns: 1fr 1fr; }
+    /* Two columns left, and the hub card wants both. */
+    .db-span2   { grid-column: span 2; }
     .db-2col    { grid-template-columns: 1fr 1fr; }
     .db-kpi-row { grid-template-columns: 1fr 1fr; }
     .db-parts-card { max-width: 100%; }
