@@ -25,7 +25,6 @@ rsync -a \
   --exclude='node_modules' \
   --exclude='dist' \
   "$DEPLOY_DIR/" "$APP_DIR/"
-
 cd "$APP_DIR"
 
 echo "Installing dependencies..."
