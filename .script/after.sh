@@ -21,6 +21,7 @@ echo "Copying deployment files..."
 
 rsync -a \
   --exclude='.git' \
+  --exclude='.env' \
   --exclude='node_modules' \
   --exclude='dist' \
   "$DEPLOY_DIR/" "$APP_DIR/"
