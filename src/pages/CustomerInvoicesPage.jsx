@@ -3,6 +3,10 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { useAppPaths } from '../lib/appPaths.js';
 import { api, API_URL, getToken } from '../api/client.js';
+// Sends a POINTER to this record to a colleague on internal chat.
+// Renders nothing without USE_CHAT, and brings its own stylesheet.
+import ShareToChat from '../components/chat/ShareToChat.jsx';
+
 import PaginationBar from '../components/PaginationBar.jsx';
 import SplitPane, { RecordCard } from '../components/SplitPane.jsx';
 import DetailSkeleton from '../components/DetailSkeleton.jsx';
@@ -12,8 +16,9 @@ import InvoiceExtrasEditor from '../components/InvoiceExtrasEditor.jsx';
 import InvoiceDateDialog from '../components/InvoiceDateDialog.jsx';
 import CollectPaymentModal from '../components/CollectPaymentModal.jsx';
 import CreditNoteModal from '../components/CreditNoteModal.jsx';
+import CreditNotesPanel from '../components/CreditNotesPanel.jsx';
 import { PaymentLinksPanel } from '../components/PaymentsAdminTabs.jsx';
-import { openDocumentPdf, downloadDocumentPdf, openAdvanceVoucher } from '../lib/documentPdf.js';
+import { downloadDocumentPdf, openAdvanceVoucher, printDocument } from '../lib/documentPdf.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
 import { getRoundingFunction } from '../lib/math.js';
 import { getDiscountBasis } from '../lib/discountBasis.js';
@@ -41,6 +46,8 @@ import {
   Gauge,
   // Credit note — a minus on a document, which is what one is.
   FileMinus,
+  // The job card link in the audit footer (step 4).
+  Wrench,
 } from 'lucide-react';
 
 /**
@@ -783,6 +790,46 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   // Separate from the Print spinner so the two buttons disable independently.
   const [themedPdfSaving, setThemedPdfSaving] = useState(false);
 
+  /* ── Print ────────────────────────────────────────────────────────────
+     One function behind both the printer button and Cmd/Ctrl+P, so the
+     keyboard cannot quietly do something different from the button. */
+  const printThis = useCallback(async () => {
+    if (!inv) return;
+    setThemedPdfLoading(true);
+    try {
+      await printDocument('customer_invoice', inv.id);
+    } catch (e) {
+      showToast(e.message || 'Could not open the print dialog', 'error');
+    } finally {
+      setThemedPdfLoading(false);
+    }
+  }, [inv, showToast]);
+
+  /* Cmd/Ctrl+P is the browser's shortcut, and left alone it prints the PAGE —
+     the sidebar, the list behind the drawer, the screen's own print CSS. That
+     is not this document, and it is not what anybody pressing Ctrl+P on an
+     invoice wants. Intercepted here and sent through the same template the
+     PDF is built from.
+
+     Bound while the invoice drawer is open and removed with it, so the
+     shortcut goes back to meaning "print the page" everywhere else. */
+  useEffect(() => {
+    if (!inv) return undefined;
+    const onKey = e => {
+      if (e.key?.toLowerCase() !== 'p') return;
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      /* Not while somebody is typing: Cmd+P inside a note field should still
+         be the browser's, and swallowing it there is the kind of thing that
+         makes an app feel broken. */
+      const t = e.target;
+      if (t?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t?.tagName)) return;
+      e.preventDefault();
+      printThis();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [inv, printThis]);
+
   // B2B billing details and the Notes box always print.
   //
   // These were two header checkboxes, both defaulting to on, and were removed
@@ -1053,6 +1100,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
   const canCreditNote = hasCreditNotePerm && inv &&
     ['approved', 'partially_paid', 'paid'].includes(inv.status);
   const [showCreditNote, setShowCreditNote] = useState(false);
+  /* Bumped when a note is issued. The panel below fetches its own list, so a
+     counter is cheaper than threading the notes through load() — and it keeps
+     a failed credit-note fetch from being able to break the invoice itself. */
+  const [creditNoteTick, setCreditNoteTick] = useState(0);
   /* A link is a public URL that keeps working for whoever it is forwarded to,
      which is a different risk from taking a payment on a device you are
      holding — hence its own permission rather than riding on COLLECT_PAYMENT.
@@ -1385,25 +1436,33 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
             </div>
           )}
 
-          {/* Server-rendered themed PDF. Replaces the old window.print() of
-              the on-screen layout, which ignored the configured theme, logo
-              and accent colour entirely. */}
+          {/* PRINT — the browser's own dialog, rendering the SAME template the
+              PDF is made from (?format=html). Not the on-screen layout: that
+              was the old window.print(), and it printed markup with no logo,
+              no accent colour and none of the theme.
+
+              Printing the template rather than the screen means the paper
+              matches the PDF exactly, and — the reason this is worth having —
+              it keeps working when PDF generation does not. Chromium failing
+              to launch on the server no longer leaves a workshop unable to
+              hand a customer a copy.
+
+              Download, next to this, is still the PDF: only a real file can
+              carry a filename, and that is what gets emailed. */}
+          {/* Guarded: this drawer renders before `inv` has arrived, and an
+              unguarded inv.id here crashed the whole page with "Cannot read
+              properties of null". The sibling controls below are inside their
+              own guards for the same reason. */}
+          {inv && (
+            <ShareToChat refType="customer_invoice" refId={inv.id}
+                         label={`CI-${String(inv.id).padStart(6, '0')}`} compact />
+          )}
           <button
             disabled={themedPdfLoading}
-            onClick={async () => {
-              if (!inv) return;
-              setThemedPdfLoading(true);
-              try {
-                await openDocumentPdf('customer_invoice', inv.id);
-              } catch (e) {
-                showToast(e.message || 'Failed to generate PDF', 'error');
-              } finally {
-                setThemedPdfLoading(false);
-              }
-            }}
+            onClick={printThis}
             className="btn btn-ghost ci-hdr-icon"
-            title={themedPdfLoading ? 'Generating the PDF…' : 'Print / PDF'}
-            aria-label="Print or open the PDF"
+            title={themedPdfLoading ? 'Preparing…' : 'Print'}
+            aria-label="Print this invoice"
           >
             {themedPdfLoading
               ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
@@ -2302,6 +2361,15 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
               </section>
             )}
 
+            {/* Credit notes raised against THIS invoice.
+                The button to create one has been here for a while; the notes
+                themselves have never been shown anywhere on this page. The
+                balance went down and nothing said why — you had to open the
+                customer's statement to find out. Its own panel rather than a
+                row inside Payments: a credit note is not a payment, and
+                stacking them under one border says they are the same list. */}
+            <CreditNotesPanel invoiceId={inv.id} refreshKey={creditNoteTick} />
+
             </div>{/* /right stack */}
           </div>{/* /panels */}
 
@@ -2326,6 +2394,29 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
                 ? ` · Last updated ${fmtDateTime(inv.updated_at)}`
                 : ''}
             </span>
+            {/* The job card, alongside the estimate.
+                The estimate says what was QUOTED; the job card says what was
+                DONE — who worked on it, what the readings were, which lines the
+                customer actually approved. An invoice queried six months later
+                is queried about the work, and until now this page could not get
+                you there: you went to Appointments, searched the plate, and
+                opened the card from the row.
+
+                Shown to hubs too, unlike the two links below it. A hub has a
+                job cards screen (appPaths gives it /hub/job-cards) and the card
+                is the screen it uses most — the API gates it with
+                requirePermissionOrHub for that reason. The estimate and the
+                Spinoto invoice stay staff-only because they are the money
+                documents behind the hub's own. */}
+            {inv?.job_card_id && inv?.visit_appointment_id && P.jobCards && (
+              <span className="ci-doc-foot-links">
+                <button type="button" className="ci-doc-reflink"
+                  onClick={() => navigate(`${P.jobCards}/${inv.visit_appointment_id}`)}>
+                  <Wrench size={11}/> {inv.job_card_no || `Job card #${inv.job_card_id}`}
+                  {inv.job_card_status ? ` · ${inv.job_card_status.replace(/_/g, ' ')}` : ''}
+                </button>
+              </span>
+            )}
             {!isHubUser && (inv?.estimate_id || inv?.linked_purchase_invoice_id) && (
               <span className="ci-doc-foot-links">
                 {inv.estimate_id && (
@@ -2362,7 +2453,10 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, onLoaded }
               items={items}
               showToast={showToast}
               onClose={() => setShowCreditNote(false)}
-              onSuccess={async () => { await load(); onRefreshList(); }}
+              onSuccess={async () => {
+                setCreditNoteTick(t => t + 1);
+                await load(); onRefreshList();
+              }}
             />
           )}
 
@@ -3029,6 +3123,12 @@ export default function CustomerInvoicesPage() {
               on one row, actions pushed right. The search box is in the top
               bar (see usePageSearch above). */}
           <div className="lb-toolbar">
+            {/* The filters are grouped rather than left loose in the flex row
+                so the group can be pinned as ONE box while the table scrolls
+                sideways. Pinning them individually stacks every control on top
+                of the next one at the same left offset. See the sticky rules in
+                CustomerInvoicesPage.css. */}
+            <div className="lb-toolbar-left">
             {!isHubUser && (
               <div style={{ position: 'relative', flex: '0 0 auto' }}>
                 <button
@@ -3224,6 +3324,7 @@ export default function CustomerInvoicesPage() {
             >
               <RefreshCw size={15} />
             </button>
+            </div>
 
             <div className="lb-toolbar-right">
               <span className="lb-count">

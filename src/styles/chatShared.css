@@ -1,0 +1,482 @@
+/**
+ * chatShared.css — the chat pieces that render OUTSIDE the chat page.
+ *
+ * ShareToChat drops into a record header — a job card, an estimate — so those
+ * screens need the Share button and the dialog it opens. They have no business
+ * importing ChatPage.css, which is the rail, the thread and the composer. The
+ * same split CreditNoteModal.css already uses: a component that travels gets its
+ * own stylesheet.
+ *
+ * In here:
+ *   .ch-ref*      the shared-record chip, in its three states. It renders inside
+ *                 the thread, but it is the other half of sharing and the two
+ *                 read better in one file than in two.
+ *   .ch-share-*   the Share button and its dialog
+ *   .ch-modal*    modal shell, people picker — ChatNewModal and ShareToChat both
+ *   .ch-btn, .ch-alert, .ch-empty, .ch-sr
+ *
+ * Prefix stays ch-, tokens only, so dark mode is inherited from app.css.
+ */
+
+[data-theme="dark"] .ch-modal-backdrop { background: rgb(0 0 0 / .62); }
+
+.ch-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  border-radius: var(--radius);
+  max-width: 100%;
+  text-decoration: none;
+}
+
+.ch-ref--pending {
+  border: 1px dashed var(--border);
+  background-color: var(--bg-soft);
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.ch-ref--open {
+  border: 1px solid color-mix(in srgb, var(--primary) 38%, var(--border));
+  background-color: color-mix(in srgb, var(--primary) 9%, var(--panel));
+  color: var(--text);
+  min-width: 0;
+}
+
+.ch-ref--open:hover {
+  border-color: var(--primary);
+  background-color: color-mix(in srgb, var(--primary) 16%, var(--panel));
+}
+
+.ch-ref-kind {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--primary);
+  flex: none;
+}
+
+.ch-ref-label { font-weight: 600; white-space: nowrap; }
+
+.ch-ref-sub {
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ch-ref--locked {
+  border: 1px dashed var(--border);
+  background-color: var(--bg-soft);
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.ch-ref--gone {
+  border: 1px dashed var(--border);
+  background-color: var(--bg-soft);
+  color: var(--text-muted);
+  cursor: default;
+  font-style: italic;
+}
+
+.ch-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  font-size: 12.5px;
+  font-weight: 550;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+
+.ch-share-btn:hover { color: var(--primary); border-color: var(--primary); }
+
+.ch-share-btn--compact { padding: 5px; }
+
+.ch-modal--share { max-height: min(660px, 92vh); }
+
+.ch-share-what {
+  margin: 11px 15px 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.ch-share-what strong { color: var(--text); }
+
+.ch-share-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 30px 16px;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--primary);
+}
+
+.ch-alert {
+  margin: 10px 12px;
+  padding: 8px 11px;
+  font-size: 12.5px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background-color: color-mix(in srgb, var(--danger) 9%, var(--panel));
+  color: var(--text);
+}
+
+.ch-empty {
+  padding: 22px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.ch-empty-cta {
+  display: block;
+  margin: 9px auto 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--panel);
+  color: var(--primary);
+  font-size: 12.5px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.ch-sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ch-modal-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.ch-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / .45);
+  backdrop-filter: blur(3px);
+}
+
+.ch-modal {
+  position: relative;
+  width: min(440px, 100%);
+  max-height: min(620px, 90vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.ch-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ch-modal-head h3 { margin: 0; font-size: 14.5px; font-weight: 650; color: var(--text); }
+
+.ch-modal-x {
+  border: 0; background: transparent; color: var(--text-muted);
+  cursor: pointer; display: inline-flex; padding: 3px;
+}
+
+.ch-modal-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 15px 8px;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--bg-soft);
+  color: var(--text-muted);
+}
+
+.ch-modal-search input {
+  flex: 1; min-width: 0; border: 0; outline: 0;
+  background: transparent; color: var(--text); font-size: 13px;
+}
+
+.ch-modal-hint { margin: 0 15px 6px; font-size: 11.5px; color: var(--text-muted); }
+
+.ch-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 15px 8px; }
+
+.ch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--primary) 12%, var(--panel));
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ch-people { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+
+.ch-person {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 15px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ch-person:hover { background-color: var(--bg-soft); }
+
+.ch-person--on { background-color: var(--bg-soft); color: var(--primary); font-weight: 600; }
+
+.ch-modal-title { padding: 11px 15px; border-top: 1px solid var(--border); }
+
+.ch-modal-title label {
+  display: block; font-size: 11.5px; font-weight: 600;
+  color: var(--text-muted); margin-bottom: 5px;
+}
+
+.ch-modal-title input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: 0;
+}
+
+.ch-modal-title input:focus { border-color: var(--primary); }
+
+.ch-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 11px 15px;
+  border-top: 1px solid var(--border);
+  background-color: var(--bg-soft);
+}
+
+.ch-btn {
+  font-size: 12.5px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ch-btn--primary {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.ch-btn--primary:hover:not(:disabled) { background-color: var(--primary-hover); }
+
+.ch-btn:disabled { opacity: .5; cursor: default; }
+
+/* ── A resolved record with no link yet ───────────────────────────────────── */
+/* Named but not clickable: its public_token has not been generated. Solid like an
+   openable chip, because the reader IS allowed to see it — only the URL is
+   missing — but with no hover and no arrow, so it does not invite a click that
+   does nothing. */
+.ch-ref--flat {
+  border: 1px solid var(--border);
+  background-color: var(--bg-soft);
+  color: var(--text);
+  cursor: default;
+  min-width: 0;
+}
+
+/* ── The composer's record picker ─────────────────────────────────────────── */
+.ch-pick {
+  position: absolute;
+  bottom: calc(100% + 8px); left: 0;
+  z-index: 41;
+  width: min(340px, 78vw);
+  max-height: 420px;
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.ch-pick-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px; border-bottom: 1px solid var(--border);
+  font-size: 12.5px; font-weight: 650;
+}
+.ch-pick-tabs { display: flex; gap: 5px; flex-wrap: wrap; padding: 9px 12px 4px; }
+.ch-pill {
+  border: 1px solid var(--border); border-radius: 99px;
+  background-color: var(--panel); color: var(--text-muted);
+  font: inherit; font-size: 11px; padding: 3px 9px;
+  cursor: pointer; text-transform: capitalize;
+}
+.ch-pill--on {
+  border-color: var(--primary); color: var(--primary);
+  background-color: color-mix(in srgb, var(--primary) 10%, var(--panel));
+  font-weight: 600;
+}
+.ch-pick-list { flex: 1; min-height: 0; overflow-y: auto; }
+.ch-pick-row {
+  display: grid; gap: 2px; width: 100%;
+  padding: 8px 12px; border: 0;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--panel); color: var(--text);
+  text-align: left; font: inherit; cursor: pointer;
+}
+.ch-pick-row:hover { background-color: var(--bg-soft); }
+.ch-pick-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ch-pick-label { font-size: 12.5px; font-weight: 600; }
+.ch-pick-sub { font-size: 11.5px; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-pick-foot {
+  margin: 0; padding: 7px 12px;
+  font-size: 10.5px; color: var(--text-muted);
+  border-top: 1px solid var(--border); background-color: var(--bg-soft);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. THE RECORD CHIP IS A CARD
+   ═══════════════════════════════════════════════════════════════════════════
+   It was one line — kind, label, sub, arrow — which is a link with extra steps:
+   you could not tell a Fortuner from a Creta without opening it, which is the
+   whole reason somebody shared it into a conversation rather than pasting a URL.
+
+   Same three states, same data. The resolver's ' · '-joined `sub` is split into
+   lines by the component; `pill` is a new field and only the lead resolver sets
+   one today. Still no phone number anywhere — see the note on ChatRefChip. */
+
+.ch-ref--card {
+  display: grid;
+  gap: 0;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  min-width: 180px;
+  max-width: 300px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  text-decoration: none;
+  color: var(--text);
+  /* ── NO background-color HERE, AND THAT IS THE POINT ────────────────────
+     It had `var(--panel)`, which flattened an openable chip and a dead one onto
+     the same colour — in dark mode --panel and --bg-soft are both #27272a, so
+     the two states became indistinguishable. The three states each set their own
+     ground (--open tinted, --flat and --gone muted) and the card must not
+     overwrite it; the head below tints TRANSPARENTLY so whatever is underneath
+     still shows through. */
+}
+
+.ch-ref--card .ch-ref-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--border);
+  /* Transparent mix, not a solid: it has to darken the openable chip's tint and
+     the flat chip's grey without replacing either. */
+  background-color: color-mix(in srgb, var(--primary) 9%, transparent);
+  min-width: 0;
+}
+
+/* The label is the only thing here that can be long, so it is the only thing
+   allowed to shrink. */
+.ch-ref--card .ch-ref-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ch-ref-go { flex: none; opacity: .5; }
+.ch-ref--card:hover .ch-ref-go { opacity: 1; color: var(--primary); }
+.ch-ref--card.ch-ref--open:hover { border-color: var(--primary); }
+
+.ch-ref--card .ch-ref-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 7px 9px;
+}
+
+.ch-ref-line {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* A pill, not another line: `sub` describes the record, this says who is
+   answerable for it — a different kind of fact and it should not read as one
+   more detail in the list. */
+.ch-ref-pill {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--primary) 13%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border));
+  color: color-mix(in srgb, var(--primary) 72%, #000);
+}
+
+[data-theme="dark"] .ch-ref-pill { color: var(--primary); }
+
+/* Unassigned is not an error, so it is not --danger. It is the one state
+   somebody has to act on, so it is not the same as every other pill either. */
+.ch-ref-pill--warn {
+  background-color: color-mix(in srgb, var(--warn) 14%, var(--panel));
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--border));
+  color: var(--warn-ink);
+}

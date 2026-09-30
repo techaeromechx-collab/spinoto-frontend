@@ -226,3 +226,135 @@ export function openAdvanceVoucher(paymentId, opts = {}) {
 export function openRefundVoucher(refundId, opts = {}) {
   return openPdfPath(`/api/payments/refund/${refundId}/voucher`, opts, `refund-${refundId}.pdf`);
 }
+
+/**
+ * Print a document through the BROWSER, using the same template as the PDF.
+ *
+ * ── WHY NOT JUST STYLE THE SCREEN FOR PRINT ────────────────────────────────
+ *
+ * Because that is a second copy of the document. The screen markup is not the
+ * invoice template; print rules written against it are a permanent
+ * approximation that drifts every time either one changes, and it has no logo,
+ * no accent colour and none of the theme.
+ *
+ * `?format=html` returns the exact HTML that headless Chromium turns into the
+ * PDF — self-contained, logo inlined as a data URI, accent applied, QR drawn,
+ * its own @page rule. Loaded into a hidden iframe and printed, the output IS
+ * the PDF layout rather than something resembling it. One template, one
+ * design, two renderers.
+ *
+ * It also works when PDF generation does not, which on a server where Chromium
+ * cannot launch is the difference between a Print button and a dead end.
+ *
+ * ── WHY AN IFRAME AND NOT A NEW WINDOW ─────────────────────────────────────
+ *
+ * A new window needs a pop-up allowance, shows the user a flash of a page they
+ * did not ask to look at, and leaves them to close it afterwards. The iframe
+ * is invisible, prints, and removes itself.
+ *
+ * The HTML is fetched with the Bearer token and injected via srcdoc, so it is
+ * never a URL anybody can open — this is one customer's invoice.
+ */
+export async function printDocument(docType, id, opts = {}) {
+  const path = PATHS[docType];
+  if (!path) throw new Error(`Unknown document type: ${docType}`);
+
+  const qs = new URLSearchParams({ format: 'html' });
+  if (opts.theme) qs.set('theme', opts.theme);
+  if (opts.share) qs.set('share', '1');
+
+  const res = await fetch(`${API_URL}/api/${path}/${id}/pdf?${qs}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!res.ok) {
+    const msg = await res.json().then(d => d.error).catch(() => null);
+    throw new Error(msg || `Could not build the document (HTTP ${res.status})`);
+  }
+  const html = await res.text();
+
+  /* ── THE FRAME MUST BE THE SHEET ──────────────────────────────────────
+     Chrome prints a sub-frame at the FRAME's own size, not at the paper size.
+     The first version used 820px, which is 217mm — seven millimetres wider
+     than A4. The document laid itself out to that width and the print then
+     clipped it back to the page: the invoice number, the Amount column and
+     the signatory line all lost their right edge, and the @page margin looked
+     like it was being ignored.
+
+     So the frame is sized in millimetres, to the sheet the server says this
+     document prints on — read out of the `@page { size: … }` rule the server
+     injects, rather than assumed, because the A5 themes use a smaller one. */
+  const sheet = /@page\s*{[^}]*size:\s*([A-Za-z0-9]+)/.exec(html)?.[1]?.toUpperCase();
+  const PAPER = { A4: [210, 297], A5: [148, 210], LETTER: [216, 279], LEGAL: [216, 356] };
+  const [paperW, paperH] = PAPER[sheet] || PAPER.A4;
+
+  /* And it must be the PRINTABLE width, not the paper width. @page carries a
+     margin too, so a frame sized to the full sheet lays the document out
+     wider than the content box and the right edge is clipped all over again —
+     the same failure one step smaller. Subtract the margin the server emitted
+     rather than hard-coding it: themes set their own, and the A5 variants
+     scale it. */
+  const marginRule = /@page\s*{[^}]*margin:\s*([^;}]+)/.exec(html)?.[1] || '';
+  const parts = marginRule.trim().split(/\s+/)
+    .map(v => parseFloat(v))
+    .filter(v => Number.isFinite(v));
+  /* CSS shorthand: 1 value is all round, 2 is vertical/horizontal, 3 is
+     top/horizontal/bottom, 4 is clockwise from the top. */
+  const [mTop, mRight, mBottom, mLeft] =
+    parts.length === 1 ? [parts[0], parts[0], parts[0], parts[0]]
+    : parts.length === 2 ? [parts[0], parts[1], parts[0], parts[1]]
+    : parts.length === 3 ? [parts[0], parts[1], parts[2], parts[1]]
+    : parts.length >= 4 ? parts
+    : [0, 0, 0, 0];
+
+  const wMm = Math.max(50, paperW - mLeft - mRight);
+  const hMm = Math.max(50, paperH - mTop - mBottom);
+
+  return new Promise((resolve, reject) => {
+    const frame = document.createElement('iframe');
+    /* Off-screen rather than display:none or width:0. A frame with no layout
+       box is not guaranteed to lay out its contents, and printing a document
+       that never laid out gives a blank page. */
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = `position:fixed;right:0;bottom:0;width:${wMm}mm;height:${hMm}mm;border:0;opacity:0;pointer-events:none;`;
+    /* No allow-scripts: the template is static markup and needs none, and this
+       is the one place a document assembled from customer data is executed. */
+    frame.setAttribute('sandbox', 'allow-same-origin allow-modals');
+
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      /* A beat after print() returns. Chrome's dialog is modal and resolves
+         synchronously, but Safari returns immediately and is still reading the
+         document — removing the frame there prints a blank page. */
+      setTimeout(() => frame.remove(), 1000);
+    };
+
+    frame.onload = () => {
+      try {
+        const win = frame.contentWindow;
+        /* Fonts are embedded as data URIs in the template. Printing before
+           they have decoded lays the document out in a fallback face and then
+           prints THAT — the one difference from the PDF nobody would think to
+           look for. */
+        const go = () => {
+          try { win.focus(); win.print(); cleanup(); resolve(); }
+          catch (e) { cleanup(); reject(e); }
+        };
+        if (win.document?.fonts?.ready) win.document.fonts.ready.then(go, go);
+        else go();
+      } catch (e) { cleanup(); reject(e); }
+    };
+    frame.onerror = () => { cleanup(); reject(new Error('Could not open the document for printing.')); };
+
+    frame.srcdoc = html;
+    document.body.appendChild(frame);
+
+    /* If onload never fires — a template that fails to parse, an extension
+       that interferes — the frame would sit in the DOM forever and the caller
+       would wait forever with it. */
+    setTimeout(() => {
+      if (!done) { cleanup(); reject(new Error('The document took too long to prepare for printing.')); }
+    }, 20_000);
+  });
+}

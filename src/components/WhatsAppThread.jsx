@@ -23,6 +23,11 @@ import WaText from './WaText.jsx';
 // inputs nobody types on purpose — a pasted URL, a slash mid-word, a caret
 // moved back into finished text. See waShortcut.js.
 import { matchShortcut, applyShortcut } from '../utils/waShortcut.js';
+// when/dayKey/dayLabel were defined here until internal chat needed the same
+// three. Two copies of a "Today / Yesterday / 18 March" rule is how one of them
+// ends up saying "Yesterday" at 00:30 while the other says the date. Moved
+// verbatim — same behaviour, same locale, one definition.
+import { when, dayKey, dayLabel } from '../lib/dayLabel.js';
 import '../styles/WhatsAppThread.css';
 
 /**
@@ -79,49 +84,7 @@ function messageable(raw) {
   return /^[6-9]\d{9}$/.test(d) ? d : null;
 }
 
-/** Just the clock. The day now lives in the separator above the bubble. */
-function when(v) {
-  if (!v) return '';
-  const d = new Date(v);
-  if (isNaN(d)) return '';
-  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-}
 
-/** Local calendar day, as a key two timestamps can be compared on. */
-function dayKey(v) {
-  const d = new Date(v);
-  if (isNaN(d)) return null;
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-/**
- * The label on a day separator.
- *
- * The year appears ONLY when it is not the current one. A thread that jumps
- * March → August is exactly what the closed-lead rule creates, and "18 March"
- * with no year is ambiguous the moment a customer has messaged in two different
- * years — which for a service business is most of them.
- *
- * Today/Yesterday because that is what the advisor's own WhatsApp says, and a
- * date where they expect a word makes them do arithmetic.
- */
-function dayLabel(v) {
-  const d = new Date(v);
-  if (isNaN(d)) return '';
-
-  const now = new Date();
-  const midnight = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const days = Math.round((midnight(now) - midnight(d)) / 86400000);
-
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-
-  return d.toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'long',
-    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
-  });
-}
 
 /**
  * How much of the 24-hour window is left, as a person would say it.

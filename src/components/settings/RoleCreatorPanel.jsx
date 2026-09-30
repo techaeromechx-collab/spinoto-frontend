@@ -17,7 +17,11 @@ import { SectionHeader } from './shared.jsx';
 // 'Warranties' and 'Warranty Claims' were all invisible that way.
 const PERM_GROUP_ORDER = [
   'Administration', 'Settings', 'Leads', 'Vehicles', 'Reference Data', 'Services', 'Pricing',
-  'Hubs', 'Appointments', 'Customers', 'Estimates',
+  /* 'Job Cards' sits right after 'Appointments', because that is the order the
+     work happens in and because anybody building a workshop role will look for
+     the two together. orderGroups would have appended it alphabetically in any
+     case — this is about where it READS well, not whether it appears at all. */
+  'Hubs', 'Appointments', 'Job Cards', 'Customers', 'Estimates',
   'Invoices', 'Purchase Invoices', 'Parts', 'Discounts',
   'Warranties', 'Warranty Claims', 'Operations', 'Dashboard',
 ];

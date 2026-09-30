@@ -1211,6 +1211,23 @@ function HubLoginDetail({ hubLogin, catalog, onSaved }) {
             { label: 'Generate Spinoto Invoice',   desc: 'Generate purchase invoice after work done',    codes: ['CREATE_INVOICE'],                       staffOnly: false },
             { label: 'View Purchase Invoices',     desc: 'See Spinoto invoices and payout history',      codes: ['VIEW_INVOICE'],                         staffOnly: false },
             { label: 'View Appointments',          desc: 'See appointment list and details',             codes: ['VIEW_APPOINTMENT'],                     staffOnly: false },
+            /* ── Job cards and inspections ──────────────────────────────────
+               These MUST be in this list, and the reason is ALL_HUB_CODES just
+               below. A hub login with no permissions at all is in "Full Portal
+               Access" mode; the moment anybody switches one toggle off, the
+               handler flips it to restricted and seeds it with every code in
+               THIS list. Any permission missing here is therefore a permission
+               silently taken away from that hub the first time somebody touches
+               a single unrelated switch.
+
+               Before migration 203 job cards rode on VIEW_APPOINTMENT and were
+               covered by the row above. They have their own codes now, so
+               leaving them out would have quietly closed the workshop screen on
+               every hub that anybody ever restricted. */
+            { label: 'View Job Cards',             desc: 'Open job cards, parts, labour and gates',      codes: ['VIEW_JOB_CARD'],                        staffOnly: false },
+            { label: 'Work on Job Cards',          desc: 'Open/close cards, status, parts, labour, gates', codes: ['EDIT_JOB_CARD'],                      staffOnly: false },
+            { label: 'View Inspections',           desc: 'Read checklist sheets and the queue',          codes: ['VIEW_INSPECTION'],                      staffOnly: false },
+            { label: 'Fill In Inspections',        desc: 'Start, answer, complete and sign off sheets',  codes: ['EDIT_INSPECTION'],                      staffOnly: false },
             { label: 'View Pricing',               desc: 'See service pricing rules',                    codes: ['VIEW_PRICING_RULE'],                    staffOnly: false },
             { label: 'Approve Invoice',            desc: 'Approve & manage purchase invoices',           codes: ['APPROVE_PURCHASE_INVOICE'],             staffOnly: false },
             { label: 'Manage Hub Settings',        desc: 'Edit hub details, services and documents',     codes: ['EDIT_HUB'],                             staffOnly: false },

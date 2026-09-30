@@ -1,7 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
+// Sends a POINTER to this record to a colleague on internal chat.
+// Renders nothing without USE_CHAT, and brings its own stylesheet.
+import ShareToChat from '../components/chat/ShareToChat.jsx';
+
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { useAppPaths } from '../lib/appPaths.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
@@ -22,8 +26,8 @@ import {
   ChevronLeft, ChevronRight, Clock, Car, Bike, Network,
   User, Phone, MapPin, Wrench, IndianRupee, ChevronDown,
   FileText, MessageCircle, Plus, Pencil, Copy, Check, Trash2,
-  SlidersHorizontal, ArrowDown, Gauge,
-  List as ListIcon, CalendarDays,
+  SlidersHorizontal, ArrowDown, ArrowUp, ArrowUpDown, Gauge,
+  List as ListIcon, CalendarDays, ClipboardList,
 } from 'lucide-react';
 import '../styles/AppointmentsPage.css';
 
@@ -645,6 +649,71 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onD
 
   const currentSlug = statusList.find(s => s.id === appt.status_id)?.slug || '';
 
+  /* ── REASSIGNMENT ──────────────────────────────────────────────────────
+     The three slugs the server refuses every edit on. Kept as a literal list
+     rather than a status flag because that is what checkIsTerminal() in
+     appointments.controller.js compares against, and a second source of truth
+     is how the button comes to be enabled for a save the API will reject. */
+  const isTerminal   = ['closed', 'cancelled', 'no-show'].includes(currentSlug);
+  const canAssign    = canEditAppt && !isTerminal;
+  const [assignList, setAssignList] = useState([]);
+  const [assignBusy, setAssignBusy] = useState(false);
+
+  /* Fetched only when the control will actually render. A closed job — three
+     quarters of the table — has nothing to pick from, so it asks for nothing. */
+  useEffect(() => {
+    if (!canAssign) return undefined;
+    let alive = true;
+    api('/api/users/assignable')
+      .then(r => { if (alive) setAssignList(r.items || []); })
+      .catch(() => { /* list stays empty; the current name still reads fine */ });
+    return () => { alive = false; };
+  }, [canAssign]);
+
+  /* ── YOU ARE NOT ON THE LIST THE SERVER SENDS ──────────────────────────
+     /api/users/assignable ends with `AND id != $1` — it deliberately leaves
+     the caller out. That is right for a LEAD, where assigning means handing
+     work to somebody else, and it is wrong here: "take this one" is the most
+     ordinary thing a person does to an appointment, and without this you can
+     give a job to a colleague but never claim it.
+
+     Added in the browser rather than by loosening the endpoint, because that
+     endpoint also feeds the lead assign control and the book-in-another-name
+     picker, and neither of those wants the caller in the list.
+
+     Guarded against the day the server stops excluding them, so the option
+     cannot appear twice. Sorted by name so the list does not reorder itself
+     depending on who is logged in. */
+  const assignOptions = useMemo(() => {
+    const rows = [...assignList];
+    if (user?.id && !rows.some(u => u.id === user.id)) {
+      rows.push({ id: user.id, name: user.name || 'Me', _self: true });
+    }
+    return rows.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [assignList, user?.id, user?.name]);
+
+  /* '' means unassign, and is sent as null — the column is nullable and the
+     API tells those two apart on purpose. The row is replaced from the
+     response rather than patched locally so assigned_to_name comes from the
+     same join the list uses, and onUpdated pushes it to the table behind. */
+  async function saveAssignee(raw) {
+    const next = raw === '' ? null : Number(raw);
+    if (next === (appt.assigned_to_id ?? null)) return;
+    setAssignBusy(true); setErr('');
+    try {
+      const r = await api(`/api/appointments/${appt.id}`, {
+        method: 'PATCH',
+        body: { assigned_to: next },
+      });
+      setAppt(r.item);
+      onUpdated(r.item);
+    } catch (e) {
+      setErr(e.message || 'Could not change the assignee.');
+    } finally {
+      setAssignBusy(false);
+    }
+  }
+
   async function doPickupAction(endpoint) {
     setPickupBusy(true);
     try {
@@ -706,6 +775,11 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onD
             {status && <StatusBadge name={status.name} color={status.color} bg={status.bg_color} />}
           </div>
           <div className="apptv-hdr-right">
+            {/* Guarded — this header renders before `appt` has arrived. */}
+            {appt && (
+              <ShareToChat refType="appointment" refId={appt.id}
+                           label={appt.appointment_code || `Appointment #${appt.id}`} compact />
+            )}
             {/* The hardcoded 91 double-prefixed any number already stored with
                 its country code (wa.me/919919876543210). waTarget normalises
                 first, and returns null for numbers WhatsApp cannot reach. */}
@@ -892,9 +966,40 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onD
               </div>
               <div className="apptv-sched-sub-item">
                 <div className="apptv-sched-sub-lbl"><User size={10} /> Assigned to</div>
-                <div className="apptv-sched-sub-val" style={!appt.assigned_to_name ? { color: 'var(--text-muted)', fontWeight: 400 } : {}}>
-                  {appt.assigned_to_name || '—'}
-                </div>
+                {canAssign ? (
+                  /* Looks like the text it replaces until you touch it. The
+                     whole row was read-only before, and an assignee that
+                     suddenly renders as a form control makes the panel read
+                     like an edit screen it is not. */
+                  <select
+                    className="apptv-assign-select"
+                    value={appt.assigned_to_id ?? ''}
+                    disabled={assignBusy}
+                    onChange={e => saveAssignee(e.target.value)}
+                    aria-label="Assigned to"
+                  >
+                    <option value="">Unassigned</option>
+                    {/* The current assignee may be inactive, or outside the
+                        assignable list, and leaving them out would silently
+                        blank the control and offer to reassign a job nobody
+                        asked about. */}
+                    {appt.assigned_to_id != null
+                      && !assignOptions.some(u => u.id === appt.assigned_to_id) && (
+                      <option value={appt.assigned_to_id}>
+                        {appt.assigned_to_name || `User #${appt.assigned_to_id}`}
+                      </option>
+                    )}
+                    {assignOptions.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}{u._self ? ' (me)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="apptv-sched-sub-val" style={!appt.assigned_to_name ? { color: 'var(--text-muted)', fontWeight: 400 } : {}}>
+                    {appt.assigned_to_name || '—'}
+                  </div>
+                )}
               </div>
               {/* The reading was enterable in the edit form but shown nowhere,
                   so the only way to check it was to reopen the form you might
@@ -1133,6 +1238,17 @@ function ViewModal({ appt: apptProp, statusList, onClose, onUpdated, onEdit, onD
                 Edit
               </button>
             )}
+            {/* The one door to the job card. It is a page of its own rather
+                than another tab in this 4,600-line file, and it is addressed by
+                the appointment id — whether a card has been opened for this
+                visit yet is that page's question to answer, not this one's,
+                which is why there is one button here and not two. */}
+            <button
+              className="apptv-edit-btn"
+              onClick={() => { onClose(); navigate(`${P.jobCards}/${appt.id}`); }}
+            >
+              <ClipboardList size={13} /> Job Card
+            </button>
             {appt.estimate_id ? (
               <button
                 className="apptv-inv-btn"
@@ -2010,6 +2126,10 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
   // ── Step 3: Appointment details ───────────────────────────────────────────
   const [apptForm, setApptForm] = useState({
     hub_id: '', scheduled_date: '', scheduled_time: '',
+    /* Blank, not a default. A pre-selected 'Walk-in' would be filled in by
+       whoever is in a hurry and the channel numbers would quietly become a
+       measure of which option happened to be first in the list. */
+    source_id: '',
     notes: '', odometer_km: '',
     pickup_required: false, pickup_address_line1: '', pickup_address_line2: '', pickup_city: '', pickup_pincode: '', pickup_maps_link: '',
     pickup_scheduled_date: '', pickup_scheduled_time: '',
@@ -2108,6 +2228,35 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
     initialCustTriggered.current = true;
     pickCustomer(initialCustomer);
   }, [initialCustomer]); // eslint-disable-line
+
+  /* ── The source dropdown's options ────────────────────────────────────────
+     From the master list, not a constant in this file. Migration 204's whole
+     point is that one table decides what a channel is; a hard-coded list here
+     would be the fourth copy and would be wrong the first time somebody adds one
+     in Master Data.
+
+     ACTIVE ONLY, and that comes free: /api/lead-sources returns active rows
+     unless ?all=true is passed (lead_sources.controller.js:21). No query string
+     here on purpose — the first draft sent ?is_active=true, which that endpoint
+     does not read, so it looked like a filter and was doing nothing.
+
+     Active-only matters because migration 204 retires every unrecognised legacy
+     spelling to is_active = false so no historic value is lost, and those must
+     never be offered as a choice again — that is what retiring them was for. An
+     appointment that already carries one still DISPLAYS it: APPT_SELECT returns
+     source_name regardless of the flag.
+
+     A failure is silent and leaves the list empty, which renders as "Not
+     recorded" and nothing else. The alternative is refusing to book a car
+     because a reference list would not load. */
+  const [apptSources, setApptSources] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    api('/api/lead-sources')
+      .then(r => { if (alive) setApptSources(r.items || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   // ── Create new customer ───────────────────────────────────────────────────
   async function saveNewCustomer() {
@@ -2466,6 +2615,13 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
         segment_ids: selectedVeh?.segment_ids || [],
         cc_category_id: selectedVeh?.cc_category_id || null,
         hub_id: apptForm.hub_id || null,
+        /* Where the customer came from. OMITTED when blank rather than sent as
+           null, because the two mean different things to the server: omitted on a
+           lead conversion means "take the lead's source", while an explicit null
+           would overwrite it with nothing. This form only ever books directly, so
+           today the two behave the same — the distinction is kept so that stops
+           being true safely if the form ever gains a lead. */
+        ...(apptForm.source_id ? { source_id: Number(apptForm.source_id) } : {}),
         scheduled_date: apptForm.scheduled_date,
         scheduled_time: apptForm.scheduled_time || null,
         notes: apptForm.notes.trim() || null,
@@ -3036,6 +3192,24 @@ export function CreateAppointmentModal({ hubs, statusList, onClose, onCreated, s
                 </div>
               )}
 
+              {/* Source — where the customer came from */}
+              <div>
+                <label className="ca-lbl">How did they find us? (optional)</label>
+                <select className="ca-select" value={apptForm.source_id}
+                  onChange={e => setApptForm(f => ({ ...f, source_id: e.target.value }))}>
+                  {/* "Not recorded", not "Select…". A blank here is a real,
+                      legitimate answer — the advisor genuinely may not know — and
+                      naming it that way stops somebody picking Walk-in just to
+                      make the box look finished. */}
+                  <option value="">Not recorded</option>
+                  {apptSources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <div className="ca-hint">
+                  Feeds the source reports. A direct booking has no lead to take
+                  this from, so it is only here that it can be recorded.
+                </div>
+              </div>
+
               {/* Odometer */}
               <div>
                 <label className="ca-lbl">Odometer (KM, optional)</label>
@@ -3145,6 +3319,41 @@ export default function AppointmentsPage() {
   const [usersList, setUsersList] = useState([]);
   const [vTypeList, setVTypeList] = useState([]);
 
+/**
+ * A sortable column header.
+ *
+ * A <th> with a full-width <button> inside rather than a clickable <th>: the
+ * button is what a keyboard reaches and what a screen reader announces, and
+ * filling the cell means the whole header is the hit area rather than just the
+ * few pixels of the label.
+ *
+ * aria-sort is on the th, which is where assistive tech looks for it — a
+ * visual arrow alone tells a sighted user the list is sorted and tells
+ * everybody else nothing.
+ */
+function SortTh({ label, col, sortBy, sortDir, onSort }) {
+  const on = sortBy === col;
+  const Icon = !on ? ArrowUpDown : sortDir === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <th
+      className={`lb-th-sort${on ? ' lb-sorted' : ''}`}
+      aria-sort={on ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        className="lb-sort-btn"
+        onClick={() => onSort(col)}
+        title={on
+          ? `Sorted by ${label} — click to reverse`
+          : `Sort by ${label}`}
+      >
+        {label}
+        <Icon size={12} className="lb-sort-icon" aria-hidden="true" />
+      </button>
+    </th>
+  );
+}
+
   // Remember page/pageSize/filters across a full navigation away and back —
   // sessionStorage survives the unmount a route change to a different page
   // causes; plain useState does not.
@@ -3158,7 +3367,50 @@ export default function AppointmentsPage() {
   const { input: searchInput, setInput: setSearchInput, search, tooShort, minChars } =
     useDebouncedSearch(ls.search ?? '');
   const onSearchChange = useCallback(v => { setSearchInput(v); setPage(1); }, [setSearchInput]);
-  const [filterStatus, setFilterStatus] = useState(ls.filterStatus ?? '');
+  /* ── An ARRAY now, and it used to be a string ──────────────────────────
+     Everyone already on the app has a bare string sitting in
+     sp_appointments_list_v1 from the single-select version. Reading that
+     straight back would put a string where the rest of this file calls
+     .length, .includes and .join — .length on '17' is 2, .includes('7') is
+     true, and .join is not a function. The list would come back filtered to
+     nothing, or throw on first render, for every existing user on the first
+     load after deploy.
+
+     So the old shape is converted rather than trusted: a non-empty string
+     becomes a one-item array, which also preserves whatever that person had
+     selected instead of silently resetting them to All. */
+  const [filterStatus, setFilterStatus] = useState(() => {
+    const saved = ls.filterStatus;
+    if (Array.isArray(saved)) return saved.map(String);
+    if (saved === undefined || saved === null || saved === '') return [];
+    return [String(saved)];
+  });
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  /* ── Sorting ────────────────────────────────────────────────────────────
+     Server-side, because the list is paginated: sorting the twenty rows on
+     screen would put later dates on page 1 and call it sorted. `sort` is a key
+     the API whitelists, not a column name — see appointments.controller.js.
+
+     Restored from the saved list state like every other control here, so a
+     refresh does not silently reorder the list under somebody. */
+  const [sortBy,  setSortBy]  = useState(ls.sortBy  === 'schedule' ? 'schedule' : 'created');
+  const [sortDir, setSortDir] = useState(ls.sortDir === 'asc' ? 'asc' : 'desc');
+
+  /* Clicking the active column flips direction; clicking a different one
+     switches to it and starts at the direction that column is usually read in
+     — newest-first for #, EARLIEST-first for Schedule, because the question
+     "what is coming up" is asked far more often than "what is furthest away".
+
+     Page 1 every time: staying on page 4 after a re-sort drops you into the
+     middle of a list whose beginning you have not seen. */
+  const toggleSort = useCallback(key => {
+    setSortBy(prev => {
+      if (prev === key) { setSortDir(d => (d === 'asc' ? 'desc' : 'asc')); return prev; }
+      setSortDir(key === 'schedule' ? 'asc' : 'desc');
+      return key;
+    });
+    setPage(1);
+  }, []);
   // Hub users are locked to their own hub — pre-fill from user object.
   // Multi-select like the Estimates page's hub filter — array of hub-id strings.
   // user.hub_id wins over the persisted value — see the note in EstimatesPage.
@@ -3223,14 +3475,35 @@ export default function AppointmentsPage() {
      would quietly stop matching the day somebody shortened it to "2W". */
   const [filterVType, setFilterVType] = useState(ls.filterVType ?? '');
   const [filterSource, setFilterSource] = useState(ls.filterSource ?? '');
+  /* The real source, separate from the channel above. Persisted the same way
+     so a reload keeps the list somebody was looking at. Holds either a
+     numeric id as a string, or the literal 'none' for the rows with no
+     source — which the API also understands, so the two ends agree on what
+     'none' means rather than one of them translating it. */
+  const [filterSourceId, setFilterSourceId] = useState(ls.filterSourceId ?? '');
+  /* Counts for its dropdown, from the list response. */
+  const [realSourceCounts, setRealSourceCounts] = useState([]);
   const [page, setPage] = useState(ls.page ?? 1);
   const [pageSize, setPageSize] = useState(ls.pageSize ?? 10);
+
+  /* One toggle shared by the desktop checkboxes and the mobile tabs, so the
+     two controls cannot drift into disagreeing about what a click means.
+     Declared here rather than beside the state it sets, because it calls
+     setPage and that is declared just above. */
+  const toggleStatus = useCallback((id) => {
+    const key = String(id);
+    setFilterStatus(prev => (
+      prev.includes(key) ? prev.filter(v => v !== key) : [...prev, key]
+    ));
+    setPage(1);
+  }, []);
+  const clearStatus = useCallback(() => { setFilterStatus([]); setPage(1); }, []);
 
   // Persist whenever any of these change
   useEffect(() => {
     // searchInput, not search: restore the box exactly as they left it, even mid-word.
-    writeListState('sp_appointments_list_v1', { search: searchInput, page, pageSize, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource });
-  }, [page, pageSize, searchInput, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource]);
+    writeListState('sp_appointments_list_v1', { search: searchInput, page, pageSize, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource, filterSourceId, sortBy, sortDir });
+  }, [page, pageSize, searchInput, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource, filterSourceId, sortBy, sortDir]);
 
   useListScrollRestore('sp_appointments_list_v1', !loading);
 
@@ -3285,7 +3558,11 @@ export default function AppointmentsPage() {
     // Gated on showSource for the same reason the query below is: a hub has no
     // control to clear this with, so counting it would put a number on the
     // funnel that nothing inside the funnel explains.
-    + (showSource && filterSource ? 1 : 0);
+    + (showSource && filterSource ? 1 : 0)
+    /* Gated on showSource for the same reason the channel one is: the value is
+       persisted, and a hub that once had it set would otherwise carry a filter
+       it has no control to see or clear. */
+    + (showSource && filterSourceId ? 1 : 0);
 
   // Starts CLOSED. `true` was right when this drove a filter ROW that expanded
   // in place; it now drives the funnel popover, and a popover open on arrival
@@ -3320,7 +3597,7 @@ export default function AppointmentsPage() {
     try {
       const qs = new URLSearchParams({ page, limit: pageSize });
       if (search) qs.set('search', search);
-      if (filterStatus) qs.set('status_id', filterStatus);
+      if (filterStatus.length > 0) qs.set('status_ids', filterStatus.join(','));
       if (filterHub.length > 0) qs.set('hub_ids', filterHub.join(','));
       if (dateFrom) qs.set('date_from', dateFrom);
       if (dateTo) qs.set('date_to', dateTo);
@@ -3332,18 +3609,22 @@ export default function AppointmentsPage() {
          source filter the hub has no control to see or clear — a list quietly
          missing rows, with nothing on screen to explain why. */
       if (showSource && filterSource) qs.set('source', filterSource);
+      if (showSource && filterSourceId) qs.set('source_id', filterSourceId);
+      qs.set('sort', sortBy);
+      qs.set('dir', sortDir);
       const r = await api(`/api/appointments?${qs}`);
       setAppts(r.items || []);
       setTotal(r.total || 0);
       const counts = {};
       for (const sc of r.status_counts || []) counts[sc.status_id] = sc.count;
       setStatusCounts(counts);
+      setRealSourceCounts(r.real_source_counts || []);
     } catch (e) { setError(e.message); }
     finally { setLoading(false); }
     // showSource is in here because the query above reads it. It is derived
     // from the session's user and does not change in practice, but a dependency
     // the body reads and the array omits is a stale closure waiting to happen.
-  }, [search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource, showSource, page, pageSize]);
+  }, [search, filterStatus, filterHub, dateFrom, dateTo, filterCreatedBy, filterVType, filterSource, filterSourceId, showSource, page, pageSize]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -3639,14 +3920,75 @@ export default function AppointmentsPage() {
           </div>
         )}
 
-        <select
-          className="lb-control"
-          value={filterStatus}
-          onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
-        >
-          <option value="">All Status</option>
-          {statusList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        {/* Deliberately the same control as the Hub filter to its left —
+            checkbox list, Select All, Clear — rather than a second idea about
+            what a multi-select looks like sitting inches away from the first. */}
+        <div style={{ position: 'relative', flex: '0 0 auto' }}>
+          <button
+            type="button"
+            className="lb-control"
+            style={{ minWidth: 150, justifyContent: 'space-between' }}
+            aria-expanded={showStatusDropdown}
+            onClick={() => setShowStatusDropdown(p => !p)}
+          >
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {/* One selection names itself. Past that a name list does not fit
+                  the button, and a count is the honest summary. */}
+              {filterStatus.length === 0
+                ? 'All Status'
+                : filterStatus.length === 1
+                  ? (statusList.find(s => String(s.id) === filterStatus[0])?.name || '1 Status')
+                  : `${filterStatus.length} Statuses`}
+            </span>
+            <ChevronDown size={14} style={{ opacity: 0.5, flexShrink: 0 }} />
+          </button>
+
+          {showStatusDropdown && (
+            <>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setShowStatusDropdown(false)} />
+              <div className="lb-pop lb-pop--left">
+                {statusList.length > 0 && filterStatus.length < statusList.length && (
+                  <button
+                    type="button"
+                    style={{
+                      width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                      color: 'var(--primary, #16b994)', background: 'none', border: 'none',
+                      textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                      paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                    onClick={() => { setFilterStatus(statusList.map(s => String(s.id))); setPage(1); }}
+                  >
+                    <Check size={12} /> Select All
+                  </button>
+                )}
+                {filterStatus.length > 0 && (
+                  <button
+                    type="button"
+                    style={{
+                      width: '100%', padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                      color: 'var(--text-danger, #dc2626)', background: 'none', border: 'none',
+                      textAlign: 'left', cursor: 'pointer', borderBottom: '1px solid var(--border)',
+                      paddingBottom: 8, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                    onClick={clearStatus}
+                  >
+                    <X size={12} /> Clear Selection
+                  </button>
+                )}
+                {statusList.map(s => (
+                  <label key={s.id} className="lb-pop-item">
+                    <input
+                      type="checkbox"
+                      checked={filterStatus.includes(String(s.id))}
+                      onChange={() => toggleStatus(s.id)}
+                    />
+                    <span>{s.name}</span>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* ── More filters ──
             Created-by and the date range live behind the funnel. The badge is
@@ -3681,13 +4023,19 @@ export default function AppointmentsPage() {
                   </select>
                 </div>
 
-                {/* Source. A fixed list, unlike Vehicle type above: these four
+                {/* Channel. A fixed list, unlike Vehicle type below: these four
                     are creation PATHS in the code, not master data somebody can
                     add to, so the options are the same everywhere and hardcoding
-                    them here cannot fall out of step with a table. */}
+                    them here cannot fall out of step with a table.
+
+                    Labelled "Channel" now, not "Source". It used to be the only
+                    source filter and the name was fine; with a real source filter
+                    beside it, two dropdowns both called Source would be a coin
+                    toss. The query parameter is still ?source= — renaming that
+                    would break any saved link. */}
                 {showSource && (
                 <div>
-                  <label className="lb-pop-label" htmlFor="lb-appt-source">Source</label>
+                  <label className="lb-pop-label" htmlFor="lb-appt-source">Channel</label>
                   <select
                     id="lb-appt-source"
                     className="lb-control"
@@ -3698,6 +4046,37 @@ export default function AppointmentsPage() {
                     {Object.entries(APPT_SOURCE).map(([k, s]) => (
                       <option key={k} value={k}>{s.label}</option>
                     ))}
+                  </select>
+                </div>
+                )}
+
+                {/* The REAL source, from master data — the opposite of the
+                    hardcoded list above, and for the opposite reason: somebody can
+                    add a channel in Master Data and this must pick it up.
+
+                    Options come from the counts the list endpoint already returns,
+                    not from /api/lead-sources, so each one carries its number and
+                    a channel with nothing in the current view is not offered at
+                    all. "Not recorded" is in the list on purpose: finding the jobs
+                    that still need a source is the first thing anybody will want. */}
+                {showSource && (
+                <div>
+                  <label className="lb-pop-label" htmlFor="lb-appt-realsource">Came from</label>
+                  <select
+                    id="lb-appt-realsource"
+                    className="lb-control"
+                    value={filterSourceId}
+                    onChange={e => { setFilterSourceId(e.target.value); setPage(1); }}
+                  >
+                    <option value="">Anywhere</option>
+                    <option value="none">Not recorded</option>
+                    {realSourceCounts
+                      .filter(s => s.source_id != null)
+                      .map(s => (
+                        <option key={s.source_id} value={s.source_id}>
+                          {s.source_name} ({s.count})
+                        </option>
+                      ))}
                   </select>
                 </div>
                 )}
@@ -3798,7 +4177,7 @@ export default function AppointmentsPage() {
           // applies them — switching view must not silently change the scope.
           filters={{
             hub_ids: filterHub.join(','),
-            status_id: filterStatus,
+            status_ids: filterStatus.join(','),
             search,
           }}
           onOpen={openApptByToken}
@@ -3808,25 +4187,40 @@ export default function AppointmentsPage() {
       <>
       {/* Status tabs — mobile only (hidden on desktop via CSS) */}
       <div className="appt-tabs">
+        {/* "All" is the clear, not a selectable option — it is active exactly
+            when nothing is picked, and tapping it empties the selection. That
+            keeps a way back to everything within thumb reach, which matters
+            more here than on desktop: the popover has a Clear button, this
+            strip does not. */}
         <button
-          className={`appt-tab ${!filterStatus ? 'appt-tab--active' : ''}`}
-          onClick={() => { setFilterStatus(''); setPage(1); }}
+          className={`appt-tab ${filterStatus.length === 0 ? 'appt-tab--active' : ''}`}
+          onClick={clearStatus}
         >
           All
           <span className="appt-tab-count">
             {Object.values(statusCounts).reduce((s, n) => s + n, 0)}
           </span>
         </button>
-        {statusList.filter(s => (statusCounts[s.id] || 0) > 0).map(s => (
-          <button
-            key={s.id}
-            className={`appt-tab ${String(filterStatus) === String(s.id) ? 'appt-tab--active' : ''}`}
-            onClick={() => { setFilterStatus(String(s.id)); setPage(1); }}
-          >
-            {s.name}
-            <span className="appt-tab-count">{statusCounts[s.id]}</span>
-          </button>
-        ))}
+        {/* Tabs now TOGGLE — tap to add, tap again to remove — so several can
+            read as active at once. A status the filter is holding stays on the
+            strip even at count 0, otherwise the tab you just selected can
+            vanish under your finger and leave no way to unselect it. */}
+        {statusList
+          .filter(s => (statusCounts[s.id] || 0) > 0 || filterStatus.includes(String(s.id)))
+          .map(s => {
+            const on = filterStatus.includes(String(s.id));
+            return (
+              <button
+                key={s.id}
+                className={`appt-tab ${on ? 'appt-tab--active' : ''}`}
+                aria-pressed={on}
+                onClick={() => toggleStatus(s.id)}
+              >
+                {s.name}
+                <span className="appt-tab-count">{statusCounts[s.id] || 0}</span>
+              </button>
+            );
+          })}
       </div>
 
       {/* ── Table ──
@@ -3838,17 +4232,22 @@ export default function AppointmentsPage() {
           <table className="data-table appt-table">
             <thead>
               <tr>
-                {/* The list is ORDER BY created_at DESC, id DESC on the server.
-                    The arrow goes on # — the id runs in the same order as
-                    created_at, and it is the only visible column that does.
-                    NOT on Schedule: that is the appointment's date, which is not
-                    what the list is ordered by, and marking it would be a lie. */}
-                <th className="lb-sorted">#  <ArrowDown size={12} className="lb-sort-icon" /></th>
+                {/* # and Schedule both sort, server-side.
+                    # stands for created_at — the id runs in the same order, and
+                    it is the only visible column that does. Schedule is the
+                    appointment's own date.
+
+                    Both carry a faint arrow when inactive so it is clear they
+                    are controls BEFORE anyone clicks; the active one goes solid
+                    and points the way the list actually runs. The other headers
+                    stay plain, because they do not sort and an arrow on them
+                    would be an invitation to nothing. */}
+                <SortTh label="#" col="created" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                 <th>Customer</th>
                 <th>Vehicle</th>
                 <th>Hub</th>
                 {showSource && <th>Source</th>}
-                <th>Schedule</th>
+                <SortTh label="Schedule" col="schedule" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                 <th>Totals</th>
                 <th>Status</th>
               </tr>
@@ -3872,7 +4271,7 @@ export default function AppointmentsPage() {
                         {/* (showSource && filterSource) to match the query: for a hub
                             the source filter is neither sent nor shown, so it must not
                             make an empty list claim it was filtered. */}
-                        {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo || filterCreatedBy || filterVType || (showSource && filterSource)
+                        {search || filterStatus.length > 0 || filterHub.length > 0 || dateFrom || dateTo || filterCreatedBy || filterVType || (showSource && filterSource)
                           ? 'Try adjusting your filters.'
                           : 'Appointments appear here when leads are converted.'}
                       </div>
@@ -3957,10 +4356,35 @@ export default function AppointmentsPage() {
                         </div>
                       )}
                     </td>
-                    {/* Where it came from. source_type is derived server-side
-                        from lead_id / booking_source / is_warranty_redo — see
-                        the CASE in APPT_SELECT. */}
-                    {showSource && <td><SourceBadge type={a.source_type} /></td>}
+                    {/* TWO facts in one cell, and they are different questions.
+                        The channel badge is source_type, derived server-side from
+                        lead_id / booking_source / is_warranty_redo — HOW the row
+                        was made. Under it, the real source: WHERE the customer
+                        came from (migration 204).
+
+                        Stacked rather than given a column of its own: the list
+                        already carries eight and a ninth costs more than it
+                        returns. The badge stays on top because it is the one that
+                        is never blank. */}
+                    {showSource && (
+                      <td>
+                        <SourceBadge type={a.source_type} />
+                        <div style={{ marginTop: 3, fontSize: 11, color: 'var(--text-muted)' }}
+                             title={a.source_name
+                               ? `Came from: ${a.source_name}${a.source_is_active === false ? ' (retired source)' : ''}`
+                               : 'No source recorded for this appointment'}>
+                          {a.source_name
+                            /* A retired source is shown in italics rather than
+                               hidden. It is real historic data and pretending the
+                               job had no source would be worse than admitting the
+                               channel is no longer offered. */
+                            ? <span style={a.source_is_active === false ? { fontStyle: 'italic' } : undefined}>
+                                {a.source_name}
+                              </span>
+                            : <span style={{ opacity: .55 }}>—</span>}
+                        </div>
+                      </td>
+                    )}
                     <td>
                       {/* ── Hub portal: the word, not the date ──
                           A hub works a bench, not a calendar. "Today" answers
@@ -4075,7 +4499,7 @@ export default function AppointmentsPage() {
               <Calendar size={36} style={{ opacity: .2, marginBottom: 10 }} />
               <div style={{ fontWeight: 600, marginBottom: 4 }}>No appointments found</div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                {search || filterStatus || filterHub.length > 0 || dateFrom || dateTo
+                {search || filterStatus.length > 0 || filterHub.length > 0 || dateFrom || dateTo
                   ? 'Try adjusting your filters.'
                   : 'Appointments appear here when leads are converted.'}
               </div>

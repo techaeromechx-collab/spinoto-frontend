@@ -2,6 +2,10 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useSearchParams, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
+// Sends a POINTER to this lead to a colleague on internal chat.
+// Renders nothing without USE_CHAT, and brings its own stylesheet.
+import ShareToChat from '../components/chat/ShareToChat.jsx';
+
 import { useCan, useAuth } from '../auth/AuthContext.jsx';
 import { useBodyLock } from '../hooks/useBodyLock.js';
 import { useEscapeClose } from '../hooks/useEscapeClose.js';
@@ -252,23 +256,49 @@ function getAvatarInitials(name, mobile) {
   return (mobile || '').replace(/\D/g, '').slice(0, 2) || '?';
 }
 
-// ── Lead Source options & badge colours ──────────────────────────────────────
-// Kept as fallback; real list is fetched from /api/lead-sources at runtime
+/* ── Lead source options & badge colours ──────────────────────────────────────
+ * A FALLBACK, only. The real list is fetched from /api/lead-sources at runtime
+ * and replaces this; the dropdown keeps working when that call fails.
+ *
+ * ══ IT HAD ALREADY DRIFTED ═════════════════════════════════════════════════
+ *
+ * Migration 041 seeds EIGHT sources and this list had seven: 'Google Ads' was
+ * missing from BOTH arrays. So a lead created while that fetch had failed could
+ * not be tagged Google Ads at all, and every Google Ads lead rendered with the
+ * grey 'Other' badge — which is how a channel somebody is paying for goes
+ * invisible in the one list where it would be noticed.
+ *
+ * Migration 204 adds WhatsApp, Meta Ads and Manual to the master list too,
+ * because leads.controller.js's own source chips prove those values are already
+ * in the data. All three are here now.
+ *
+ * This is still a copy of a fact the database owns. It is kept because deleting
+ * it leaves the dropdown empty on a failed fetch, and documented rather than
+ * quietly patched so whoever touches it next checks lead_sources first.
+ */
 export const LEAD_SOURCES = [
   'Walk-in', 'Phone Call', 'Website', 'Referral',
-  'Social Media', 'Exhibition', 'Other',
+  'WhatsApp', 'Meta Ads', 'Social Media', 'Google Ads',
+  'Exhibition', 'Manual', 'Other',
 ];
 const SOURCE_STYLE = {
   'Walk-in': { bg: '#dbeafe', color: '#1d4ed8' },
   'Phone Call': { bg: '#d1fae5', color: '#065f46' },
   'Website': { bg: '#ede9fe', color: '#6d28d9' },
   'Referral': { bg: '#fef3c7', color: '#92400e' },
+  'WhatsApp': { bg: '#dcfce7', color: '#15803d' },
+  'Meta Ads': { bg: '#dbeafe', color: '#1e40af' },
   'Social Media': { bg: '#fce7f3', color: '#9d174d' },
+  'Google Ads': { bg: '#fef9c3', color: '#a16207' },
   'Exhibition': { bg: '#ffedd5', color: '#9a3412' },
+  'Manual': { bg: '#e2e8f0', color: '#334155' },
   'Other': { bg: '#f1f5f9', color: '#475569' },
 };
 function SourceBadge({ source }) {
   if (!source) return null;
+  /* Falls back to the 'Other' style for a source this map has not met — which is
+     every retired legacy spelling migration 204 preserved. A grey readable badge
+     beats no badge, and beats reading a property off undefined. */
   const s = SOURCE_STYLE[source] || SOURCE_STYLE['Other'];
   return (
     <span style={{
@@ -821,7 +851,22 @@ function ViewLeadModal({ leadId, onClose, onEdit, canEdit, canAssign, statusList
 
               {/* ── Customer card ── */}
               <div className="lp-vm-card lp-vm-card--customer">
-                <div className="lp-vm-card-hd"><User size={13} /> Customer</div>
+                {/* Inline layout, not a class change: this header's rule lives in
+                    LeadsPage.css and putting a second child in it could land the
+                    button anywhere. Three declarations, scoped to this element,
+                    win over whatever the class does and cannot affect the other
+                    cards using the same class. */}
+                <div className="lp-vm-card-hd"
+                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <User size={13} /> Customer
+                  </span>
+                  {/* Guarded — this card renders before `lead` has arrived. */}
+                  {lead && (
+                    <ShareToChat refType="lead" refId={lead.id}
+                                 label={lead.name || `Lead #${lead.id}`} compact />
+                  )}
+                </div>
                 <div className="lp-vm-customer-main">
                   <div className="lp-vm-avatar">{initials}</div>
                   <div className="lp-vm-customer-info">

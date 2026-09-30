@@ -153,3 +153,105 @@
           .g1-tabpanel { padding: 16px 14px; }
           .g1-table { min-width: 640px; }
         }
+
+/* ── "Before you file", rebuilt 22 Sep 2026 ─────────────────────────────────
+   Added below the old .g1-warn rules rather than replacing them: those still
+   style the compact banner at the top. If you add more, add it BELOW.
+
+   Three groups, one per thing a person can do — fix it, decide it, or nothing.
+   Colour is a 3px left edge, not a filled card: four tinted boxes painted the
+   whole page red and made a note about credit notes look like a failure.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.g1-group { margin-top: 16px; }
+.g1-group:first-of-type { margin-top: 10px; }
+.g1-group__head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin-bottom: 8px; }
+.g1-group__head h3 { margin: 0; font-size: 13px; font-weight: 800; letter-spacing: -0.01em; color: var(--text); }
+.g1-group__count {
+  font-size: 11px; font-weight: 800; line-height: 1; padding: 3px 8px; border-radius: 999px;
+  background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-muted);
+}
+.g1-group__note { font-size: 11.5px; color: var(--text-muted); }
+.g1-group--fix   .g1-group__count { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+.g1-group--check .g1-group__count { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+[data-theme="dark"] .g1-group--fix   .g1-group__count { background: #3f0d0d; border-color: #7f1d1d; color: #fca5a5; }
+[data-theme="dark"] .g1-group--check .g1-group__count { background: #3b2408; border-color: #78350f; color: #fcd34d; }
+
+.g1-issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.g1-issue {
+  border: 1px solid var(--border); border-left-width: 3px; border-radius: 10px;
+  background: var(--panel); overflow: hidden;
+}
+/* Amber and red were close enough that the overlap warning read as an error.
+   The edge carries the difference now, and the fill stays out of it. */
+.g1-issue--fix   { border-left-color: #b91c1c; }
+.g1-issue--check { border-left-color: #d97706; }
+.g1-issue--info  { border-left-color: var(--border); }
+[data-theme="dark"] .g1-issue--fix   { border-left-color: #ef4444; }
+[data-theme="dark"] .g1-issue--check { border-left-color: #f59e0b; }
+
+.g1-issue__head {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 11px 13px; background: none; border: none; cursor: pointer;
+  font-family: inherit; text-align: left; color: var(--text);
+}
+.g1-issue__head:hover { background: var(--bg-soft); }
+.g1-issue__head svg { flex-shrink: 0; }
+.g1-issue--fix   .g1-issue__head > svg:first-child { color: #b91c1c; }
+.g1-issue--check .g1-issue__head > svg:first-child { color: #d97706; }
+.g1-issue--info  .g1-issue__head > svg:first-child { color: var(--text-muted); }
+.g1-issue__title { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 700; line-height: 1.45; }
+/* The figure that decides whether this is worth stopping for, given its own
+   column so it is never buried mid-sentence. */
+.g1-issue__amt {
+  flex-shrink: 0; font-size: 12.5px; font-weight: 800;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+.g1-issue__caret { color: var(--text-muted); transition: transform .15s; }
+.g1-issue__caret--on { transform: rotate(180deg); }
+
+.g1-issue__body { padding: 0 13px 12px 13px; border-top: 1px solid var(--border); }
+.g1-issue__why { margin: 10px 0 0; font-size: 12px; line-height: 1.6; color: var(--text-muted); }
+
+.g1-issue__rows { margin-top: 10px; }
+.g1-issue__tools { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; flex-wrap: wrap; }
+.g1-issue__search {
+  flex: 1; min-width: 150px; height: 28px; padding: 0 9px;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg-soft); color: var(--text); font-family: inherit; font-size: 12px; outline: none;
+}
+.g1-issue__search:focus { border-color: var(--primary); background: var(--panel); }
+.g1-issue__count { font-size: 11px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
+.g1-issue__btn {
+  height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel); color: var(--text-muted);
+  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+}
+.g1-issue__btn:hover { border-color: var(--primary); color: var(--primary); }
+
+.g1-issue__table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.g1-issue__table th {
+  text-align: left; padding: 7px 9px; font-size: 10.5px; font-weight: 700;
+  color: var(--text-muted); background: var(--bg-soft);
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.g1-issue__table td { padding: 7px 9px; border-bottom: 1px solid var(--border); color: var(--text); }
+.g1-issue__table tbody tr:last-child td { border-bottom: none; }
+.g1-issue__table th.num, .g1-issue__table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.g1-issue__empty { text-align: center; color: var(--text-muted); padding: 16px !important; }
+/* Invoice numbers only line up when the digits do. */
+.g1-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
+.g1-dash { color: var(--text-muted); }
+
+.g1-issue__pager { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+.g1-issue__pager span { font-size: 11.5px; color: var(--text-muted); }
+.g1-issue__pager button {
+  height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel); color: var(--text); font-family: inherit; font-size: 11.5px; cursor: pointer;
+}
+.g1-issue__pager button:disabled { opacity: .45; cursor: default; }
+
+@media (max-width: 720px) {
+  .g1-issue__table { display: block; overflow-x: auto; white-space: nowrap; }
+  .g1-issue__count { margin-left: 0; }
+}

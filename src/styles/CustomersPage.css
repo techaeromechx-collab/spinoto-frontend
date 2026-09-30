@@ -1278,3 +1278,189 @@
     .cpt-plan-row .due { margin-left: 0; }
     .cpt-plan-row .pill { margin-left: auto; }
   }
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+     Job Cards tab + per-vehicle service history  (CustomerServiceHistory.jsx)
+
+     Tokens only for surfaces, borders and text, so both views follow
+     [data-theme="dark"] without a second block — the same thing the rest of
+     this stylesheet does. The only literal colours are the status pills and the
+     "approved" accent, which are meant to read the same in either theme.
+     ═══════════════════════════════════════════════════════════════════════════ */
+
+  /* Service history, on the vehicle card. Amber rather than the edit button's
+     indigo: it opens a reader, it does not change anything. */
+  .cust-veh-act-btn--hist { color:#b45309; }
+  .cust-veh-act-btn--hist:hover { background:#fef3c7; }
+
+  /* ── Shared bits ──────────────────────────────────────────────────────────*/
+  .csh-badge {
+    font-size:9.5px; font-weight:800; letter-spacing:.3px; text-transform:uppercase;
+    padding:2px 7px; border-radius:20px; white-space:nowrap; flex-shrink:0;
+  }
+  .csh-badge--plain { background:var(--bg-soft,#f1f5f9); color:var(--text-muted); }
+
+  .csh-meta {
+    display:inline-flex; align-items:center; gap:4px;
+    font-size:11.5px; color:var(--text-muted); white-space:nowrap;
+  }
+  .csh-plate {
+    font-size:11.5px; font-weight:800; letter-spacing:.4px;
+    color:var(--text); font-variant-numeric:tabular-nums;
+  }
+
+  /* Quoted / approved / billed. A three-up strip rather than a table: it has to
+     sit inside a card that is itself inside a tab, and a nested table at that
+     depth loses its alignment the moment one figure runs long. */
+  .csh-money { display:flex; gap:18px; flex-wrap:wrap; margin-top:2px; }
+  .csh-money-cell { display:flex; flex-direction:column; gap:1px; }
+  .csh-money-cell em {
+    font-style:normal; font-size:9.5px; font-weight:700; letter-spacing:.4px;
+    text-transform:uppercase; color:var(--text-muted);
+  }
+  .csh-money-cell b {
+    font-size:13px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums;
+  }
+  /* Approved is the figure the workshop is allowed to act on, so it is the one
+     the eye should land on. */
+  .csh-money-cell--ok b { color:#16a34a; }
+
+  .csh-err {
+    display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+    background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;
+    border-radius:8px; padding:9px 11px; font-size:12.5px;
+  }
+  .csh-retry {
+    margin-left:auto; display:inline-flex; align-items:center; gap:5px;
+    border:1px solid #fecaca; background:transparent; color:#b91c1c;
+    border-radius:6px; font-size:11.5px; font-weight:700; padding:3px 9px; cursor:pointer;
+  }
+  .csh-retry:hover { background:#fee2e2; }
+
+  /* ── Job Cards tab ────────────────────────────────────────────────────────*/
+  .csh-list { display:flex; flex-direction:column; gap:9px; }
+  .csh-card {
+    border:1px solid var(--border); border-radius:10px; padding:11px 13px;
+    display:flex; flex-direction:column; gap:7px; background:var(--panel,var(--bg));
+    transition:border-color .12s, box-shadow .12s;
+  }
+  .csh-card--click { cursor:pointer; }
+  .csh-card--click:hover { border-color:#0891b2; box-shadow:0 2px 10px rgba(8,145,178,.10); }
+  .csh-card--click:focus-visible { outline:2px solid #0891b2; outline-offset:2px; }
+
+  .csh-card-top { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+  .csh-card-no {
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:12.5px; font-weight:800; color:var(--text);
+  }
+  /* Pushed right so the date is always at the same edge whatever the badge
+     above it says. */
+  .csh-card-date {
+    margin-left:auto; display:inline-flex; align-items:center; gap:4px;
+    font-size:11.5px; color:var(--text-muted); white-space:nowrap;
+  }
+  .csh-card-go { color:var(--text-muted); flex-shrink:0; }
+  .csh-card-meta { display:flex; align-items:center; gap:13px; flex-wrap:wrap; }
+
+  /* ── Service history dialog ───────────────────────────────────────────────*/
+  .csh-backdrop {
+    position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:1200;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .csh-modal {
+    background:var(--bg); border-radius:14px; width:100%; max-width:620px;
+    box-shadow:0 16px 48px rgba(0,0,0,.22); display:flex; flex-direction:column;
+    max-height:86vh;
+  }
+  .csh-hdr {
+    display:flex; align-items:center; gap:8px; padding:14px 16px;
+    border-bottom:1px solid var(--border); flex-shrink:0;
+  }
+  .csh-hdr-t {
+    flex:1; font-size:14px; font-weight:700; color:var(--text);
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  }
+  .csh-hdr-plate {
+    font-size:11.5px; font-weight:800; letter-spacing:.5px;
+    background:var(--bg-soft,#f1f5f9); color:var(--text-muted);
+    padding:2px 8px; border-radius:6px;
+  }
+
+  /* The totals sit ABOVE the scroll area, not inside it: they are the answer to
+     "what has this car been worth", and scrolling them away means the figure is
+     gone exactly when the list is long enough to need it. */
+  .csh-summary {
+    display:flex; gap:20px; flex-wrap:wrap; flex-shrink:0;
+    padding:11px 16px; background:var(--bg-soft,#f8fafc);
+    border-bottom:1px solid var(--border);
+  }
+  .csh-sum-cell { display:flex; flex-direction:column; gap:1px; }
+  .csh-sum-cell em {
+    font-style:normal; font-size:9.5px; font-weight:700; letter-spacing:.4px;
+    text-transform:uppercase; color:var(--text-muted);
+  }
+  .csh-sum-cell b {
+    font-size:14px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums;
+  }
+  .csh-sum-cell--ok b { color:#16a34a; }
+  /* Money NOT taken. Amber, not red — a refusal is an opportunity, not a
+     fault, and red on a customer profile reads as a problem with them. */
+  .csh-sum-cell--no b { color:#b45309; }
+
+  .csh-modal-body {
+    padding:14px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:11px;
+  }
+  .csh-visit {
+    border:1px solid var(--border); border-radius:10px; padding:11px 13px;
+    display:flex; flex-direction:column; gap:7px;
+  }
+  /* On a job card the number identifies the row and the date is a detail, so
+     the date is pushed to the far edge. On a VISIT the date IS the identifier
+     — it is what the customer says on the phone — so it leads, and the card
+     number and status trail it. */
+  .csh-visit .csh-card-date { margin-left:0; font-weight:700; color:var(--text); }
+  .csh-visit .csh-card-top { gap:8px; }
+  .csh-jclink {
+    display:inline-flex; align-items:center; gap:5px;
+    border:1px solid var(--border); background:transparent; color:#0891b2;
+    border-radius:6px; font-size:11.5px; font-weight:700; padding:2px 8px; cursor:pointer;
+  }
+  .csh-jclink:hover { background:#e0f2fe; border-color:#0891b2; }
+
+  /* What was done, one line each. Left-aligned description, right-aligned
+     money, quantity between them only when it is not 1 — a column of "×1" is
+     noise in a list whose job is to be skimmed. */
+  .csh-work {
+    list-style:none; margin:2px 0 0; padding:8px 0 0;
+    border-top:1px dashed var(--border); display:flex; flex-direction:column; gap:4px;
+  }
+  .csh-work li { display:flex; align-items:baseline; gap:8px; font-size:12px; }
+  .csh-work-d { flex:1; color:var(--text); }
+  .csh-work-q { font-size:11px; color:var(--text-muted); font-weight:700; }
+  .csh-work-t {
+    font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  /* Declined lines, under the completed ones. Struck through would say
+     "cancelled"; this was offered and refused, and the figure still stands as
+     what it was quoted at. The amber rule is what separates the two lists. */
+  .csh-work--declined { border-top-color:#f59e0b; }
+  .csh-work--declined .csh-work-d,
+  .csh-work--declined .csh-work-t { color:var(--text-muted); }
+  .csh-work--declined li::before {
+    content:'declined'; font-size:8.5px; font-weight:800; letter-spacing:.4px;
+    text-transform:uppercase; color:#b45309; background:#fef3c7;
+    padding:1px 5px; border-radius:20px; flex-shrink:0;
+  }
+  .csh-nowork {
+    margin-top:2px; padding-top:8px; border-top:1px dashed var(--border);
+    font-size:11.5px; color:var(--text-muted); font-style:italic;
+  }
+
+  /* On a phone the dialog is a sheet, like every other modal on this page, and
+     the money strips stop trying to hold five columns across 360px. */
+  @media (max-width: 600px) {
+    .csh-backdrop { align-items:flex-end; padding:0; }
+    .csh-modal { border-radius:14px 14px 0 0; max-width:100%; max-height:92dvh; }
+    .csh-money, .csh-summary { gap:12px 16px; }
+    .csh-card-date { margin-left:0; }
+  }

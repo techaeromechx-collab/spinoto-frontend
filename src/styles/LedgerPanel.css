@@ -56,3 +56,102 @@
 }
 
 .lg-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── Statement redesign, 21 Sep 2026 ────────────────────────────────────────
+   Added below, not merged into the rules above, so the original statement
+   styling stays readable as one block. If you add more, add it BELOW — never
+   by replacing this file.
+
+   The table now carries a type tag per row and plain-English money columns
+   ("We paid" / "They billed" on a hub). Colour is the only thing doing extra
+   work here: money out reads green, money billed to us reads red, and a
+   payment row sits on a faint tint so a long statement shows its rhythm
+   without anyone reading a single figure.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.lg-tag {
+  display: inline-block; margin-right: 8px; padding: 2px 7px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.03em;
+  border-radius: 5px; white-space: nowrap; vertical-align: 1px;
+}
+.lg-tag--inv  { background: #fff1f2; color: #9f1239; }
+.lg-tag--pay  { background: #ecfdf5; color: #15803d; }
+.lg-tag--note { background: #fffbeb; color: #b45309; }
+.lg-tag--open { background: var(--bg-soft); color: var(--text-muted); border: 1px solid var(--border); padding: 1px 6px; }
+[data-theme="dark"] .lg-tag--inv  { background: #3f0d16; color: #fda4af; }
+[data-theme="dark"] .lg-tag--pay  { background: #052e16; color: #86efac; }
+[data-theme="dark"] .lg-tag--note { background: #3b2408; color: #fcd34d; }
+
+/* A reference the system invented rather than one printed on a document. */
+.lg-ref--dim { font-weight: 500; color: var(--text-muted); }
+
+/* Qualified with the element because `.lg-table td` above sets the colour and
+   would otherwise out-specify a bare class. */
+.lg-table td.lg-dr { color: #15803d; font-weight: 700; }
+.lg-table td.lg-cr { color: #9f1239; font-weight: 700; }
+[data-theme="dark"] .lg-table td.lg-dr { color: #4ade80; }
+[data-theme="dark"] .lg-table td.lg-cr { color: #fda4af; }
+
+/* Kept under 2% so it reads as rhythm, not as a highlight competing with the
+   opening row. The hover rule above still wins, which is what you want. */
+.lg-table tbody tr.lg-tr--payment td,
+.lg-table tbody tr.lg-tr--refund td { background: color-mix(in srgb, #15803d 2.5%, var(--panel)); }
+[data-theme="dark"] .lg-table tbody tr.lg-tr--payment td,
+[data-theme="dark"] .lg-table tbody tr.lg-tr--refund td { background: color-mix(in srgb, #4ade80 5%, var(--panel)); }
+
+/* The opening row keeps its own tint and should not be italicised into the
+   tag. */
+.lg-tr--opening .lg-tag { font-style: normal; }
+
+/* ── Statement period ───────────────────────────────────────────────────────
+   Added 22 Sep 2026. A month dropdown for the common case and a custom From/To
+   behind it, because "August" and "1 Apr to 31 Mar" are both real questions and
+   only one of them fits in a list.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.lg-period {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 11px; margin-bottom: 12px;
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px;
+}
+.lg-period__icon { color: var(--text-muted); flex-shrink: 0; }
+.lg-period__sel {
+  height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--text);
+  font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.lg-period__sel:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.lg-period__custom { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lg-period__custom input {
+  height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--text);
+  font-family: inherit; font-size: 12.5px; color-scheme: light dark;
+}
+.lg-period__custom em { font-style: normal; font-size: 11.5px; color: var(--text-muted); }
+.lg-period__apply {
+  height: 30px; padding: 0 12px; border: 1px solid var(--primary); border-radius: 8px;
+  background: var(--primary); color: #fff;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  transition: background .12s;
+}
+.lg-period__apply:hover:not(:disabled) { background: var(--primary-hover); }
+.lg-period__apply:disabled { opacity: .5; cursor: default; }
+
+/* Pushed to the far end so the applied period reads as a result of the control
+   rather than as another thing to set. */
+.lg-period__now {
+  margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.lg-period__clear {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 26px; padding: 0 9px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--panel); color: var(--text-muted);
+  font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+}
+.lg-period__clear:hover { border-color: var(--primary); color: var(--primary); }
+
+/* The brought-forward row is the same kind of thing as an opening balance —
+   where the story starts — so it inherits .lg-tr--opening's tint from above. */
+.lg-tr--opening .lg-ref { font-weight: 700; font-style: normal; }

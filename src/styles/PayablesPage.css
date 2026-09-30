@@ -1,65 +1,232 @@
-/* Hub payables. Same parts as the GSTR-1 page and Reports: 34px/9px controls,
-   14px cards, tokens throughout. */
-.pay-page { padding-top: 4px; animation: rp-fade 0.4s ease; }
+/* ── Hub Ledger ─────────────────────────────────────────────────────────────
+   Redesigned 21 Sep 2026, rebuilt edge to edge 22 Sep 2026.
 
-.pay-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
-.pay-header__left { display: flex; align-items: flex-start; gap: 11px; }
-.pay-header__icon { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; background: rgba(22,185,148,0.12); background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
-.pay-title { margin: 0; font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: -0.03em; }
+   THE PAGE IS FULL BLEED. The shell wraps every route in `.content`, which is
+   `padding: 32px; max-width: 1400px; margin: 0 auto` (app.css). An earlier
+   draft of this page added its OWN 1180px cap and 26px padding inside that,
+   so the content sat in a 1180px column with ~58px of dead gutter on each
+   side — narrower than every other screen in the CRM. The override below is
+   the same one PayoutsPage uses; the page then owns its own rhythm, and the
+   gutter is declared once as --pay-gut so bands and table cells line up.
+
+   The list answers one question — how much do we owe the hubs, and who has
+   been waiting longest — so one number leads and the rows are flat, ordered
+   by days waiting. An earlier draft grouped hubs into 45/30-day bands; that
+   was removed deliberately. Colour still runs off the 45- and 30-day marks,
+   on the row edge and the day chip. That is the number describing itself, not
+   a grouping.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.content:has(.pay-page) { max-width: 100% !important; padding: 0 !important; }
+
+.pay-page { --pay-gut: 24px; padding-bottom: 40px; }
+
+/* ── Bands ────────────────────────────────────────────────────────────────
+   Every horizontal block runs the full width and is separated by a rule
+   rather than by a gap, so nothing floats in the middle of the window. */
+.pay-band {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  padding: 16px var(--pay-gut);
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.pay-band--head    { align-items: flex-start; padding-top: 20px; }
+.pay-band--tools   { gap: 9px; padding-top: 11px; padding-bottom: 11px; }
+.pay-band--detail  { padding-top: 12px; padding-bottom: 12px; }
+
+.pay-head-left  { display: flex; align-items: flex-start; gap: 12px; }
+.pay-head-icon {
+  width: 38px; height: 38px; flex-shrink: 0; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel));
+  color: var(--primary);
+}
+.pay-title { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
 .pay-sub   { margin: 3px 0 0; font-size: 13px; color: var(--text-muted); }
-.pay-header__right { display: flex; align-items: center; gap: 8px; }
+.pay-head-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
-.pay-icon-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--border); background: var(--panel); color: var(--text-muted); cursor: pointer; display: grid; place-items: center; transition: all 0.14s; }
-.pay-icon-btn:hover:not(:disabled) { background: var(--bg-soft); color: var(--text); }
-.pay-btn { display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; height: 34px; border-radius: 9px; border: 1.5px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-.pay-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
-.pay-btn:disabled, .pay-icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.pay-spin { animation: g1spin 1s linear infinite; }
-@keyframes g1spin { to { transform: rotate(360deg); } }
+.pay-btn, .pay-icon-btn, .pay-back {
+  height: 34px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--panel); color: var(--text); font-family: inherit;
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.pay-btn { padding: 0 13px; background: var(--primary); border-color: var(--primary); color: #fff; }
+.pay-btn:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.pay-icon-btn { width: 34px; }
+.pay-icon-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.pay-back { padding: 0 13px 0 9px; }
+.pay-back:hover { border-color: var(--primary); color: var(--primary); }
+.pay-btn:disabled, .pay-icon-btn:disabled { opacity: .5; cursor: default; }
+.pay-spin { animation: pay-spin 1s linear infinite; }
+@keyframes pay-spin { to { transform: rotate(360deg); } }
 
-.pay-error { display: flex; gap: 8px; align-items: center; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; border-radius: 9px; padding: 11px 13px; font-size: 13px; margin-bottom: 12px; }
-.pay-empty { padding: 44px; text-align: center; color: var(--text-muted); font-size: 13.5px; }
+.pay-back-sum { display: flex; align-items: center; gap: 12px; }
+.pay-back-sum strong { font-size: 16px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ── Hero ─────────────────────────────────────────────────────────────────*/
+.pay-band--hero { align-items: flex-end; padding: 20px var(--pay-gut); gap: 24px; }
+.pay-hero-value {
+  display: block; font-size: 32px; font-weight: 800;
+  letter-spacing: -0.03em; line-height: 1.05; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.pay-hero-label { display: block; margin-top: 6px; font-size: 12.5px; color: var(--text-muted); }
+.pay-hero-side  { display: flex; gap: 32px; text-align: right; }
+.pay-hero-side em { font-style: normal; font-size: 11px; color: var(--text-muted); }
+.pay-hero-stat {
+  display: block; font-size: 17px; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.pay-hero-stat--warn { color: #d97706; }
+.pay-hero-stat--bad  { color: #b91c1c; }
+[data-theme="dark"] .pay-hero-stat--warn { color: #fcd34d; }
+[data-theme="dark"] .pay-hero-stat--bad  { color: #fca5a5; }
+
+/* ── Toolbar ──────────────────────────────────────────────────────────────*/
+.pay-search {
+  flex: 1; min-width: 200px; height: 36px;
+  display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 9px;
+  background: var(--bg-soft); color: var(--text-muted);
+}
+.pay-search:focus-within { border-color: var(--primary); background: var(--panel); }
+.pay-search input {
+  flex: 1; min-width: 0; border: none; outline: none; background: none;
+  font-family: inherit; font-size: 13px; color: var(--text);
+}
+/* Safari draws its own clear button on type=search and it collides with the
+   border radius. */
+.pay-search input::-webkit-search-decoration,
+.pay-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.pay-sort {
+  height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 11px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--bg-soft);
+}
+.pay-sort span   { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+.pay-sort select {
+  border: none; outline: none; background: none; font-family: inherit;
+  font-size: 12.5px; font-weight: 600; color: var(--text); cursor: pointer;
+}
+
+/* ── Table ────────────────────────────────────────────────────────────────
+   Column widths are fixed on the right-hand columns and the hub name takes
+   whatever is left, so the numbers stay in a straight line at any window
+   width instead of drifting to the far edge. Padding matches --pay-gut, which
+   is what keeps the first and last column aligned with the bands above. */
+/* table-layout: fixed with percentage widths, so a wide window grows EVERY
+   column a little instead of dumping all the slack into one. Give the slack to
+   a single column and you get one enormous gap between the hub name and the
+   money — which is what the first version of this page did. */
+.pay-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; background: var(--panel); }
+.pay-table th {
+  padding: 10px var(--pay-gut); font-size: 11px; font-weight: 700;
+  color: var(--text-muted); background: var(--bg-soft);
+  border-bottom: 1px solid var(--border); white-space: nowrap; text-align: left;
+}
+.pay-table td {
+  padding: 13px var(--pay-gut); border-bottom: 1px solid var(--border);
+  vertical-align: middle; color: var(--text);
+}
+.pay-table tbody tr:last-child td { border-bottom: none; }
+
+.pay-tr { cursor: pointer; transition: background .12s; }
+.pay-tr:hover td { background: var(--bg-soft); }
+.pay-tr:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.pay-tr:hover .pay-c-go svg { color: var(--primary); transform: translateX(2px); }
+
+.pay-c-hub  { width: 25%; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pay-c-inv  { width: 10%; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.pay-c-old  { width: 12%; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pay-c-age  { width: 12%; text-align: right; }
+.pay-c-paid { width: 17%; text-align: right; }
+.pay-c-amt  { width: 19%; text-align: right; font-size: 14.5px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pay-c-go   { width: 5%;  text-align: right; padding-left: 0 !important; }
+
+/* `.pay-table th` above sets text-align: left and out-specifies a bare class,
+   so the headers sat left of their own right-aligned numbers. Qualified with
+   the element to win it back. */
+.pay-table th.pay-c-inv,
+.pay-table th.pay-c-old,
+.pay-table th.pay-c-age,
+.pay-table th.pay-c-paid,
+.pay-table th.pay-c-amt { text-align: right; }
+
+/* Two lines in one cell: the date is the fact, the "41 days ago" underneath is
+   what anyone actually wants from it. */
+.pay-paid-date { display: block; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pay-paid-ago  { display: block; margin-top: 2px; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+/* Amber rather than red: it is a fact about this hub, not an error, and the
+   day chip beside it is already carrying the alarm. */
+.pay-never { font-weight: 700; color: #b45309; white-space: nowrap; }
+[data-theme="dark"] .pay-never { color: #fcd34d; }
+.pay-c-go svg { color: var(--text-muted); vertical-align: middle; transition: transform .12s, color .12s; }
+
+/* The row's age colour, as a strip flush with the left edge of the window. */
+.pay-edge { border-left: 3px solid transparent; padding-left: calc(var(--pay-gut) - 3px) !important; }
+.pay-edge--ok   { border-left-color: #15803d; }
+.pay-edge--warn { border-left-color: #d97706; }
+.pay-edge--bad  { border-left-color: #b91c1c; }
+[data-theme="dark"] .pay-edge--ok   { border-left-color: #22c55e; }
+[data-theme="dark"] .pay-edge--warn { border-left-color: #f59e0b; }
+[data-theme="dark"] .pay-edge--bad  { border-left-color: #ef4444; }
+
+.pay-chip {
+  display: inline-block; font-size: 11px; font-weight: 700; white-space: nowrap;
+  padding: 3px 9px; border-radius: 999px; border: 1px solid;
+}
+.pay-chip--ok   { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.pay-chip--warn { color: #d97706; background: #fffbeb; border-color: #fde68a; }
+.pay-chip--bad  { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+/* On a dark panel the light-mode text colours sit too close to their own
+   backgrounds — dark red on dark red. The whole chip lightens, not just the
+   fill. */
+[data-theme="dark"] .pay-chip--ok   { background: #052e16; border-color: #166534; color: #86efac; }
+[data-theme="dark"] .pay-chip--warn { background: #3b2408; border-color: #78350f; color: #fcd34d; }
+[data-theme="dark"] .pay-chip--bad  { background: #3f0d0d; border-color: #7f1d1d; color: #fca5a5; }
+
+/* ── Detail screen ────────────────────────────────────────────────────────*/
+.pay-detail { padding: 18px var(--pay-gut) 0; }
+
+/* ── Notes & states ───────────────────────────────────────────────────────*/
+.pay-foot {
+  font-size: 11.5px; color: var(--text-muted); line-height: 1.6;
+  margin: 12px var(--pay-gut) 0;
+}
+.pay-empty {
+  padding: 34px var(--pay-gut); text-align: center; font-size: 13px;
+  color: var(--text-muted); background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
 .pay-empty--good { color: #15803d; font-weight: 600; }
+[data-theme="dark"] .pay-empty--good { color: #86efac; }
+.pay-error {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px var(--pay-gut); background: #fef2f2;
+  border-bottom: 1px solid #fecaca; color: #b91c1c; font-size: 12.5px;
+}
+[data-theme="dark"] .pay-error { background: #3f0d0d; border-bottom-color: #7f1d1d; color: #fca5a5; }
 
-.pay-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 18px; }
-.pay-kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 15px 17px; display: flex; flex-direction: column; gap: 6px; }
-.pay-kpi__label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
-.pay-kpi__value { font-size: 21px; font-weight: 800; color: var(--text); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.pay-kpi--strong { background: var(--primary); border-color: var(--primary); }
-.pay-kpi--strong .pay-kpi__label { color: rgba(255,255,255,0.78); }
-.pay-kpi--strong .pay-kpi__value { color: #fff; }
-.pay-kpi--bad .pay-kpi__value { color: #b91c1c; }
-[data-theme="dark"] .pay-kpi--bad .pay-kpi__value { color: #fca5a5; }
-
-.pay-list { display: flex; flex-direction: column; gap: 10px; }
-.pay-row-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; transition: border-color 0.15s; }
-.pay-row-wrap--open { border-color: var(--primary); }
-
-.pay-row { width: 100%; display: grid; grid-template-columns: 18px 1fr auto auto auto; gap: 14px; align-items: center; padding: 14px 16px; background: none; border: 0; cursor: pointer; text-align: left; font-family: inherit; }
-.pay-row:hover { background: var(--bg-soft); }
-.pay-caret { color: var(--text-muted); transition: transform 0.18s; flex-shrink: 0; }
-.pay-caret--on { transform: rotate(90deg); color: var(--primary); }
-.pay-row__name { font-size: 14px; font-weight: 700; color: var(--text); }
-.pay-row__inv  { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-
-.pay-row__age { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pay-row__age em { font-style: normal; font-weight: 500; opacity: 0.75; font-size: 11px; }
-.pay-row__age--ok   { background: var(--bg-soft); color: var(--text-muted); }
-.pay-row__age--warn { background: #fffbeb; color: #92400e; }
-.pay-row__age--bad  { background: #fef2f2; color: #b91c1c; }
-[data-theme="dark"] .pay-row__age--warn { background: #3b2408; color: #fcd34d; }
-[data-theme="dark"] .pay-row__age--bad  { background: #3b1414; color: #fca5a5; }
-
-.pay-row__amt { font-size: 16px; font-weight: 800; color: var(--text); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 110px; text-align: right; }
-
-.pay-statement { border-top: 1px solid var(--border); padding: 14px 16px 6px; background: var(--bg-soft); }
-
-.pay-foot { margin: 16px 0 0; font-size: 12px; color: var(--text-muted); line-height: 1.55; }
-
-@media (max-width: 760px) {
-  .pay-row { grid-template-columns: 18px 1fr auto; row-gap: 6px; }
-  .pay-row__inv, .pay-row__age { grid-column: 2; }
-  .pay-row__amt { grid-row: 1; grid-column: 3; }
-  .pay-kpis { grid-template-columns: 1fr 1fr; }
-  .pay-statement { padding: 12px 10px 4px; }
+/* The percentages are restated whenever a column is dropped: with
+   table-layout: fixed, widths that no longer add up to 100% are made up by the
+   browser in its own proportions rather than in ours. */
+@media (max-width: 900px) {
+  .pay-page  { --pay-gut: 14px; }
+  .pay-c-old { display: none; }          /* the day count already says it */
+  .pay-c-hub  { width: 30%; }
+  .pay-c-inv  { width: 12%; }
+  .pay-c-age  { width: 14%; }
+  .pay-c-paid { width: 21%; }
+  .pay-c-amt  { width: 18%; }
+  .pay-c-go   { width: 5%;  }
+}
+@media (max-width: 640px) {
+  .pay-band--hero { align-items: flex-start; }
+  .pay-hero-side  { gap: 20px; text-align: left; }
+  .pay-c-inv, .pay-c-paid { display: none; }
+  .pay-c-hub { width: 44%; }
+  .pay-c-age { width: 20%; }
+  .pay-c-amt { width: 30%; }
+  .pay-c-go  { width: 6%;  }
 }

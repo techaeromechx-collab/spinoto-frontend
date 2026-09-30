@@ -25,6 +25,11 @@ import { useAuth } from '../auth/AuthContext.jsx';
 const STAFF_PATHS = {
   dashboard:        '/',
   appointments:     '/appointments',
+  jobCards:         '/job-cards',
+  /* The QUEUE of inspection runs — what is half-finished on the floor. NOT the
+     checklist templates, which are master data at /master/checklists and which
+     a hub cannot reach at all. */
+  inspections:      '/inspections',
   estimates:        '/estimates',
   salesInvoices:    '/purchase-invoices',
   customerInvoices: '/customer-invoices',
@@ -43,6 +48,13 @@ const STAFF_PATHS = {
 const HUB_PATHS = {
   dashboard:        '/hub',
   appointments:     '/hub/appointments',
+  /* NOT null. The hub floor is the audience for a job card — it is the one
+     screen in this list a hub uses more than staff do — and the API gates it
+     with requirePermissionOrHub for exactly that reason. */
+  jobCards:         '/hub/job-cards',
+  /* Same reasoning as jobCards: the hub floor RUNS the inspections, so the
+     queue of unfinished sheets is more theirs than anybody's. */
+  inspections:      '/hub/inspections',
   estimates:        '/hub/estimates',
   // 'sales-invoices', not 'purchase-invoices': the hub portal calls this
   // document a Sales Invoice, because from the hub's side that is what it is.

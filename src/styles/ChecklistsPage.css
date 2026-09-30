@@ -1,0 +1,405 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Inspection checklists — master data.
+   Scoped to `cl-` the way every other master-data page scopes its own prefix,
+   so nothing here can reach another screen.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.cl-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-bottom: 48px;
+}
+
+/* ── Toast ──────────────────────────────────────────────────────────────── */
+.cl-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+}
+.cl-toast--error {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.cl-err {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.cl-empty {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--bg-soft);
+  border-radius: 10px;
+}
+
+/* ── Template list ──────────────────────────────────────────────────────── */
+.cl-kind-section { display: flex; flex-direction: column; gap: 10px; }
+
+.cl-kind-head {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* The one line that says what the two kinds are FOR. Worth the pixels: the
+   difference between an intake sheet and a delivery sheet is the thing people
+   get wrong, and a heading of "Intake" alone does not teach it. */
+.cl-kind-sub {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-muted);
+  opacity: .8;
+}
+
+.cl-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.cl-card {
+  display: flex;
+  align-items: stretch;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color .15s, box-shadow .15s;
+}
+.cl-card:hover { border-color: var(--primary); box-shadow: 0 2px 10px rgba(0, 0, 0, .05); }
+.cl-card--off { opacity: .55; }
+
+.cl-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 15px;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.cl-card-name   { font-size: 14px; font-weight: 700; color: var(--text); }
+.cl-card-meta   { font-size: 12px; color: var(--text-muted); }
+.cl-card-counts { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.cl-card-empty  { color: #b45309; font-style: normal; font-weight: 600; }
+/* The three headings this sheet prints, shown on the card so the difference
+   between the 2W and 4W sheets is visible without opening either. */
+.cl-card-cols {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  opacity: .75;
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-card-acts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+/* ── Builder header ─────────────────────────────────────────────────────── */
+.cl-builder-hdr { display: flex; flex-direction: column; gap: 10px; }
+
+.cl-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.cl-back:hover { color: var(--primary); }
+
+.cl-builder-title h2 { margin: 0 0 3px; font-size: 19px; }
+.cl-meta { font-size: 12.5px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.cl-kind {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+.cl-kind--intake       { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+.cl-kind--pre_delivery { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+
+/* ── Groups ─────────────────────────────────────────────────────────────── */
+.cl-group {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.cl-group-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+}
+
+.cl-group-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+}
+.cl-group-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.cl-group-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 8px;
+}
+
+/* ── The point table ────────────────────────────────────────────────────── */
+.cl-table-wrap { overflow-x: auto; }
+
+.cl-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+
+.cl-table th {
+  padding: 9px 12px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+/* A tint per column so a mechanic reading the sheet can tell at a glance which
+   side of it a label sits on. Deliberately faint - these are headings on an
+   editor, not a traffic light. */
+.cl-table th.cl-th--ok        { color: #166534; }
+.cl-table th.cl-th--attention { color: #92400e; }
+.cl-table th.cl-th--critical  { color: #991b1b; }
+
+.cl-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.cl-table tr:last-child td { border-bottom: 0; }
+
+.cl-c-label { width: 34%; }
+.cl-c-opt   { width: 19%; }
+.cl-c-act   { width: 9%; white-space: nowrap; }
+
+.cl-point--busy { opacity: .5; }
+.cl-point--off  { opacity: .45; }
+
+/* Edited in place. Borderless until touched, so 44 rows read as a sheet
+   rather than as 176 input boxes. */
+.cl-cell {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.cl-cell:hover:not(:disabled)  { border-color: var(--border); background: var(--bg-soft); }
+.cl-cell:focus                 { border-color: var(--primary); background: var(--panel); outline: none; }
+.cl-cell:disabled              { cursor: default; }
+.cl-cell::placeholder          { color: var(--text-muted); opacity: .5; }
+.cl-cell--ok        { color: #166534; }
+.cl-cell--attention { color: #92400e; }
+.cl-cell--critical  { color: #991b1b; }
+
+.cl-none { padding: 16px 12px; text-align: center; color: var(--text-muted); font-size: 12.5px; }
+
+.cl-row-acts { display: flex; align-items: center; gap: 2px; }
+
+.cl-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: .12s;
+}
+.cl-icon-btn:hover:not(:disabled) { background: var(--bg-soft); border-color: var(--border); color: var(--text); }
+.cl-icon-btn--danger:hover:not(:disabled) { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
+.cl-icon-btn:disabled { opacity: .3; cursor: default; }
+
+.cl-add-point {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+}
+.cl-add-point:hover { background: var(--bg-soft); }
+
+.cl-add-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.cl-add-group .cl-input { flex: 1; min-width: 200px; }
+
+/* ── Modals ─────────────────────────────────────────────────────────────── */
+.cl-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 32, .45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.cl-modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 540px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .22);
+}
+.cl-modal--sm { max-width: 420px; }
+
+.cl-modal-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.cl-modal-hdr h3 { margin: 0; font-size: 15px; font-weight: 700; }
+
+.cl-modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.cl-modal-ftr {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.cl-confirm-text { margin: 0; font-size: 13px; line-height: 1.6; color: var(--text); }
+
+.cl-field { display: flex; flex-direction: column; gap: 5px; }
+.cl-field label { font-size: 11.5px; font-weight: 700; color: var(--text-muted); }
+.cl-req { color: #dc2626; }
+
+.cl-input {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  width: 100%;
+}
+.cl-input:focus { border-color: var(--primary); outline: none; }
+
+.cl-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cl-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+.cl-cols-note {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+@media (max-width: 560px) {
+  .cl-row2, .cl-row3 { grid-template-columns: 1fr; }
+  .cl-cards { grid-template-columns: 1fr; }
+}

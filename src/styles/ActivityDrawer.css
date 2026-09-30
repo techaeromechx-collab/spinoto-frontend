@@ -1,0 +1,163 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   The activity drawer.
+
+   Rendered through a portal onto document.body, so `position: fixed` is
+   measured against the window. Left inside the detail pane it would be
+   positioned against that scrolling box instead, and would slide in halfway
+   down the page.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.ad-root {
+  position: fixed; inset: 0;
+  /* ABOVE the app's top bar, which is `position: sticky; z-index: 100` in
+     app.css. At 70 the bar painted over the drawer's own header — the card
+     number, the entry count and the X all sat in the strip the bar covered —
+     so the drawer opened with no title and no visible way to close it, and the
+     scrim stopped short of the bar, leaving the breadcrumb, the theme toggle
+     and the avatar looking live while a modal was open over everything else.
+
+     1100 clears the top bar (100) and the notification and user dropdowns
+     (999/1000), and sits deliberately BELOW .wat-toasts at 1200, which is
+     documented as "above the app, below a modal backdrop". */
+  z-index: 1100;
+}
+
+.ad-scrim {
+  position: absolute; inset: 0;
+  background-color: rgba(15, 23, 42, .34);
+  animation: ad-fade 140ms ease-out;
+}
+@keyframes ad-fade { from { opacity: 0 } to { opacity: 1 } }
+
+.ad-drawer {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: min(420px, 100vw);
+  display: flex; flex-direction: column;
+  background-color: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -14px 0 34px rgba(15, 23, 42, .16);
+  animation: ad-in 160ms ease-out;
+}
+@keyframes ad-in { from { transform: translateX(16px); opacity: .6 } to { transform: none; opacity: 1 } }
+@media (prefers-reduced-motion: reduce) {
+  .ad-scrim, .ad-drawer { animation: none; }
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.ad-hd {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  padding: 13px 16px; border-bottom: 1px solid var(--border);
+  background-color: var(--bg-soft); flex: none;
+}
+.ad-hd-t { min-width: 0; }
+.ad-hd-t strong { display: block; font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.ad-hd-t span  { display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.ad-x {
+  display: grid; place-items: center; width: 27px; height: 27px; flex: none;
+  border-radius: 7px; border: 1px solid var(--border); cursor: pointer;
+  background-color: var(--panel); color: var(--text-muted);
+}
+.ad-x:hover { color: var(--text); border-color: var(--text-muted); }
+.ad-x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ── Add a note ─────────────────────────────────────────────────────────── */
+.ad-note {
+  display: flex; gap: 8px; align-items: center; flex: none;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+}
+.ad-note input {
+  flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border); background-color: var(--bg-soft);
+  font: inherit; font-size: 12.5px; color: var(--text);
+}
+.ad-note input:focus { outline: 0; border-color: var(--primary); }
+.ad-note .button { flex: none; padding: 7px 11px; font-size: 12px; }
+
+.ad-err {
+  margin: 10px 16px 0; padding: 8px 10px; border-radius: 8px; font-size: 12px;
+  background-color: #fef2f2; color: #991b1b; border: 1px solid #fca5a5;
+}
+
+/* ── The events ─────────────────────────────────────────────────────────── */
+.ad-body { flex: 1; min-height: 0; overflow-y: auto; }
+.ad-note-empty { padding: 22px 16px; font-size: 12.5px; color: var(--text-muted); line-height: 1.6; }
+
+.ad-ev { display: flex; gap: 10px; padding: 11px 16px; }
+.ad-ev + .ad-ev { border-top: 1px solid var(--border); }
+
+.ad-ev-i {
+  display: grid; place-items: center; width: 24px; height: 24px; flex: none;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--primary) 13%, transparent);
+  color: var(--primary);
+}
+/* Two attention tones, and only two. Colour here means "look at this" — an
+   override, a hold, a deletion — not "this is a different kind of event". */
+.ad-ev-i--warn { background-color: #fef3c7; color: #92400e; }
+.ad-ev-i--bad  { background-color: #fee2e2; color: #991b1b; }
+
+.ad-ev-t { min-width: 0; }
+.ad-ev-t strong {
+  display: block; font-size: 12.5px; font-weight: 600; color: var(--text);
+  line-height: 1.45; overflow-wrap: anywhere;
+}
+.ad-ev-t em {
+  display: block; font-style: normal; font-size: 11.5px; color: var(--text-muted);
+  margin-top: 2px; line-height: 1.5; overflow-wrap: anywhere;
+}
+.ad-ev-t u {
+  display: block; text-decoration: none; font-size: 11px;
+  color: var(--text-muted); margin-top: 3px;
+}
+
+/* ── Pager ──────────────────────────────────────────────────────────────── */
+.ad-ft {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding: 8px 14px; border-top: 1px solid var(--border);
+  background-color: var(--bg-soft); flex: none;
+  font-size: 11.5px; color: var(--text-muted);
+}
+.ad-pg { display: flex; gap: 6px; }
+.ad-pg button {
+  display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 7px; border: 1px solid var(--border); cursor: pointer;
+  background-color: var(--panel); color: var(--text-muted);
+}
+.ad-pg button:hover:not(:disabled) { color: var(--text); border-color: var(--text-muted); }
+.ad-pg button:disabled { opacity: .4; cursor: default; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The trigger — one icon, wherever a header wants to put it.
+   ══════════════════════════════════════════════════════════════════════════ */
+.ad-btn {
+  position: relative; display: grid; place-items: center;
+  width: 30px; height: 30px; flex: none;
+  border-radius: 8px; border: 1px solid var(--border); cursor: pointer;
+  background-color: var(--panel); color: var(--text-muted);
+}
+.ad-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.ad-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.ad-btn--on {
+  border-color: var(--primary); color: var(--primary);
+  background-color: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+/* The count is what makes the icon worth pressing: it says there is something
+   in there without asking anybody to open it and find out. */
+.ad-btn-n {
+  position: absolute; top: -4px; right: -4px;
+  min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px;
+  display: grid; place-items: center;
+  background-color: var(--primary); color: #fff;
+  font-size: 9px; font-weight: 700; line-height: 1;
+}
+
+@media (max-width: 480px) {
+  /* Full width: a 420px drawer on a 390px screen leaves a 30px sliver of
+     scrim that reads as a rendering fault rather than as a way out. */
+  .ad-drawer { width: 100vw; border-left: 0; }
+}
+
+[data-theme="dark"] .ad-scrim       { background-color: rgba(0, 0, 0, .55); }
+[data-theme="dark"] .ad-ev-i--warn  { background-color: #422006; color: #fcd34d; }
+[data-theme="dark"] .ad-ev-i--bad   { background-color: #450a0a; color: #fca5a5; }
+[data-theme="dark"] .ad-err         { background-color: #450a0a; color: #fca5a5; border-color: #991b1b; }

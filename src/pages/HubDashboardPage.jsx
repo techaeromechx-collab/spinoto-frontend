@@ -16,11 +16,20 @@ import {
   PanelLeftClose, PanelLeftOpen,
   Wrench, Layers, Search, ChevronDown, ChevronUp, Tag,
   Bell, CheckCheck, Percent, Database, X, Settings, Eye, EyeOff,
+  ClipboardList, ClipboardCheck,
 } from 'lucide-react';
 import AppointmentsPage     from './AppointmentsPage.jsx';
 import EstimatesPage        from './EstimatesPage.jsx';
 import PurchaseInvoicesPage from './PurchaseInvoicesPage.jsx';
 import CustomerInvoicesPage from './CustomerInvoicesPage.jsx';
+/* The job card and its inspections. These had routes in the admin shell only,
+   so appPaths' HUB_PATHS.jobCards pointed at /hub/job-cards — a path with no
+   route behind it, which fell through to the catch-all and bounced the hub
+   back to its dashboard. The hub floor is the primary audience for a job card
+   and it has been the one shell that could not open one. */
+import JobCardsPage        from './JobCardsPage.jsx';
+import InspectionPage      from './InspectionPage.jsx';
+import InspectionsPage     from './InspectionsPage.jsx';
 import '../styles/HubDashboardPage.css';
 
 // ─── Notification type → icon/color/label (mirrors AppShell.jsx's NOTIF_META,
@@ -792,6 +801,12 @@ function ProfileTab({ hubId }) {
 const TABS = [
   { key: 'dashboard',         seg: '',                  label: 'Dashboard',          Icon: LayoutDashboard },
   { key: 'appointments',      seg: 'appointments',      label: 'Appointments',       Icon: Calendar        },
+  /* Between Appointments and Estimates, which is where they sit in the day:
+     the car arrives, a card is opened, it is inspected, and only then is
+     anything quoted. Inspections is the queue of RUNS — the hub has no access
+     to the checklist templates, which are Spinoto master data. */
+  { key: 'job-cards',         seg: 'job-cards',         label: 'Job Cards',          Icon: ClipboardList   },
+  { key: 'inspections',       seg: 'inspections',       label: 'Inspections',        Icon: ClipboardCheck  },
   { key: 'estimates',         seg: 'estimates',         label: 'Estimates',          Icon: FileText        },
   /* The LABEL is 'Spinoto Invoices'; the URL segment stays 'sales-invoices'.
      Renaming the segment would break every bookmark and every link already
@@ -983,6 +998,14 @@ export default function HubDashboardPage() {
       <Routes>
         <Route index                          element={<DashboardTab hubId={hubId} />} />
         <Route path="appointments/:token?"      element={<AppointmentsPage />} />
+        {/* Mirrors the admin shell exactly: both job-card routes render the
+            SAME list component so opening a vehicle never unmounts the list.
+            The inspection RUNNER stays a screen of its own — a 44-point sheet
+            needs the whole window, not a detail pane. */}
+        <Route path="job-cards"                 element={<JobCardsPage />} />
+        <Route path="job-cards/:appointmentId"  element={<JobCardsPage />} />
+        <Route path="job-cards/:appointmentId/inspection/:inspectionId" element={<InspectionPage />} />
+        <Route path="inspections"               element={<InspectionsPage />} />
         <Route path="estimates/:token?"         element={<EstimatesPage />} />
         <Route path="sales-invoices/:token?"    element={<PurchaseInvoicesPage />} />
         <Route path="customer-invoices/:token?" element={<CustomerInvoicesPage />} />

@@ -2144,3 +2144,157 @@
 @media (prefers-reduced-motion: reduce) {
   .mobile-search-wrap { transition: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Internal chat badge  ( chi- )
+   ───────────────────────────────────────────────────────────────────────────
+   Lives here rather than in ChatPage.css because it is topbar chrome, mounted
+   by AppShell on every screen — the same reason .wai-* and .notif-* are here.
+
+   Three badges now sit in a row and they must not read as three of the same
+   thing:
+     .notif-badge  red    — something needs attention / went wrong
+     .wai-badge    green  — a CUSTOMER is waiting on us
+     .chi-badge    teal   — a COLLEAGUE is waiting on you
+   The brand teal for internal chat, so the colour itself says "inside the
+   company" next to the green that means outside it.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+.chi-wrap { position: relative; }
+
+.chi-btn {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .2s;
+}
+.chi-btn:hover { background: var(--bg-soft); color: var(--text); }
+/* Colour only while something is unread — an always-tinted icon stops meaning
+   anything, which is why .wai-btn does the same. */
+.chi-btn--live { color: var(--primary); }
+.chi-btn--live:hover { background: var(--bg-soft); color: var(--primary-hover); }
+
+.chi-badge {
+  position: absolute;
+  top: 3px; right: 3px;
+  /* ── Not var(--primary) itself, and the reason is measured ──────────────
+     White on #16b994 is 2.50:1. At 10px, bold, in a 16px circle, that is a
+     number you squint at — and it is the one piece of text on this screen whose
+     whole job is to be read at a glance from across a workshop.
+
+     Darkened to 68% of the brand teal, which is 5.01:1 and clears AA. Derived
+     with color-mix rather than pinned to a hex so it follows the brand if
+     --primary ever moves; shot17 asserts the contrast, so a brand change that
+     breaks it fails a test instead of shipping.
+
+     Still unmistakably the brand colour, and still distinct from its two
+     neighbours: .notif-badge red (#dc2626, 4.83:1) means something is wrong,
+     .wai-badge green (#16a34a) means a customer is waiting, this teal means a
+     colleague is. */
+  background: color-mix(in srgb, var(--primary) 68%, #000);
+  color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  min-width: 16px; height: 16px;
+  border-radius: 999px;
+  padding: 0 4px;
+  display: flex; align-items: center; justify-content: center;
+  /* The ring is --panel, not white, so the badge still separates from the
+     topbar in dark mode instead of gaining a white halo. */
+  border: 2px solid var(--panel);
+}
+
+.chi-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  /* 340, not the WhatsApp list's 380: these rows carry a name, a time and a
+     preview, with no 24-hour window timer to fit. */
+  width: 340px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, .13);
+  z-index: 999;
+  overflow: hidden;
+}
+
+.chi-dd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.chi-dd-title { font-size: 13px; font-weight: 650; color: var(--text); }
+.chi-dd-all {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.chi-dd-list { max-height: 400px; overflow-y: auto; }
+
+.chi-dd-empty {
+  padding: 20px 16px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.chi-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.chi-row:hover { background: var(--bg-soft); }
+/* An inset shadow, not a left border: a border would shift every unread row's
+   text by 3px against the read ones. */
+.chi-row--unread { box-shadow: inset 3px 0 0 0 var(--primary); }
+
+.chi-row-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+}
+.chi-who {
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chi-row--unread .chi-who { font-weight: 700; }
+.chi-when { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.chi-msg {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chi-row--unread .chi-msg { color: var(--text); }
+
+/* The dropdown is wider than a phone at 340px plus the topbar's own padding. */
+@media (max-width: 420px) {
+  .chi-dropdown { width: calc(100vw - 24px); right: -8px; }
+}

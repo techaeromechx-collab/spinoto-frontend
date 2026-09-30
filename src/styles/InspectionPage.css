@@ -1,0 +1,386 @@
+/* Running a checklist. Scoped `ip-`; the body diagram is `bd-` and the
+   signature pad `sig-`, both used on the job card too.
+
+   Reuses `.jc-toast`, `.jc-err`, `.jc-empty`, `.jc-back`, `.jc-input` and
+   `.jc-sm` from JobCardPage.css — this screen is reached only from a job card
+   and never renders without it. */
+
+.ip-page { display: flex; flex-direction: column; gap: 14px; padding-bottom: 96px; }
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.ip-hdr {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; padding: 15px 18px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+}
+.ip-hdr h2 {
+  display: flex; align-items: center; gap: 9px;
+  margin: 0 0 7px; font-size: 18px; line-height: 1.3;
+}
+.ip-hdr-facts {
+  display: flex; flex-wrap: wrap; gap: 6px 13px;
+  font-size: 12.5px; color: var(--text-muted);
+}
+.ip-hdr-facts > *:not(:first-child)::before { content: '·'; margin-right: 13px; color: var(--border); }
+.ip-hdr-right { display: flex; align-items: center; gap: 8px; }
+
+.ip-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 999px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  font-size: 11.5px; font-weight: 600; color: var(--text-muted);
+}
+.ip-badge--done { background: #dcfce7; border-color: #86efac; color: #166534; }
+
+/* ── Progress ────────────────────────────────────────────────────────────── */
+/* Sticky: on a 44-point sheet, "how many are left" is otherwise three
+   thousand pixels away from wherever you are. */
+.ip-progress {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 11px 16px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .06);
+}
+.ip-bar { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.ip-bar > span {
+  display: block; height: 100%; border-radius: 3px;
+  background: var(--primary); transition: width .25s ease;
+}
+.ip-tally {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+  font-size: 12px; color: var(--text-muted);
+}
+.ip-tally em {
+  font-style: normal; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px; font-size: 11.5px;
+}
+.ip-tally .is-ok        { background: #dcfce7; color: #166534; }
+.ip-tally .is-attention { background: #fef3c7; color: #92400e; }
+.ip-tally .is-critical  { background: #fee2e2; color: #991b1b; }
+.ip-tally .is-na        { background: var(--bg-soft); color: var(--text-muted); }
+
+.ip-blockers { align-items: flex-start; gap: 8px; line-height: 1.5; }
+
+/* ── Groups ──────────────────────────────────────────────────────────────── */
+.ip-group {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+.ip-group > header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 15px; cursor: pointer; user-select: none;
+  background: var(--bg-soft); border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.ip-group > header strong {
+  flex: 1; min-width: 0; color: var(--text);
+  font-size: 12.5px; letter-spacing: .4px;
+}
+.ip-left {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 700;
+  padding: 3px 9px; border-radius: 999px;
+  background: #fef3c7; color: #92400e;
+}
+.ip-left.is-done { background: #dcfce7; color: #166534; }
+
+.ip-points { display: flex; flex-direction: column; }
+.ip-point {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'label choices' 'extras choices' 'wide wide';
+  gap: 6px 14px; align-items: center;
+  padding: 11px 15px; border-bottom: 1px solid var(--border);
+}
+.ip-point:last-child { border-bottom: 0; }
+.ip-point--critical  { background: #fef2f2; }
+.ip-point--attention { background: #fffbeb; }
+
+.ip-point-label {
+  grid-area: label; font-size: 13px; line-height: 1.45; color: var(--text);
+}
+.ip-remark-peek {
+  display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 2px;
+}
+.ip-point-extras { grid-area: extras; display: flex; gap: 10px; }
+
+/* ── The three columns, plus N/A ─────────────────────────────────────────── */
+.ip-choices {
+  grid-area: choices;
+  display: grid; grid-template-columns: repeat(4, minmax(78px, 104px)); gap: 6px;
+}
+.ip-choice {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  padding: 7px 9px; border-radius: 9px; cursor: pointer; text-align: left;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text-muted);
+  font: inherit;
+}
+.ip-choice:hover:not(:disabled) { border-color: var(--text-muted); }
+.ip-choice:disabled { cursor: default; opacity: .75; }
+.ip-choice-head {
+  display: flex; align-items: center; gap: 3px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase;
+}
+.ip-choice-opt {
+  font-size: 11.5px; line-height: 1.3; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* The "–" on the printed sheet. Not a button: a disabled button invites a tap
+   and then refuses it, which is how people decide an app is broken. */
+.ip-choice--none {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--border); font-size: 15px; user-select: none;
+  border: 1px dashed var(--border); border-radius: 9px; background: transparent;
+}
+
+/* backgroundColor, never the `background` shorthand — a shorthand resets its
+   longhands and React skips unchanged ones on update. These are plain CSS
+   classes rather than inline styles for the same reason: no object to diff. */
+.ip-choice--ok.is-on        { background-color: #dcfce7; border-color: #86efac; color: #166534; }
+.ip-choice--attention.is-on { background-color: #fef3c7; border-color: #fcd34d; color: #92400e; }
+.ip-choice--critical.is-on  { background-color: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+.ip-choice--na.is-on        { background-color: var(--border); border-color: var(--text-muted); color: var(--text); }
+.ip-choice.is-on .ip-choice-opt { color: inherit; opacity: .8; }
+
+.ip-mini {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 11.5px; font-weight: 600; color: var(--primary);
+}
+.ip-mini--ro { color: var(--text-muted); cursor: default; }
+
+.ip-remark, .ip-remark-ro, .ip-photoadd, .ip-shots { grid-area: wide; }
+.ip-remark {
+  width: 100%; padding: 6px 10px; font: inherit; font-size: 12.5px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); outline: none;
+}
+.ip-remark:focus { border-color: var(--primary); }
+.ip-remark-ro { margin: 0; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+.ip-photoadd { display: flex; gap: 7px; }
+.ip-photoadd input {
+  flex: 1; min-width: 0; padding: 6px 10px; font: inherit; font-size: 12.5px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); outline: none;
+}
+.ip-shots { display: flex; gap: 6px; flex-wrap: wrap; }
+.ip-shots figure { position: relative; margin: 0; width: 64px; height: 48px; }
+.ip-shots img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  border-radius: 7px; border: 1px solid var(--border);
+}
+.ip-shots button {
+  position: absolute; top: 2px; right: 2px;
+  width: 16px; height: 16px; border: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .6); color: #fff; cursor: pointer;
+}
+
+/* ── Signatures ──────────────────────────────────────────────────────────── */
+.ip-sigs {
+  padding: 16px; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--border);
+}
+.ip-sigs h3 {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 12px; font-size: 14px;
+}
+.ip-sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.ip-sigslot { display: flex; flex-direction: column; gap: 8px; }
+/* A fixed height, so the pad below it starts at the same line in both
+   columns whether the slot carries a picker or a note. */
+.ip-sigslot-top { display: flex; align-items: center; min-height: 34px; }
+.ip-sigslot-note { font-size: 11.5px; color: var(--text-muted); }
+.ip-techpick { max-width: 100%; }
+
+.ip-override { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.ip-override span { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+.ip-override input {
+  padding: 7px 10px; font: inherit; font-size: 12.5px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); outline: none;
+}
+
+.ip-signed {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px; border-radius: 10px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+}
+.ip-signed--none { color: var(--text-muted); font-size: 12.5px; }
+.ip-signed--none em { font-style: normal; }
+.ip-signed-hdr { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #16a34a; }
+.ip-signed-hdr strong { color: var(--text); }
+.ip-signed-img {
+  width: 100%; max-height: 92px; object-fit: contain;
+  background: #fff; border-radius: 8px; border: 1px solid var(--border);
+}
+.ip-signed-typed {
+  padding: 18px 12px; text-align: center; border-radius: 8px;
+  background: var(--panel); border: 1px dashed var(--border);
+  font-family: Georgia, 'Times New Roman', serif; font-size: 19px; font-style: italic;
+}
+.ip-signed-meta { font-size: 11px; color: var(--text-muted); }
+.ip-signed-override {
+  display: flex; align-items: flex-start; gap: 5px;
+  font-size: 11px; line-height: 1.4;
+  padding: 6px 8px; border-radius: 7px;
+  background: #fffbeb; border: 1px solid #fcd34d; color: #92400e;
+}
+
+/* ── Signature pad ───────────────────────────────────────────────────────── */
+.sig { display: flex; flex-direction: column; gap: 8px; }
+.sig-hdr { display: flex; flex-direction: column; gap: 2px; }
+.sig-hdr strong { font-size: 12.5px; }
+.sig-hdr span   { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+
+.sig-padwrap { position: relative; }
+/* ALWAYS ink on paper, in both themes. The pad reads its own `color` for the
+   stroke, and the saved PNG is transparent everywhere it was not drawn — so a
+   theme-coloured stroke would be light ink saved onto the white card the
+   signature is later displayed on, which is an empty box. A signature is one
+   of the few things here that should not follow the theme. */
+.sig-pad {
+  display: block; width: 100%; height: 108px;
+  border: 1px dashed var(--border); border-radius: 10px;
+  background: #fff; color: #111827;
+  /* Or a finger drags the page instead of drawing on it. */
+  touch-action: none; cursor: crosshair;
+}
+.sig-placeholder, .sig-clear { color: #6b7280; }
+.sig-placeholder {
+  position: absolute; inset: 0; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 12px; color: var(--text-muted);
+}
+.sig-clear {
+  position: absolute; top: 6px; right: 6px;
+  width: 24px; height: 24px; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text-muted);
+}
+.sig-row { display: flex; gap: 8px; align-items: center; }
+.sig-name {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px;
+  padding: 0 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text-muted);
+}
+.sig-name input {
+  flex: 1; min-width: 0; border: 0; background: none; outline: none;
+  font: inherit; font-size: 13px; color: var(--text); padding: 8px 0;
+}
+.sig-note { margin: 0; font-size: 11px; color: var(--text-muted); }
+.sig-err  { margin: 0; font-size: 11.5px; font-weight: 600; color: #dc2626; }
+
+/* ── Body diagram ────────────────────────────────────────────────────────── */
+.bd { display: flex; flex-direction: column; gap: 10px; }
+.bd-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.bd-kind {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text-muted);
+  font: inherit; font-size: 11.5px; font-weight: 600;
+}
+.bd-kind i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.bd-kind.is-on { border-color: var(--primary); color: var(--text); background: var(--bg-soft); }
+.bd-undo {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 11.5px; font-weight: 600; color: var(--text-muted);
+}
+
+.bd-canvas {
+  position: relative; padding: 10px; border-radius: 12px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+}
+.bd-canvas svg {
+  display: block; width: 100%; max-width: 300px; margin: 0 auto;
+  height: auto; cursor: crosshair; touch-action: manipulation;
+}
+.bd-canvas.is-ro svg { cursor: default; }
+.bd-empty {
+  margin: 8px 0 0; text-align: center;
+  font-size: 11.5px; color: var(--text-muted);
+}
+
+/* The outline recolours with the theme because it is drawn, not an image. */
+.bd-body  { fill: var(--panel); stroke: var(--text-muted); stroke-width: 2.2; }
+.bd-roof  { fill: var(--bg-soft); stroke: var(--text-muted); stroke-width: 1.6; }
+.bd-glass { fill: var(--bg-soft); stroke: var(--text-muted); stroke-width: 1.6; }
+.bd-tyre  { fill: var(--text-muted); opacity: .45; stroke: none; }
+.bd-rim   { fill: var(--bg-soft); stroke: var(--text-muted); stroke-width: 1.6; }
+.bd-frame { fill: none; stroke: var(--text-muted); stroke-width: 3; stroke-linecap: round; }
+.bd-line  { stroke: var(--text-muted); stroke-width: 1.3; opacity: .55; }
+.bd-label { fill: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+.bd-pin   { cursor: pointer; }
+.bd-pin circle { stroke: #fff; stroke-width: 1.6; }
+
+.bd-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.bd-list li { display: flex; align-items: center; gap: 8px; }
+.bd-dot {
+  flex: none; width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 11px; font-weight: 700;
+}
+.bd-kindname { font-size: 12px; font-weight: 600; min-width: 62px; }
+.bd-note, .bd-note-ro { flex: 1; min-width: 0; font-size: 12.5px; }
+.bd-note {
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 12.5px; outline: none;
+}
+.bd-note:focus { border-color: var(--primary); }
+.bd-note-ro { color: var(--text-muted); }
+.bd-note-ro em { font-style: italic; opacity: .7; }
+.bd-x {
+  flex: none; width: 24px; height: 24px; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text-muted);
+}
+.bd-stage { margin: 0; font-size: 11px; color: var(--text-muted); }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.ip-foot {
+  position: sticky; bottom: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 12px 16px; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, .07);
+  font-size: 12.5px; color: var(--text-muted);
+}
+
+/* ── Narrow ──────────────────────────────────────────────────────────────── */
+@media (max-width: 860px) {
+  /* Four choice columns beside the label is ~420px of controls. Below this
+     the label takes the full width and the choices sit under it, which is the
+     only layout that works one-handed on a phone at the ramp. */
+  .ip-point {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'label' 'choices' 'extras' 'wide';
+    gap: 8px;
+  }
+  .ip-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ip-sig-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 420px) {
+  .ip-hdr-right { width: 100%; }
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────── */
+[data-theme="dark"] .ip-badge--done        { background: #052e16; border-color: #166534; color: #86efac; }
+[data-theme="dark"] .ip-point--critical    { background: #2a0e0e; }
+[data-theme="dark"] .ip-point--attention   { background: #2a1e05; }
+[data-theme="dark"] .ip-tally .is-ok       { background: #052e16; color: #86efac; }
+[data-theme="dark"] .ip-tally .is-attention{ background: #422006; color: #fcd34d; }
+[data-theme="dark"] .ip-tally .is-critical { background: #450a0a; color: #fca5a5; }
+[data-theme="dark"] .ip-left               { background: #422006; color: #fcd34d; }
+[data-theme="dark"] .ip-left.is-done       { background: #052e16; color: #86efac; }
+[data-theme="dark"] .ip-choice--ok.is-on        { background-color: #052e16; border-color: #166534; color: #86efac; }
+[data-theme="dark"] .ip-choice--attention.is-on { background-color: #422006; border-color: #92400e; color: #fcd34d; }
+[data-theme="dark"] .ip-choice--critical.is-on  { background-color: #450a0a; border-color: #991b1b; color: #fca5a5; }
+[data-theme="dark"] .ip-signed-hdr         { color: #4ade80; }
+[data-theme="dark"] .ip-signed-override    { background: #422006; border-color: #92400e; color: #fcd34d; }
+/* The drawn signature keeps a white ground in dark mode: the ink is dark, and
+   a dark-on-dark signature is an empty box. */
+[data-theme="dark"] .ip-signed-img         { background: #fff; }

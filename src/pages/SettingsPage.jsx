@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
   User, Building2, Palette, Printer, UserCog, Bell, Shield, ArrowLeft, Lock, KeyRound, Scale,
-  MessageCircle, Percent,
+  MessageCircle, Percent, Keyboard,
 } from 'lucide-react';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { useUnsavedGuard } from '../components/UnsavedChangesGuard.jsx';
@@ -23,6 +23,7 @@ import AccountingPeriodSettings from '../components/settings/AccountingPeriodSet
 import OpeningBalancesSettings from '../components/settings/OpeningBalancesSettings.jsx';
 import ApiKeysSettings from '../components/settings/ApiKeysSettings.jsx';
 import WhatsAppSettings from '../components/settings/WhatsAppSettings.jsx';
+import ShortcutSettings from '../components/settings/ShortcutSettings.jsx';
 import PaymentSettings from '../components/settings/PaymentSettings.jsx';
 import RoleCreatorPanel from '../components/settings/RoleCreatorPanel.jsx';
 import UsersPage from './UsersPage.jsx';
@@ -71,6 +72,11 @@ export default function SettingsPage() {
 
   const TABS = [
     { key: 'account',       label: 'Account',        Icon: User,     show: true },
+    /* No permission. A shortcut is a personal preference like a password, not
+       an administrative power — and the rows inside are already filtered by
+       what this person may open, so the tab can never become a directory of
+       screens they cannot reach. */
+    { key: 'keyboard',      label: 'Keyboard',       Icon: Keyboard, show: true },
     { key: 'business',      label: 'Manage Business', Icon: Building2, show: isSuperAdmin },
     { key: 'invoice',       label: 'Invoice Settings', Icon: Palette,  show: canManageDocSettings },
     { key: 'print',         label: 'Print Settings',  Icon: Printer,  show: isSuperAdmin },
@@ -158,6 +164,7 @@ export default function SettingsPage() {
 
       <div className="settings-content">
         {activeTab === 'account'      && <AccountSettings />}
+        {activeTab === 'keyboard'     && <ShortcutSettings />}
         {activeTab === 'business'     && isSuperAdmin && <CompanyDetailsCard />}
         {activeTab === 'invoice'      && canManageDocSettings && <InvoiceThemeSettings />}
         {activeTab === 'print'        && isSuperAdmin && <PrintSettings />}

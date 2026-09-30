@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { api } from '../api/client.js';
+import { api, API_URL, getToken } from '../api/client.js';
 import {
   FileText, Download, AlertTriangle, AlertCircle, Info,
-  CheckCircle2, RefreshCw, ChevronDown,
+  CheckCircle2, RefreshCw, ChevronDown, Sheet,
 } from 'lucide-react';
 import '../styles/Gstr1Page.css';
 
@@ -54,6 +54,26 @@ const dmy = v => { const p = parts(v); return p ? `${p.d}/${p.m}/${p.y}` : ''; }
     line to change and the screen stays as it is. */
 const dmyFile = v => { const p = parts(v); return p ? `${p.d}-${p.m}-${p.y}` : ''; };
 
+/* The month a document falls in, for the first column of the B2B export.
+   Read off the same parts() as the date, NOT from a Date object — building a
+   Date from 'YYYY-MM-DD' parses it as UTC, so an invoice dated the 1st comes
+   back as the previous month for anyone reading it east of Greenwich, which
+   is everyone using this. The year is not printed: a GSTR-1 period never
+   spans two calendar years (Q4 is Jan-Mar), and the file name carries it. */
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+const monthName = v => { const p = parts(v); return p ? (MONTHS[Number(p.m) - 1] || '') : ''; };
+
+/* B2C Small has no invoice date to read a month from: Table 7 is one row per
+   place of supply and rate for the WHOLE period, which is how it is filed.
+   So its Month column carries the period itself — the month on a monthly
+   return, the span on a quarterly one. Splitting those rows by month instead
+   would change the shape of the figures, not just the columns. */
+const periodMonths = pd => {
+  const a = monthName(pd.from), b = monthName(pd.to);
+  return a === b ? a : `${a}–${b}`;
+};
+
 /* Month and quarter options, newest first. Quarters follow the Indian
    financial year: Q1 is Apr-Jun, so 2026-Q4 is Jan-Mar 2027. */
 function buildPeriods() {
@@ -87,6 +107,131 @@ function buildPeriods() {
 }
 
 const SEV_ICON = { blocker: AlertCircle, warn: AlertTriangle, info: Info };
+
+/* ── One issue ──────────────────────────────────────────────────────────────
+   Title, then why it matters, then the documents themselves as a table.
+
+   The old version printed the whole message as a paragraph and then joined the
+   affected documents with a dot separator — "CI-000028 · Chain Sprocket Front
+   · CI-000047 · werwer" — so an invoice number and an item description looked
+   identical and you could not tell where one row ended. Columns fix that on
+   their own.
+
+   The list is paginated rather than truncated. It used to be cut to 50 on the
+   server and to 12 again here, which meant that on a busy month the documents
+   the warning is ABOUT could not be read at all. */
+const PAGE = 8;
+
+function IssueRows({ w }) {
+  const [page, setPage] = useState(0);
+  const [q, setQ] = useState('');
+
+  /* A column with nothing in it on any row is dropped. The document-range
+     issue declares Date, Customer and Value because SOME of its rows are real
+     invoices — when every row is a number that was never issued, those three
+     are a wall of dashes that says nothing. The first column always stays. */
+  const cols = useMemo(() => w.columns.filter((c, i) =>
+    i === 0 || w.rows.some(r => r[c.key] !== null && r[c.key] !== undefined && r[c.key] !== '')
+  ), [w]);
+
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return w.rows;
+    return w.rows.filter(r => cols.some(c =>
+      String(r[c.key] ?? '').toLowerCase().includes(needle)));
+  }, [w, cols, q]);
+
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  const shown = rows.slice(page * PAGE, page * PAGE + PAGE);
+  /* Resetting here rather than in an effect: filtering to two rows while
+     sitting on page four otherwise shows an empty table for one render. */
+  const safePage = page >= pages ? 0 : page;
+  const visible = page >= pages ? rows.slice(0, PAGE) : shown;
+
+  const cell = (r, c) => {
+    const v = r[c.key];
+    if (v === null || v === undefined || v === '') return <span className="g1-dash">—</span>;
+    if (c.type === 'money') return inr(v);
+    if (c.type === 'date') return dmy(v);
+    if (c.type === 'ref') return <span className="g1-mono">{v}</span>;
+    return String(v);
+  };
+
+  const copy = () => navigator.clipboard?.writeText(
+    [cols.map(c => c.label).join('\t'),
+      ...rows.map(r => cols.map(c => r[c.key] ?? '').join('\t'))].join('\n'));
+
+  return (
+    <div className="g1-issue__rows">
+      <div className="g1-issue__tools">
+        {w.rows.length > PAGE && (
+          <input className="g1-issue__search" type="search" value={q}
+            onChange={e => { setQ(e.target.value); setPage(0); }}
+            placeholder={`Search ${w.rows.length} rows…`} aria-label="Search affected documents" />
+        )}
+        <span className="g1-issue__count">
+          {rows.length === w.rows.length
+            ? `${w.rows.length} ${w.rows.length === 1 ? 'row' : 'rows'}`
+            : `${rows.length} of ${w.rows.length}`}
+        </span>
+        <button className="g1-issue__btn" onClick={copy}>Copy</button>
+        <button className="g1-issue__btn" onClick={() => downloadCSV(
+          `gstr1-${w.code}.csv`,
+          rows.map(r => cols.map(c => r[c.key] ?? '')),
+          cols.map(c => c.label))}>CSV</button>
+      </div>
+
+      <table className="g1-issue__table">
+        <thead>
+          <tr>{cols.map(c => (
+            <th key={c.key} className={c.type === 'money' || c.type === 'count' ? 'num' : ''}>{c.label}</th>
+          ))}</tr>
+        </thead>
+        <tbody>
+          {visible.map((r, i) => (
+            <tr key={i}>{cols.map(c => (
+              <td key={c.key} className={c.type === 'money' || c.type === 'count' ? 'num' : ''}>{cell(r, c)}</td>
+            ))}</tr>
+          ))}
+          {!rows.length && (
+            <tr><td colSpan={cols.length} className="g1-issue__empty">Nothing matches “{q.trim()}”.</td></tr>
+          )}
+        </tbody>
+      </table>
+
+      {pages > 1 && (
+        <div className="g1-issue__pager">
+          <button disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>Previous</button>
+          <span>Page {safePage + 1} of {pages}</span>
+          <button disabled={safePage >= pages - 1} onClick={() => setPage(safePage + 1)}>Next</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Issue({ w }) {
+  const Icon = SEV_ICON[w.severity] || Info;
+  /* Collapsed by default only for the informational ones — a blocker that
+     needs a click to be read is a blocker nobody reads. */
+  const [open, setOpen] = useState(w.group !== 'info');
+  return (
+    <li className={`g1-issue g1-issue--${w.group}`}>
+      <button className="g1-issue__head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        <Icon size={15} />
+        <span className="g1-issue__title">{w.title || w.message}</span>
+        {w.amount != null && <span className="g1-issue__amt">{inr(w.amount)}</span>}
+        <ChevronDown size={14} className={`g1-issue__caret${open ? ' g1-issue__caret--on' : ''}`} />
+      </button>
+      {open && (
+        <div className="g1-issue__body">
+          {(w.why || w.message) && <p className="g1-issue__why">{w.why || w.message}</p>}
+          {w.rows?.length > 0 && <IssueRows w={w} />}
+        </div>
+      )}
+    </li>
+  );
+}
 
 export default function Gstr1Page() {
   const { months, quarters } = useMemo(buildPeriods, []);
@@ -123,42 +268,65 @@ export default function Gstr1Page() {
 
   /* ── The filing exports ──────────────────────────────────────────────────
      One CSV per GSTR-1 table, with the column names the government's offline
-     utility expects. Downloaded one at a time on purpose: a browser blocks a
-     burst of simultaneous downloads, and a silently missing file is worse
-     than one more click. */
+     utility expects — EXCEPT 4A B2B and the two B2C tables, which were widened
+     on request and no longer match it. See the note on the 4A entry. Downloaded one at a time on
+     purpose: a browser blocks a burst of simultaneous downloads, and a
+     silently missing file is worse than one more click. */
   const filingFiles = useMemo(() => {
     if (!data) return [];
     const p = data.period.fp;
     const files = [];
 
+    /* ── 4A is NOT the offline-utility layout any more ──────────────────────
+       Asked for on 22 Sep 2026: lead with the month, drop E-Commerce GSTIN,
+       which is empty on every row this business produces, and carry
+       CGST / SGST / IGST so the file reads the same way the table on screen
+       does. The month earns its place on a quarterly return, where one file
+       holds three of them and only the date column says which is which.
+
+       That is a deliberate trade. The government's offline tool expects this
+       sheet to be exactly its own 13 columns and works the tax out itself from
+       Rate x Taxable; these 16 will not import. This file is for reading and
+       reconciling. If it ever needs to go into the tool again, the columns
+       below go back to the list in the b2b,sez,de sheet of the portal
+       template, in that order. */
     if (data.b2b.length) files.push({
       key: 'b2b', label: `Table 4A — B2B (${data.b2b.length} rows)`,
       name: `gstr1-${p}-b2b.csv`,
-      headers: ['GSTIN/UIN of Recipient', 'Receiver Name', 'Invoice Number', 'Invoice date',
+      headers: ['Month', 'GSTIN/UIN of Recipient', 'Receiver Name', 'Invoice Number', 'Invoice date',
         'Invoice Value', 'Place Of Supply', 'Reverse Charge', 'Applicable % of Tax Rate',
-        'Invoice Type', 'E-Commerce GSTIN', 'Rate', 'Taxable Value',
+        'Invoice Type', 'Rate', 'CGST', 'SGST', 'IGST', 'Taxable Value',
         'Cess Amount'],
-      rows: data.b2b.map(r => [r.gstin, r.receiver_name, r.invoice_no, dmyFile(r.invoice_date),
-        n2(r.invoice_value), `${r.pos_code}-${r.pos_name}`, r.reverse_charge, '',
-        r.invoice_type, '', n2(r.rate), n2(r.taxable), n2(r.cess)]),
+      rows: data.b2b.map(r => [monthName(r.invoice_date), r.gstin, r.receiver_name, r.invoice_no,
+        dmyFile(r.invoice_date), n2(r.invoice_value), `${r.pos_code}-${r.pos_name}`,
+        r.reverse_charge, '', r.invoice_type, n2(r.rate), n2(r.cgst), n2(r.sgst), n2(r.igst),
+        n2(r.taxable), n2(r.cess)]),
     });
 
     if (data.b2cl?.length) files.push({
       key: 'b2cl', label: `Table 5 — B2C Large (${data.b2cl.length} rows)`,
       name: `gstr1-${p}-b2cl.csv`,
-      headers: ['Invoice Number', 'Invoice date', 'Invoice Value', 'Place Of Supply',
-        'Applicable % of Tax Rate', 'Rate', 'Taxable Value', 'Cess Amount', 'E-Commerce GSTIN'],
-      rows: data.b2cl.map(r => [r.invoice_no, dmyFile(r.invoice_date), n2(r.invoice_value),
-        `${r.pos_code}-${r.pos_name}`, '', n2(r.rate), n2(r.taxable), n2(r.cess), '']),
+      /* Widened the same way as 4A. CGST and SGST are always zero here —
+         Table 5 is inter-state by definition — but they are printed so the
+         three B2C files line up column for column when they are read side by
+         side. E-Commerce GSTIN was left in place; it was only dropped from 4A
+         because that was asked for. */
+      headers: ['Month', 'Invoice Number', 'Invoice date', 'Invoice Value', 'Place Of Supply',
+        'Applicable % of Tax Rate', 'Rate', 'CGST', 'SGST', 'IGST', 'Taxable Value',
+        'Cess Amount', 'E-Commerce GSTIN'],
+      rows: data.b2cl.map(r => [monthName(r.invoice_date), r.invoice_no, dmyFile(r.invoice_date),
+        n2(r.invoice_value), `${r.pos_code}-${r.pos_name}`, '', n2(r.rate),
+        n2(r.cgst), n2(r.sgst), n2(r.igst), n2(r.taxable), n2(r.cess), '']),
     });
 
     if (data.b2cs.length) files.push({
       key: 'b2cs', label: `Table 7 — B2C Small (${data.b2cs.length} rows)`,
       name: `gstr1-${p}-b2cs.csv`,
-      headers: ['Type', 'Place Of Supply', 'Applicable % of Tax Rate', 'Rate',
-        'Taxable Value', 'Cess Amount', 'E-Commerce GSTIN'],
-      rows: data.b2cs.map(r => [r.type, `${r.pos_code}-${r.pos_name}`, '', n2(r.rate),
-        n2(r.taxable), n2(r.cess), '']),
+      headers: ['Month', 'Type', 'Place Of Supply', 'Applicable % of Tax Rate', 'Rate',
+        'CGST', 'SGST', 'IGST', 'Taxable Value', 'Cess Amount', 'E-Commerce GSTIN'],
+      rows: data.b2cs.map(r => [periodMonths(data.period), r.type,
+        `${r.pos_code}-${r.pos_name}`, '', n2(r.rate),
+        n2(r.cgst), n2(r.sgst), n2(r.igst), n2(r.taxable), n2(r.cess), '']),
     });
 
     if (data.nil_rated?.length) files.push({
@@ -181,16 +349,31 @@ export default function Gstr1Page() {
         `${r.pos_code}-${r.pos_name}`, n2(r.note_value), n2(r.rate), n2(r.taxable), n2(r.cess)]),
     });
 
-    if (data.hsn.length) files.push({
-      key: 'hsn', label: `Table 12 — HSN summary (${data.hsn.length} rows)`,
-      name: `gstr1-${p}-hsn.csv`,
-      headers: ['HSN', 'Description', 'UQC', 'Total Quantity', 'Total Value',
-        'Rate', 'Taxable Value', 'Integrated Tax Amount', 'Central Tax Amount',
-        'State/UT Tax Amount', 'Cess Amount'],
-      rows: data.hsn.map(r => [r.code, r.description, r.uqc, n2(r.quantity),
-        n2(r.taxable + r.cgst + r.sgst + r.igst), n2(r.rate), n2(r.taxable),
-        n2(r.igst), n2(r.cgst), n2(r.sgst), n2(r.cess)]),
-    });
+    /* Table 12 goes out as TWO files, because the portal takes it as two
+       lists — the offline-utility workbook has an hsn(b2b) sheet and an
+       hsn(b2c) sheet. The backend already keys the summary on scope, so the
+       same code at the same rate sold to a GSTIN customer and to a walk-in
+       arrives here as two rows and is never added together.
+
+       A file is only offered when it has rows: a quarter with no B2B sales
+       should not hand somebody an empty CSV to wonder about. */
+    const hsnFile = (scope, tableLabel) => {
+      const rows = data.hsn.filter(r => r.scope === scope);
+      if (!rows.length) return;
+      files.push({
+        key: `hsn_${scope}`,
+        label: `Table 12 — HSN ${tableLabel} (${rows.length} rows)`,
+        name: `gstr1-${p}-hsn-${scope}.csv`,
+        headers: ['HSN', 'Description', 'UQC', 'Total Quantity', 'Total Value',
+          'Rate', 'Taxable Value', 'Integrated Tax Amount', 'Central Tax Amount',
+          'State/UT Tax Amount', 'Cess Amount'],
+        rows: rows.map(r => [r.code, r.description, r.uqc, n2(r.quantity),
+          n2(r.taxable + r.cgst + r.sgst + r.igst), n2(r.rate), n2(r.taxable),
+          n2(r.igst), n2(r.cgst), n2(r.sgst), n2(r.cess)]),
+      });
+    };
+    hsnFile('b2b', 'B2B');
+    hsnFile('b2c', 'B2C');
 
     if (data.docs.length) files.push({
       key: 'docs', label: 'Table 13 — Documents issued',
@@ -205,6 +388,41 @@ export default function Gstr1Page() {
   /* One readable file covering the whole return, for review and for sending
      to whoever files it. Deliberately NOT the utility layout: this one is for
      a human, and a section column beats four separate attachments. */
+  /* The whole return as one workbook — a sheet per table behind a Dashboard.
+     Built on the server, from the same pass over the invoices that produced
+     what is on screen, so the file cannot drift from the page.
+
+     A raw authenticated fetch rather than api(), which parses JSON: the reply
+     here is a binary body. Errors come back AS JSON, so a failure is read
+     before it is reported — "HTTP 500" tells nobody anything. */
+  const [bookBusy, setBookBusy] = useState(false);
+  const downloadWorkbook = useCallback(async () => {
+    if (!data) return;
+    setBookBusy(true);
+    try {
+      /* The same query the page was loaded with, built the same way — the
+         workbook must be for the period on screen, not for whatever the
+         controls have been nudged to since. */
+      const qs = mode === 'month' ? `month=${month}` : `quarter=${quarter}`;
+      const res = await fetch(`${API_URL}/api/reports/gstr1/xlsx?${qs}`,
+        { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) {
+        let msg = `Could not build the workbook (HTTP ${res.status})`;
+        try { msg = (await res.json()).error || msg; } catch { /* not JSON */ }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `GSTR1-${data.company.gstin || 'return'}-${data.period.fp}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message || 'Could not build the workbook');
+    } finally { setBookBusy(false); }
+  }, [data, mode, month, quarter]);
+
   const downloadSummary = useCallback(() => {
     if (!data) return;
     const rows = [];
@@ -240,8 +458,8 @@ export default function Gstr1Page() {
         `${r.rate}%`, n2(-r.taxable), n2(-(r.cgst + r.sgst + r.igst)));
     }
     for (const r of data.hsn) {
-      add('12 HSN', r.code, r.description, r.uqc, n2(r.quantity), `${r.rate}%`,
-        n2(r.taxable), n2(r.cgst + r.sgst + r.igst));
+      add(`12 HSN ${r.scope === 'b2b' ? 'B2B' : 'B2C'}`, r.code, r.description, r.uqc,
+        n2(r.quantity), `${r.rate}%`, n2(r.taxable), n2(r.cgst + r.sgst + r.igst));
     }
     for (const r of data.docs) {
       add('13 Documents', r.nature, r.from_no, r.to_no, r.total, `${r.cancelled} cancelled`, '', '');
@@ -319,9 +537,12 @@ export default function Gstr1Page() {
       key: 'hsn', tab: '12', tabLabel: 'HSN / SAC', count: data.hsn.length,
       title: 'Table 12 — HSN / SAC summary',
       empty: 'No lines with a code.',
-      head: ['HSN / SAC', 'Description', 'UQC', 'Qty', 'Rate', 'Taxable', 'CGST', 'SGST', 'IGST'],
-      numeric: [3, 4, 5, 6, 7, 8],
-      rows: data.hsn.map(r => [r.code, r.description, r.uqc, n2(r.quantity), `${r.rate}%`,
+      /* 'For' leads, because the same code now appears twice — once per
+         list — and without it the table looks like it has duplicates. */
+      head: ['For', 'HSN / SAC', 'Description', 'UQC', 'Qty', 'Rate', 'Taxable', 'CGST', 'SGST', 'IGST'],
+      numeric: [4, 5, 6, 7, 8, 9],
+      rows: data.hsn.map(r => [r.scope === 'b2b' ? 'B2B' : 'B2C', r.code, r.description, r.uqc,
+        n2(r.quantity), `${r.rate}%`,
         inr(r.taxable), inr(r.cgst), inr(r.sgst), inr(r.igst)]),
     });
 
@@ -344,7 +565,15 @@ export default function Gstr1Page() {
   }, [tables, activeTable]);
   const active = tables.find(t => t.key === activeTable) || tables[0] || null;
 
-  const blockers = (data?.warnings || []).filter(w => w.severity === 'blocker');
+  /* Grouped by what you have to DO about it, not by severity level. The
+     banner then counts exactly the boxes in the red group — the old version
+     said "2 things would file wrong" above four near-identical cards. */
+  const groups = useMemo(() => {
+    const all = data?.warnings || [];
+    const pick = g => all.filter(w => (w.group || (w.severity === 'info' ? 'info' : 'fix')) === g);
+    return { fix: pick('fix'), check: pick('check'), info: pick('info') };
+  }, [data]);
+  const blockers = groups.fix;
   const recon = data?.reconciliation;
 
   return (
@@ -395,6 +624,10 @@ export default function Gstr1Page() {
             )}
           </div>
 
+          <button className="g1-btn" onClick={downloadWorkbook} disabled={!data || bookBusy}>
+            <Sheet size={15} /> {bookBusy ? 'Building…' : 'Excel workbook'}
+          </button>
+
           <button className="g1-btn" onClick={downloadSummary} disabled={!data}>
             <Download size={15} /> Summary
           </button>
@@ -442,8 +675,8 @@ export default function Gstr1Page() {
             <div className="g1-banner g1-banner--bad">
               <AlertCircle size={17} />
               <div>
-                <strong>{blockers.length} thing{blockers.length > 1 ? 's' : ''} would file wrong</strong>
-                <span>Listed under &ldquo;Before you file&rdquo; below. Worth clearing before you export.</span>
+                <strong>{blockers.length} thing{blockers.length > 1 ? 's' : ''} to fix before you file</strong>
+                <span>Under &ldquo;Must fix&rdquo; below. Worth clearing before you export.</span>
               </div>
             </div>
           )}
@@ -461,27 +694,22 @@ export default function Gstr1Page() {
           {data.warnings.length > 0 && (
             <section className="g1-card">
               <h2>Before you file</h2>
-              <ul className="g1-warnings">
-                {data.warnings.map((w, i) => {
-                  const Icon = SEV_ICON[w.severity] || Info;
-                  return (
-                    <li key={i} className={`g1-warn g1-warn--${w.severity}`}>
-                      <Icon size={15} />
-                      <div>
-                        <p>{w.message}</p>
-                        {w.items?.length > 0 && (
-                          <p className="g1-warn__items">
-                            {w.items.slice(0, 12).map(it =>
-                              typeof it === 'string' ? it : `${it.invoice} · ${it.description}`
-                            ).join('  ·  ')}
-                            {w.count > 12 ? `  …and ${w.count - 12} more` : ''}
-                          </p>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              {[
+                { key: 'fix',   title: 'Must fix',           note: 'These would make the return wrong.' },
+                { key: 'check', title: 'Check and confirm',  note: 'Not errors — decisions only you can make.' },
+                { key: 'info',  title: 'For your information', note: 'Nothing to do. Here so the figures are not a surprise.' },
+              ].map(g => groups[g.key].length ? (
+                <div key={g.key} className={`g1-group g1-group--${g.key}`}>
+                  <div className="g1-group__head">
+                    <h3>{g.title}</h3>
+                    <span className="g1-group__count">{groups[g.key].length}</span>
+                    <span className="g1-group__note">{g.note}</span>
+                  </div>
+                  <ul className="g1-issues">
+                    {groups[g.key].map(w => <Issue key={w.code} w={w} />)}
+                  </ul>
+                </div>
+              ) : null)}
             </section>
           )}
 
@@ -515,16 +743,21 @@ export default function Gstr1Page() {
                     <h2>{active.title}</h2>
                     {active.note && <p className="g1-card__note">{active.note}</p>}
                   </div>
-                  {(() => {
-                    const f = filingFiles.find(x => x.key === active.key);
-                    return f ? (
-                      <button className="g1-btn g1-btn--sm"
+                  {/* One table on screen can map to more than one file —
+                      Table 12 is split into B2B and B2C — so this matches the
+                      tab's key AND anything keyed under it, and renders a
+                      button each. */}
+                  {filingFiles
+                    .filter(x => x.key === active.key || x.key.startsWith(`${active.key}_`))
+                    .map(f => (
+                      <button key={f.key} className="g1-btn g1-btn--sm"
                         onClick={() => downloadCSV(f.name, f.rows, f.headers)}
-                        title="Download just this table, in the offline-utility layout">
-                        <Download size={14} /> This table
+                        title={`Download ${f.name}`}>
+                        <Download size={14} /> {f.key.startsWith('hsn_')
+                          ? f.key.endsWith('b2b') ? 'B2B' : 'B2C'
+                          : 'This table'}
                       </button>
-                    ) : null;
-                  })()}
+                    ))}
                 </div>
 
                 {active.rows.length === 0 ? (

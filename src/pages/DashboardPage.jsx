@@ -194,8 +194,17 @@ export default function DashboardPage() {
     // portal. It sits high on purpose — it is the "what is happening today"
     // view, and it replaced the narrow Today's Appointments card that used to
     // live inside row4.
-    'kpi', 'strip', 'schedule', 'fustat', 'row1', 'row2', 'row3', 'row4', 'row5', 'team', 'calls', 'parts',
+    // row1 leads: Pipeline Overview and Hub Performance are the two an owner
+    // opens the dashboard to read. They were below the KPI tiles and the
+    // schedule, which meant scrolling past summary numbers to reach the
+    // detail those numbers summarise.
+    'row1', 'kpi', 'strip', 'schedule', 'fustat', 'row2', 'row3', 'row4', 'row5', 'team', 'calls', 'parts',
   ];
+  // NOTE: this is the default for someone who has never dragged a section.
+  // Anyone with a saved order keeps it — see the merge in the useState below,
+  // which preserves their arrangement and only appends sections they have
+  // never seen. Changing this line does not rearrange an existing user's
+  // dashboard, and it is not supposed to.
   const storageKey = `db-order-${user?.id || 'default'}`;
   const [sectionOrder, setSectionOrder] = useState(() => {
     try {
@@ -551,13 +560,19 @@ export default function DashboardPage() {
     strip:  canViewDashStatsStrip,
     schedule: canViewDashApptList,
     fustat: canViewDashFollowups,
-    row1:   canViewDashLeads || canViewDashAppointments || canViewDashFollowups,
+    // Follow-ups moved to the 'calls' section, so it no longer keeps this row
+    // alive. Without this change a follow-ups-only user rendered an empty
+    // three-column grid at the top of the page.
+    row1:   canViewDashLeads || canViewDashHubPerformance,
     row2:  canViewDashLeads || canViewDashRevenueTrend || canViewDashQuickActions,
     row3:  row3Cols > 0,
     row4:  row4Cols > 0,
     row5:  row5Cols > 0,
     team:  canViewDashTeamPerf,
-    calls: canViewDashCalls,
+    // Holds Today's Call Log AND Follow-ups now, so either permission has to
+    // be enough to render it — gating on calls alone would have hidden
+    // follow-ups completely from anyone without call-log access.
+    calls: canViewDashCalls || canViewDashFollowups,
     parts: !!(canViewDashParts && partsData),
   };
 
@@ -1561,12 +1576,14 @@ export default function DashboardPage() {
           )}
         </div>
 
-              ) : id === 'calls' && canViewDashCalls ? (
+              ) : id === 'calls' && (canViewDashCalls || canViewDashFollowups) ? (
         /* Today's Call Log and Follow-ups side by side: one is who was
            called, the other is who still needs calling. A full row each made
-           the pair read as unrelated. Falls back to one column when the user
-           cannot see follow-ups. */
-        <div className={canViewDashFollowups ? 'db-2col' : 'db-1col'}>
+           the pair read as unrelated.
+           Two columns only when BOTH are visible — one card alone in a 2-col
+           grid would sit at half width with a hole beside it. */
+        <div className={canViewDashCalls && canViewDashFollowups ? 'db-2col' : 'db-1col'}>
+          {canViewDashCalls && (
           <div className="db-card">
             <div className="db-card-hd">
               <div className="db-card-title">
@@ -1665,6 +1682,8 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          )}
+
         {/* Follow-ups */}
         {canViewDashFollowups && (
           <div className="db-card db-followups" style={{ padding: 0 }}>

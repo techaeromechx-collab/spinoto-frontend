@@ -15,6 +15,13 @@ import LeadsPage from './pages/LeadsPage.jsx';
 import FollowUpsPage from './pages/FollowUpsPage.jsx';
 import LeadStatusesPage from './pages/LeadStatusesPage.jsx';
 import DepartmentsPage  from './pages/DepartmentsPage.jsx';
+import ChecklistsPage  from './pages/ChecklistsPage.jsx';
+import TechniciansPage from './pages/TechniciansPage.jsx';
+import JobCardPage    from './pages/JobCardPage.jsx';
+import JobCardsPage   from './pages/JobCardsPage.jsx';
+import InspectionPage from './pages/InspectionPage.jsx';
+import InspectionsPage from './pages/InspectionsPage.jsx';
+import ChatPage       from './pages/ChatPage.jsx';
 import HubsPage              from './pages/HubsPage.jsx';
 import WorkshopsPage         from './pages/WorkshopsPage.jsx';
 import AppointmentsPage      from './pages/AppointmentsPage.jsx';
@@ -215,8 +222,25 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
 
+                {/* Internal chat. The optional :conversationId follows the same
+                    shape as the :token routes below, so a thread is linkable.
+                    Hub users never reach here at all — RequireAdmin above sends
+                    anyone with a hub_id to /hub — which is one of the two places
+                    staff-only is enforced (the other is hub_id IS NULL in the
+                    directory query). See chat.directory.controller.js for why
+                    both: maskMobile cannot mask a phone number typed into a
+                    sentence. */}
+                <Route path="/chat/:conversationId?" element={<RequirePermission codes={['USE_CHAT']}><ChatPage /></RequirePermission>} />
+
                 {/* Master data — readable by anyone authenticated; writes are gated inside pages */}
                 <Route path="/master/locations" element={<RequirePermission allowReadOnly><LocationsPage /></RequirePermission>} />
+                {/* Inspection checklists are Spinoto master data — hubs FILL them in
+                    on the job card, they do not design them. MANAGE_MASTER_DATA only,
+                    matching the API. */}
+                <Route path="/master/checklists" element={<RequirePermission codes={['MANAGE_MASTER_DATA']}><ChecklistsPage /></RequirePermission>} />
+                {/* Hub logins reach this too — a hub is the only party that knows
+                    who works its floor this week. The API pins them to their own hub. */}
+                <Route path="/master/technicians" element={<RequirePermission codes={['MANAGE_MASTER_DATA','MANAGE_HUBS','EDIT_HUB']}><TechniciansPage /></RequirePermission>} />
                 <Route path="/master/vehicles"  element={<RequirePermission codes={['VIEW_VEHICLE','MANAGE_MASTER_DATA','VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE']}><VehiclesPage /></RequirePermission>} />
                 <Route path="/master/services"  element={<RequirePermission codes={['VIEW_SERVICE','MANAGE_MASTER_DATA','MANAGE_PRICING','VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE']}><ServicesPage /></RequirePermission>} />
                 <Route path="/master/lead-statuses" element={<RequirePermission codes={['VIEW_LEAD','CREATE_LEAD','EDIT_LEAD','MANAGE_MASTER_DATA']}><LeadStatusesPage /></RequirePermission>} />
@@ -280,6 +304,40 @@ export default function App() {
                 {/* Appointments */}
                 <Route path="/appointments/:token?" element={<RequirePermission codes={['VIEW_APPOINTMENT','CREATE_APPOINTMENT','EDIT_APPOINTMENT']}><AppointmentsPage /></RequirePermission>} />
 
+                {/* Job cards — the floor. Both routes render the SAME component
+                    so that opening a vehicle never unmounts the list beside it;
+                    JobCardsPage renders JobCardPage in its detail pane when the
+                    route carries an appointment.
+
+                    Addressed by APPOINTMENT id, not job card id. The caller
+                    knows which visit it means; whether a card exists for it yet
+                    is the page's problem.
+
+                    Its own permissions since migration 203, matching
+                    job_cards.routes.js exactly. A guard here that is looser than
+                    the API's is a page that loads and then fills with 403s;
+                    tighter, and it hides a screen the server would have served. */}
+                <Route path="/job-cards" element={<RequirePermission codes={['VIEW_JOB_CARD','EDIT_JOB_CARD']}><JobCardsPage /></RequirePermission>} />
+                <Route path="/job-cards/:appointmentId" element={<RequirePermission codes={['VIEW_JOB_CARD','EDIT_JOB_CARD']}><JobCardsPage /></RequirePermission>} />
+
+                {/* The inspection QUEUE — every sheet across every card, not the
+                    templates. Master data → Checklists holds the templates;
+                    this is what is half-finished on the floor right now.
+                    VIEW_INSPECTION, matching inspections.routes.js. */}
+                <Route path="/inspections" element={<RequirePermission codes={['VIEW_INSPECTION','EDIT_INSPECTION']}><InspectionsPage /></RequirePermission>} />
+
+                {/* One run of one checklist. A screen of its own rather than a
+                    panel on the card: a 44-point sheet is filled in over
+                    minutes, and a real URL means a refresh, the Back button and
+                    a shared link all land back on the sheet.
+
+                    The sheet's codes, not the card's — this is the screen a QC
+                    inspector lives on. The page loads the card too, so in
+                    practice they also hold VIEW_JOB_CARD; gating the route on
+                    the card's code would lock the inspector out of the one
+                    screen the new permissions exist to give them. */}
+                <Route path="/job-cards/:appointmentId/inspection/:inspectionId" element={<RequirePermission codes={['VIEW_INSPECTION','EDIT_INSPECTION']}><InspectionPage /></RequirePermission>} />
+
                 {/* Customers */}
                 <Route path="/customers/:token?" element={<RequirePermission codes={['VIEW_CUSTOMER','VIEW_LEAD']}><CustomersPage /></RequirePermission>} />
 
@@ -323,7 +381,9 @@ export default function App() {
                 {/* Gated on seeing purchase invoices, not on managing payouts:
                     this answers "who are we behind on", which is a question the
                     people chasing it need before anyone is authorised to pay. */}
-                <Route path="/payables"         element={<RequirePermission codes={['VIEW_PURCHASE_INVOICE','VIEW_HUB_PAYOUTS','MANAGE_HUBS']}><PayablesPage /></RequirePermission>} />
+                {/* Optional param, the same shape as /customers/:token? above: the id
+                     picks one hub's statement, and its absence is the list. */}
+                <Route path="/payables/:hubId?" element={<RequirePermission codes={['VIEW_PURCHASE_INVOICE','VIEW_HUB_PAYOUTS','MANAGE_HUBS']}><PayablesPage /></RequirePermission>} />
 
                 {/* User & permission management — folded into the Settings
                     module (see /settings below). Old links/bookmarks keep

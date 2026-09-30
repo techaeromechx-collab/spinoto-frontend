@@ -382,20 +382,54 @@ button.lb-control.lb-primary:hover {
 
 /* ── Sort indicator ───────────────────────────────────────────────────────
    `lb-sorted` marks the column the list is actually ordered by, and the arrow
-   direction must match the query. It is not a control — these lists are
-   server-sorted by date and there is no ?sort= parameter — so it is deliberately
-   not a button and carries no hover state. Labelling the existing order is
-   honest; drawing a clickable-looking arrow that does nothing is not. */
+   direction must match the query.
+
+   It used to be a label and nothing more, because no list had a ?sort=
+   parameter and drawing a clickable-looking arrow that did nothing would have
+   been a lie. Appointments now sorts server-side on # and Schedule, so those
+   two headers are buttons (.lb-th-sort / .lb-sort-btn below). Every other
+   header on every other list is still a plain label, and must stay one until
+   its endpoint can actually sort. */
 .lb-sorted {
   color: var(--text);
 }
 
+/* A header that sorts. The button fills the cell so the whole header is the
+   hit area rather than the few pixels the text happens to occupy — a 40px
+   target that looks like a 60px one is a target people miss. */
+.lb-th-sort { padding: 0 !important; }
+.lb-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 11px 20px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+.lb-sort-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 4%, transparent); }
+.lb-sort-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* Faint on an inactive sortable header — visible enough to say "this is a
+   control", quiet enough not to compete with the column that IS sorting. */
 .lb-sort-icon {
   display: inline-block;
   vertical-align: -2px;
   margin-left: 5px;
-  opacity: 0.75;
+  opacity: 0.4;
 }
+.lb-sorted .lb-sort-icon { opacity: 0.85; }
+/* The button already spaces its children with `gap`; the margin above is for
+   the plain-label headers on the other lists, and inside a button it would be
+   applied twice. */
+.lb-sort-btn .lb-sort-icon { margin-left: 0; }
+.lb-sort-btn:hover .lb-sort-icon { opacity: 0.8; }
 
 
 .lb-list table td {

@@ -4,6 +4,10 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useAppPaths } from '../lib/appPaths.js';
 import { api } from '../api/client.js';
+// Sends a POINTER to this record to a colleague on internal chat.
+// Renders nothing without USE_CHAT, and brings its own stylesheet.
+import ShareToChat from '../components/chat/ShareToChat.jsx';
+
 import PaginationBar from '../components/PaginationBar.jsx';
 import SplitPane, { RecordCard } from '../components/SplitPane.jsx';
 import DetailSkeleton from '../components/DetailSkeleton.jsx';
@@ -632,6 +636,11 @@ function DetailDrawer({ invoiceId, onClose, showToast, onRefreshList, isHubUser 
           {/* Server-rendered themed PDF. The admin/hub view is decided
               server-side from the session, so a hub's copy never shows the
               customer rate or commission. */}
+          {/* Guarded — this header renders before `inv` has arrived. */}
+          {inv && (
+            <ShareToChat refType="purchase_invoice" refId={inv.id}
+                         label={inv.invoice_number || `PI-${String(inv.id).padStart(6, '0')}`} compact />
+          )}
           <button
             disabled={piPdfLoading}
             onClick={async () => {

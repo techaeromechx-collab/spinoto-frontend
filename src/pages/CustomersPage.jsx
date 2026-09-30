@@ -13,10 +13,13 @@ import {
   MapPin,
   // Ledger tab — the scales, same icon the opening balances screen uses.
   Scale,
+  // Job Cards tab and the per-vehicle service history.
+  Wrench, History,
 } from 'lucide-react';
 import PaginationBar from '../components/PaginationBar.jsx';
 import CustomerPaymentsTab from '../components/CustomerPaymentsTab.jsx';
 import CustomerOverviewTab from '../components/CustomerOverviewTab.jsx';
+import { CustomerJobCardsTab, VehicleServiceHistoryModal } from '../components/CustomerServiceHistory.jsx';
 import LedgerPanel from '../components/LedgerPanel.jsx';
 import WhatsAppThread from '../components/WhatsAppThread.jsx';
 import { readListState, writeListState } from '../lib/listStatePersist.js';
@@ -722,6 +725,15 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
   const [editVeh,     setEditVeh]    = useState(null); // vehicle object being edited
   const [promoteVeh,  setPromoteVeh] = useState(null); // non-manual vehicle being saved for the first time
   const [deleting,    setDeleting]   = useState(null);
+  /* The vehicle whose service history is open. Held here rather than inside the
+     vehicle card so Escape, the backdrop and a second click all close the one
+     dialog — a per-card copy would let two open at once. */
+  const [histVeh,     setHistVeh]    = useState(null);
+  /* Filled by the Job Cards tab the first time it loads, purely so the tab
+     badge can show a number. Null means "not counted yet" and prints nothing,
+     which is honest: a hardcoded 0 beside a tab that has never been opened is a
+     figure the page does not actually know. */
+  const [jcCount,     setJcCount]    = useState(null);
 
   const [editing,     setEditing]    = useState(startEditing);
   const [editForm,    setEditForm]   = useState({
@@ -1575,6 +1587,14 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
             />
           )}
 
+          {histVeh && (
+            <VehicleServiceHistoryModal
+              mobile={mobile}
+              vehicleNumber={histVeh.vehicle_number}
+              onClose={() => setHistVeh(null)}
+            />
+          )}
+
           {promoteVeh && (
             <AddVehicleModal
               mobile={mobile}
@@ -1641,6 +1661,16 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
                         {v.last_seen && <div className="cust-veh-lastseen">Last: {fmtDate(v.last_seen)}</div>}
                       </div>
                       <div className="cust-veh-actions">
+                        {/* Every visit for THIS car. The "3 visits" figure
+                            beside it has been on this card for a while and was
+                            never clickable — the count was the whole answer. */}
+                        <button
+                          className="cust-veh-act-btn cust-veh-act-btn--hist"
+                          title={`Service history for ${v.vehicle_number}`}
+                          onClick={() => setHistVeh(v)}
+                        >
+                          <History size={11}/>
+                        </button>
                         <button
                           className="cust-veh-act-btn cust-veh-act-btn--edit"
                           title={v.cv_id ? 'Edit vehicle' : 'Save vehicle to make it editable'}
@@ -1689,6 +1719,13 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
             <button className={`cust-tab${tab === 'appointments' ? ' cust-tab--on' : ''}`} onClick={() => setTab('appointments')}>
               <Calendar size={11}/> Appointments <span className="cust-tab-count">{data.appointments.length}</span>
             </button>
+            {/* Job cards — what was actually DONE, as opposed to the six
+                document trails either side of it. Placed after Appointments
+                because that is the order the work happens in: booked, opened,
+                quoted, billed. */}
+            <button className={`cust-tab${tab === 'jobcards' ? ' cust-tab--on' : ''}`} onClick={() => setTab('jobcards')}>
+              <Wrench size={11}/> Job Cards {jcCount !== null && <span className="cust-tab-count">{jcCount}</span>}
+            </button>
             <button className={`cust-tab${tab === 'invoices' ? ' cust-tab--on' : ''}`} onClick={() => setTab('invoices')}>
               🧾 Invoices <span className="cust-tab-count">{data.invoices?.length || 0}</span>
             </button>
@@ -1712,6 +1749,13 @@ function CustomerDetail({ mobile, onBack, onRefresh, startEditing = false, onLoa
             {/* Keyed on mobile because that IS the customer identity in this
                 system — customer_profiles has no id. See ledger.controller.js. */}
             {tab === 'ledger' && <LedgerPanel partyType="customer" partyKey={data.mobile} />}
+
+            {/* Mounted only while open, the same reasoning the WhatsApp tab
+                carries: this is two aggregate queries per load, and a list
+                nobody has looked at is a query nobody should have paid for. */}
+            {tab === 'jobcards' && (
+              <CustomerJobCardsTab mobile={mobile} onCount={setJcCount} />
+            )}
 
             {tab === 'overview' && (
               <CustomerOverviewTab

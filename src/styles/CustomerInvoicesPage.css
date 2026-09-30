@@ -1551,3 +1551,161 @@
 @media print {
   .ci-pay-backdrop { display: none !important; }
 }
+
+/* ── Credit notes panel (components/CreditNotesPanel.jsx) ───────────────────
+   Added 22 Sep 2026. Renders under Payment links, and only when the invoice
+   actually has a note against it. Add new rules BELOW, never by replacing
+   this file.
+
+   Quiet on purpose: a credit note is a real document but it is not the
+   invoice, and the panel only appears at all when there is one to show. It
+   does not need to compete with Payments for attention. */
+
+.cnp-total {
+  margin-left: auto; font-size: 11.5px; font-weight: 800;
+  color: #b45309; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+[data-theme="dark"] .cnp-total { color: #fcd34d; }
+
+.cnp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cnp-table th {
+  text-align: left; padding: 7px 10px; font-size: 10.5px; font-weight: 700;
+  color: var(--text-muted); background: var(--bg-soft);
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.cnp-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+.cnp-table tbody tr:last-child td { border-bottom: none; }
+.cnp-table th.num, .cnp-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.cnp-no {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-weight: 700; white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px;
+}
+.cnp-no svg { color: #b45309; flex-shrink: 0; }
+.cnp-date { color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cnp-reason { color: var(--text-muted); }
+.cnp-reason em { font-style: normal; }
+.cnp-amt { font-weight: 800; }
+
+/* A cancelled note still gets a row — it existed, and somebody will ask why
+   the numbering has a gap — but it must not read as money that came off. */
+.cnp-row--dead td { opacity: .55; }
+.cnp-row--dead .cnp-amt { text-decoration: line-through; }
+.cnp-tag {
+  display: inline-block; margin-left: 7px; padding: 1px 6px; border-radius: 5px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .02em;
+  background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-muted);
+}
+
+.cnp-foot {
+  margin: 0; padding: 9px 10px 2px; font-size: 11px; line-height: 1.55;
+  color: var(--text-muted);
+}
+.cnp-error {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  padding: 10px; font-size: 12px; color: #b91c1c;
+}
+[data-theme="dark"] .cnp-error { color: #fca5a5; }
+
+/* ── Toolbar and pager stay put during a SIDEWAYS scroll ───────────────────
+   The symptom: drag the table right and the filter row goes with it. "All
+   Hubs" slides off the left edge and Export slides in from the right, so the
+   controls for the list vanish exactly when you are looking at the columns
+   they control.
+
+   ── Why it happens ──
+   `.ci-table-wrap` carries `lb-scroll-x`, and listLayout.css sets
+   `.lb-list .lb-scroll-x` to `overflow: visible` ON PURPOSE — a sticky <th>
+   binds to its nearest SCROLLING ancestor, so giving that wrapper an overflow
+   moves the binding off `.page-scroll` and unsticks every column header on the
+   page. Measured, not assumed: with `overflow-x: auto` on the wrapper the
+   toolbar does stop moving, and the header then scrolls 171px up out of place.
+
+   So the sideways scrolling belongs to `.page-scroll` (it declares
+   `overflow-y: auto`, and the spec computes `visible` on the other axis to
+   `auto`, making it scroll both ways). Everything inside it travels together,
+   toolbar included.
+
+   ── Why the obvious fix does nothing ──
+   `position: sticky; left: 0` on `.lb-toolbar` alone changes NOTHING, which is
+   worth writing down because it looks like it should work. A sticky box can
+   only shift within its own containing block, and `.lb-page` is a plain block
+   — it stays viewport-width and does not stretch to fit the overflowing table.
+   Container and box are then the same width, the available shift is zero, and
+   the toolbar travels with the page exactly as before.
+
+   ── What actually works ──
+   1. `width: max-content` lets `.ci-page` grow to the width of its widest
+      child, so the containing block finally spans the whole scrollable area
+      and there is room to stick inside it. `min-width: 100%` keeps it filling
+      the window when the table is NARROWER than the viewport, where there is
+      no horizontal scrolling and none of this applies.
+   2. The two groups pin to opposite edges — filters to the left, actions to
+      the right — which is where they already sit, so nothing appears to move.
+
+   Both are GROUPS, never individual controls: four separately-sticky controls
+   all stop at the same `left` and pile up on top of one another. That is what
+   `.lb-toolbar-left` exists for.
+
+   z-index 4 puts them above the sticky <th> (3). Sticky makes a stacking
+   context whatever the z-index, so the filter popovers' own `z-index: 1000`
+   only ranks them INSIDE the group — below 3 the column headers would paint
+   over an open dropdown. The two can never collide anyway: the header only
+   sticks once the table's top passes y=0, by which point the toolbar is
+   already off screen.
+
+   Scoped to `.ci-page` — these classes are shared with Leads, Appointments and
+   Estimates, and those pages were not in scope. */
+/* ── :has(> .lb-toolbar) — the list view ONLY, and this is the whole bug ──
+   `.ci-page` is BOTH views. The page renders either the split pane with an
+   open invoice, or the toolbar + table + pager — never both:
+
+       <div class="ci-page lb-page">
+         {selectedId ? <SplitPane><DetailDrawer/></SplitPane>
+                     : <><div class="lb-toolbar"/><div class="lb-list"/><PaginationBar/></>}
+
+   Widening `.ci-page` unconditionally therefore widened the DETAIL view too,
+   and the detail is a flex layout built to fill 100% of whatever it is given.
+   Asked for its max-content width instead, it returns the sum of everything
+   laid out at its natural size — the rail, the detail card, and the inner
+   tables with their own min-widths — which is far wider than the window. The
+   whole app slid off to the right and took the sidebar with it.
+
+   `:has(> .lb-toolbar)` is exactly the test "is this the list view", because
+   the toolbar is rendered only on that branch and is a direct child (the JSX
+   fragment around it produces no DOM node). With an invoice open there is no
+   toolbar, the selector does not match, and `.ci-page` goes back to being an
+   ordinary block that fills its container.
+
+   All four rules are scoped the same way rather than just the width one. The
+   sticky rules are harmless on the detail view today only because nothing they
+   target exists there; tying them to the same condition means they cannot
+   start applying if a toolbar-shaped element ever appears in the detail. */
+.ci-page:has(> .lb-toolbar) {
+  width: max-content;
+  min-width: 100%;
+}
+
+.ci-page:has(> .lb-toolbar) .lb-toolbar-left {
+  /* The row it replaces was the flex container itself, so the group has to
+     restate the layout the controls were getting from it. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: sticky;
+  left: 20px;
+  z-index: 4;
+}
+
+.ci-page:has(> .lb-toolbar) .lb-toolbar-right {
+  position: sticky;
+  right: 20px;
+  z-index: 4;
+}
+
+/* 16px, not 20px: .pgbar is padded 12px/16px where the toolbar is 20px, and
+   the pinned edge should line up with the padding it already had. */
+.ci-page:has(> .lb-toolbar) .pgbar > :first-child { position: sticky; left: 16px; }
+.ci-page:has(> .lb-toolbar) .pgbar > :last-child  { position: sticky; right: 16px; }

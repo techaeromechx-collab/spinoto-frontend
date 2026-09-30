@@ -1,0 +1,1120 @@
+/* The job card. Scoped `jc-`, like every other page in this codebase.
+   Tokens only — no hardcoded greys — so dark mode comes for free. The few
+   literal colours below are semantic states (present / absent / warning) that
+   have to read the same in both themes; each one is paired with a dark
+   override at the bottom. */
+
+.jc-page { display: flex; flex-direction: column; gap: 16px; padding-bottom: 48px; }
+
+.jc-toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+  display: flex; align-items: center; gap: 9px;
+  padding: 11px 16px; border-radius: 10px;
+  font-size: 13px; font-weight: 600;
+  background: #f0fdf4; border: 1px solid #86efac; color: #166534;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+}
+.jc-toast--error { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
+
+.jc-err {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 13px; border-radius: 8px;
+  background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b;
+  font-size: 12.5px; font-weight: 600;
+}
+.jc-warn {
+  display: flex; align-items: center; gap: 7px; margin-top: 10px;
+  padding: 8px 12px; border-radius: 8px;
+  background: #fffbeb; border: 1px solid #fcd34d; color: #92400e;
+  font-size: 12.5px; font-weight: 600;
+}
+.jc-empty {
+  padding: 24px 20px; text-align: center;
+  color: var(--text-muted); font-size: 13px;
+  background: var(--bg-soft); border-radius: 10px;
+}
+.jc-hint { font-size: 12px; color: var(--text-muted); margin: 4px 0 8px; line-height: 1.5; }
+
+.jc-back {
+  display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--text-muted);
+}
+.jc-back:hover { color: var(--primary); }
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+/* A stack, not two columns. The status block used to sit beside the facts and
+   set the height of the whole panel — five facts in a box 200px tall, mostly
+   empty. Now each part is as tall as it needs to be. */
+.jc-hdr {
+  display: flex; flex-direction: column; gap: 11px;
+  padding: 14px 16px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+}
+.jc-hdr-top { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.jc-hdr-top h2 {
+  display: flex; align-items: center; gap: 9px;
+  margin: 0; font-size: 19px; letter-spacing: .2px;
+}
+/* Chips, not a dotted run-on. At rail width the separators wrapped onto their
+   own line and left the row ending on a dangling dot. */
+.jc-hdr-facts { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12.5px; }
+.jc-hdr-facts > * {
+  display: inline-flex; align-items: center;
+  padding: 2px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background-color: var(--bg-soft);
+  color: var(--text-muted); white-space: nowrap;
+}
+.jc-hdr-facts > .is-lead { color: var(--text); font-weight: 700; }
+.jc-appt-link { color: var(--primary); font-weight: 600; text-decoration: none; }
+.jc-appt-link:hover { text-decoration: underline; }
+
+/* ── The line the job travels ─────────────────────────────────────────────
+   Informational. Every move still goes through the select beside it and
+   through the same prompt; this says where the car is without being read. */
+.jc-steps {
+  display: flex; margin: 0; padding: 0; list-style: none;
+  overflow-x: auto; scrollbar-width: thin;
+  border-radius: 9px; background-color: var(--bg-soft); border: 1px solid var(--border);
+}
+.jc-step {
+  flex: 1 0 auto; min-width: 74px; text-align: center;
+  padding: 8px 6px 7px; position: relative;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .2px; color: var(--text-muted);
+  white-space: nowrap;
+}
+.jc-step::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0;
+  height: 2px; background-color: var(--border);
+}
+.jc-step.is-done { color: var(--text); }
+.jc-step.is-done::after,
+.jc-step.is-now::after { background-color: var(--primary); }
+.jc-step.is-now { color: var(--primary); }
+.jc-step.is-now b {
+  display: block; font-size: 8.5px; letter-spacing: .6px;
+  text-transform: uppercase; font-weight: 800; opacity: .85;
+}
+
+.jc-hdr-act { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.jc-next { white-space: nowrap; }
+/* Narrow on purpose: the stepper carries the reading, this carries the picking.
+   It holds every status it always did. */
+.jc-hdr-act .jc-status-sel { flex: 0 0 auto; width: auto; min-width: 156px; max-width: 200px; }
+.jc-appt-status { font-size: 11.5px; color: var(--text-muted); margin-left: auto; text-align: right; }
+.jc-hold {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 7px 10px; border-radius: 8px; line-height: 1.45;
+  background: #fffbeb; border: 1px solid #fcd34d; color: #92400e;
+  font-size: 12px; font-weight: 600;
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+.jc-input {
+  width: 100%; padding: 8px 11px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text);
+  font: inherit; font-size: 13px; outline: none;
+}
+.jc-input:focus { border-color: var(--primary); }
+textarea.jc-input { resize: vertical; line-height: 1.5; }
+
+.jc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.jc-field > label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+}
+
+.jc-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex: none;
+  border: 1px solid var(--border); border-radius: 7px;
+  background: var(--panel); color: var(--text-muted); cursor: pointer;
+}
+.jc-icon-btn:hover { color: var(--text); border-color: var(--text-muted); }
+.jc-icon-btn--danger:hover { color: #dc2626; border-color: #fca5a5; background: #fef2f2; }
+
+.jc-link-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: 0; padding: 2px 0; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--primary);
+}
+
+.jc-sm { padding: 5px 12px !important; font-size: 12px !important; }
+
+/* ── Opening a card ──────────────────────────────────────────────────────── */
+.jc-open {
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 20px; max-width: 720px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+}
+.jc-open-hdr { display: flex; align-items: flex-start; gap: 10px; color: var(--primary); }
+.jc-open-hdr h3 { margin: 0 0 3px; font-size: 15px; color: var(--text); }
+.jc-open-hdr p  { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+.jc-open-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.jc-field--wide { grid-column: 1 / -1; }
+.jc-complaint-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.jc-open .button { align-self: flex-start; }
+
+/* ── Section cards ───────────────────────────────────────────────────────── */
+.jc-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.jc-col  { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.jc-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden;
+}
+.jc-card-hdr {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-soft);
+}
+.jc-card-title { display: flex; align-items: flex-start; gap: 8px; color: var(--primary); min-width: 0; }
+.jc-card-title strong { display: block; font-size: 13.5px; color: var(--text); }
+.jc-card-title span   { display: block; font-size: 11.5px; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
+.jc-card-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+.jc-addrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jc-addrow .jc-input { flex: 1; min-width: 160px; }
+.jc-addrow .button { flex: none; white-space: nowrap; }
+.jc-role  { max-width: 150px; flex: none !important; }
+.jc-stage { max-width: 140px; flex: none !important; }
+
+/* ── Complaints & findings ───────────────────────────────────────────────── */
+.jc-cf {
+  display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: start;
+  padding-bottom: 12px; border-bottom: 1px dashed var(--border);
+}
+.jc-cf-said {
+  font-size: 13px; line-height: 1.5; color: var(--text);
+  padding: 8px 11px; border-radius: 8px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+}
+.jc-cf-found { font-size: 13px; }
+
+/* ── Technicians ─────────────────────────────────────────────────────────── */
+.jc-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.jc-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 7px 5px 11px; border-radius: 999px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  font-size: 12.5px; color: var(--text);
+}
+.jc-chip em { font-style: normal; color: var(--text-muted); font-size: 11.5px; }
+.jc-chip-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border: 0; border-radius: 50%;
+  background: var(--border); color: var(--text-muted); cursor: pointer;
+}
+.jc-chip-x:hover { background: #fca5a5; color: #7f1d1d; }
+
+/* ── Items in vehicle ────────────────────────────────────────────────────── */
+.jc-items { display: flex; flex-direction: column; gap: 4px; }
+.jc-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 4px 6px 10px; border-radius: 8px;
+}
+.jc-item-label { font-size: 12.5px; color: var(--text); }
+.jc-item--absent { background: #fef2f2; }
+.jc-item--absent .jc-item-label { font-weight: 600; color: #991b1b; }
+
+.jc-tri { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg-soft); }
+.jc-tri-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 24px; border: 0; border-radius: 6px;
+  background: none; color: var(--text-muted); cursor: pointer;
+}
+.jc-tri-btn:hover { color: var(--text); }
+/* backgroundColor, never the `background` shorthand — a shorthand resets its
+   longhands, and React skips unchanged longhands on update, so they are never
+   put back. That is the tiled-chevron bug from the estimates page. */
+.jc-tri-btn.is-on.is-present { background-color: #dcfce7; color: #166534; }
+.jc-tri-btn.is-on.is-absent  { background-color: #fee2e2; color: #991b1b; }
+.jc-tri-btn.is-on.is-na      { background-color: var(--border); color: var(--text); }
+
+/* ── Odometer & fuel ─────────────────────────────────────────────────────── */
+.jc-readings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* ── Photos ──────────────────────────────────────────────────────────────── */
+.jc-mediagrp h5 {
+  margin: 0 0 7px; font-size: 11px; font-weight: 700;
+  letter-spacing: .4px; text-transform: uppercase; color: var(--text-muted);
+}
+.jc-media { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+.jc-shot { position: relative; margin: 0; aspect-ratio: 4 / 3; }
+.jc-shot img {
+  width: 100%; height: 100%; object-fit: cover;
+  border-radius: 8px; border: 1px solid var(--border); display: block;
+}
+.jc-shot-x { position: absolute; top: 4px; right: 4px; }
+
+/* ── Timeline ────────────────────────────────────────────────────────────── */
+.jc-tl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.jc-tl li { display: flex; gap: 10px; padding-bottom: 14px; position: relative; }
+/* The connecting line, drawn from the dot down — not on the last row, which
+   would leave a stub hanging under the final event. */
+.jc-tl li:not(:last-child)::before {
+  content: ''; position: absolute; left: 4px; top: 14px; bottom: 0;
+  width: 1px; background: var(--border);
+}
+.jc-tl-dot {
+  flex: none; width: 9px; height: 9px; margin-top: 4px; border-radius: 50%;
+  background: var(--primary); position: relative; z-index: 1;
+}
+.jc-tl p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text); }
+.jc-tl-note { color: var(--text-muted) !important; margin-top: 2px !important; }
+.jc-tl-meta { font-size: 11px; color: var(--text-muted); }
+
+/* ── Hold modal ──────────────────────────────────────────────────────────── */
+.jc-backdrop {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(15, 23, 42, .45);
+}
+.jc-modal {
+  width: 100%; max-width: 440px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .25); overflow: hidden;
+}
+.jc-modal-hdr {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+}
+.jc-modal-hdr h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; }
+.jc-modal-body { padding: 16px; }
+.jc-modal-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg-soft);
+}
+
+/* ── Narrow ──────────────────────────────────────────────────────────────── */
+/* This card is not always the page. It renders inside the job-cards list's
+   detail rail (JobCardsPage → SplitPane), and a VIEWPORT query cannot see that:
+   on an 1800px monitor with a 700px rail the test below passes, the grid stays
+   two columns, and each one gets ~330px. That is why four fields wrapped, why
+   the reading trail stacked, and why every panel felt squeezed.
+
+   The container query asks the right question — how wide is THIS card — and the
+   media query stays underneath it as the fallback for a browser without
+   container support. Two rules that agree; neither can make the layout worse. */
+@media (max-width: 1100px) {
+  .jc-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.jc-page { container-type: inline-size; container-name: jc; }
+/* 820, not 1100. The media query's number was chosen against a VIEWPORT, where
+   the card is one of several things sharing the width. As a question about the
+   card itself it is far too generous — two columns want ~380px each plus the
+   16px gap, so 820 is where they stop being cramped and 1100 would throw away
+   a perfectly workable two-column card. */
+@container jc (max-width: 820px) {
+  .jc-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .jc-open-grid, .jc-readings { grid-template-columns: 1fr; }
+  /* Three columns of text in 360px is three columns of nothing. The said-line
+     and the bin share row 1; the finding takes the full width beneath.
+     Both are placed EXPLICITLY — left to auto-placement the bin follows the
+     full-width finding and lands alone on a third row, which is what it did. */
+  .jc-cf { grid-template-columns: 1fr auto; }
+  .jc-cf-said  { grid-row: 1; grid-column: 1; }
+  .jc-cf > .jc-icon-btn { grid-row: 1; grid-column: 2; }
+  .jc-cf-found { grid-row: 2; grid-column: 1 / -1; }
+  .jc-status-sel { width: 100%; min-width: 0; }
+  .jc-appt-status { margin-left: 0; text-align: left; }
+  .jc-toast { left: 16px; right: 16px; bottom: 16px; }
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────── */
+[data-theme="dark"] .jc-toast       { background: #052e16; border-color: #166534; color: #86efac; }
+[data-theme="dark"] .jc-toast--error,
+[data-theme="dark"] .jc-err         { background: #450a0a; border-color: #991b1b; color: #fca5a5; }
+[data-theme="dark"] .jc-warn,
+[data-theme="dark"] .jc-hold        { background: #422006; border-color: #92400e; color: #fcd34d; }
+[data-theme="dark"] .jc-item--absent{ background: #450a0a; }
+[data-theme="dark"] .jc-item--absent .jc-item-label { color: #fca5a5; }
+[data-theme="dark"] .jc-tri-btn.is-on.is-present { background-color: #052e16; color: #86efac; }
+[data-theme="dark"] .jc-tri-btn.is-on.is-absent  { background-color: #450a0a; color: #fca5a5; }
+[data-theme="dark"] .jc-icon-btn--danger:hover   { background: #450a0a; border-color: #991b1b; color: #fca5a5; }
+[data-theme="dark"] .jc-chip-x:hover             { background: #991b1b; color: #fecaca; }
+
+/* ── Inspections, body diagram and signatures (phase 4) ──────────────────── */
+.jc-insp {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; text-align: left; cursor: pointer;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-soft); font: inherit;
+}
+.jc-insp:hover { border-color: var(--primary); }
+.jc-insp-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.jc-insp-main strong { font-size: 13px; color: var(--text); }
+.jc-insp-main span   { font-size: 11.5px; color: var(--text-muted);
+                       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jc-insp-side { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.jc-insp-state {
+  font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  background: var(--border); color: var(--text);
+}
+.jc-insp-state.is-completed { background: #dcfce7; color: #166534; }
+.jc-pill { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
+.jc-pill.is-attention { background: #fef3c7; color: #92400e; }
+.jc-pill.is-critical  { background: #fee2e2; color: #991b1b; }
+
+.jc-stagetabs { display: flex; gap: 6px; }
+.jc-stagetabs button {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text-muted);
+  font: inherit; font-size: 12px; font-weight: 600;
+}
+.jc-stagetabs button.is-on { border-color: var(--primary); color: var(--text); background: var(--bg-soft); }
+.jc-stagetabs em {
+  font-style: normal; font-size: 10.5px; font-weight: 700;
+  padding: 1px 6px; border-radius: 999px; background: var(--border); color: var(--text);
+}
+
+.jc-sigrow {
+  display: flex; align-items: center; gap: 12px;
+  padding-bottom: 10px; border-bottom: 1px dashed var(--border);
+}
+.jc-sigrow:last-child { border-bottom: 0; padding-bottom: 0; }
+.jc-sigrow img {
+  width: 92px; height: 46px; object-fit: contain; flex: none;
+  /* White ground in both themes — the ink is dark, see .sig-pad. */
+  background: #fff; border-radius: 7px; border: 1px solid var(--border);
+}
+.jc-sigtyped {
+  width: 92px; height: 46px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 7px; border: 1px dashed var(--border); background: var(--bg-soft);
+  font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 13px;
+  overflow: hidden; padding: 0 6px; text-align: center; line-height: 1.2;
+}
+.jc-sigrow > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 12.5px; }
+.jc-sigrow > div > span { font-size: 11px; color: var(--text-muted); }
+.jc-sigoverride {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 3px; padding: 3px 7px; border-radius: 6px;
+  background: #fffbeb; border: 1px solid #fcd34d; color: #92400e !important;
+  font-size: 10.5px; font-weight: 600;
+}
+
+[data-theme="dark"] .jc-insp-state.is-completed { background: #052e16; color: #86efac; }
+[data-theme="dark"] .jc-pill.is-attention { background: #422006; color: #fcd34d; }
+[data-theme="dark"] .jc-pill.is-critical  { background: #450a0a; color: #fca5a5; }
+[data-theme="dark"] .jc-sigoverride { background: #422006; border-color: #92400e; color: #fcd34d !important; }
+
+/* ── Compliance gates and the gate pass (phase 5) ────────────────────────── */
+.jc-gate {
+  display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 10px;
+  align-items: start; padding-bottom: 11px;
+  border-bottom: 1px dashed var(--border);
+}
+.jc-gate:last-child { border-bottom: 0; padding-bottom: 0; }
+.jc-gate-icon { margin-top: 1px; flex: none; }
+.jc-gate.is-pass .jc-gate-icon { color: #16a34a; }
+.jc-gate.is-fail .jc-gate-icon { color: #dc2626; }
+.jc-gate.is-wait .jc-gate-icon { color: #d97706; }
+.jc-gate.is-over .jc-gate-icon { color: #92400e; }
+.jc-gate.is-off  .jc-gate-icon { color: var(--text-muted); }
+
+.jc-gate-body { min-width: 0; }
+.jc-gate-body strong {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 13px; color: var(--text);
+}
+.jc-gate-body strong em {
+  font-style: normal; font-size: 10.5px; font-weight: 600;
+  letter-spacing: .3px; text-transform: uppercase; color: var(--text-muted);
+}
+.jc-gate-body p { margin: 2px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+.jc-gate-side { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+
+.jc-gate-form { display: flex; flex-direction: column; gap: 7px; margin-top: 8px; }
+.jc-gate-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.jc-link-btn--warn { color: #b45309; }
+
+/* ── The refusal ─────────────────────────────────────────────────────────── */
+.jc-block {
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 13px 15px; border-radius: 12px;
+  background: #fffbeb; border: 1px solid #fcd34d; color: #92400e;
+}
+.jc-block-hdr { display: flex; align-items: center; gap: 9px; }
+.jc-block-hdr strong { flex: 1; min-width: 0; font-size: 13.5px; }
+.jc-block-hdr .jc-icon-btn { background: transparent; border-color: #fcd34d; color: inherit; }
+.jc-block ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 5px; }
+.jc-block li { font-size: 12.5px; line-height: 1.5; }
+.jc-block-force { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+.jc-block-force .jc-input { flex: 1; min-width: 200px; }
+
+/* ── The pass ────────────────────────────────────────────────────────────── */
+.jc-passform { display: flex; flex-direction: column; gap: 11px; }
+.jc-passform .button { align-self: flex-start; }
+
+.jc-pass {
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 14px; border-radius: 12px;
+  background: var(--bg-soft); border: 1px dashed var(--border);
+}
+.jc-pass-no {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px; font-weight: 700; letter-spacing: .5px; color: var(--primary);
+}
+.jc-pass dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+.jc-pass dl > div { display: flex; flex-direction: column; gap: 1px; }
+.jc-pass dt { font-size: 10.5px; font-weight: 700; letter-spacing: .3px;
+              text-transform: uppercase; color: var(--text-muted); }
+.jc-pass dd { margin: 0; font-size: 13px; color: var(--text); }
+.jc-pass-note {
+  margin: 0; padding: 7px 10px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--border);
+  font-size: 12.5px; line-height: 1.5;
+}
+.jc-pass-meta { font-size: 11px; color: var(--text-muted); line-height: 1.45; }
+
+@media (max-width: 480px) { .jc-pass dl { grid-template-columns: 1fr; } }
+
+[data-theme="dark"] .jc-block { background: #422006; border-color: #92400e; color: #fcd34d; }
+[data-theme="dark"] .jc-block-hdr .jc-icon-btn { border-color: #92400e; }
+[data-theme="dark"] .jc-link-btn--warn { color: #fbbf24; }
+[data-theme="dark"] .jc-gate.is-pass .jc-gate-icon { color: #4ade80; }
+[data-theme="dark"] .jc-gate.is-fail .jc-gate-icon { color: #f87171; }
+[data-theme="dark"] .jc-gate.is-wait .jc-gate-icon { color: #fbbf24; }
+[data-theme="dark"] .jc-gate.is-over .jc-gate-icon { color: #fcd34d; }
+
+/* ── Estimates for the visit (phase 6) ───────────────────────────────────── */
+.jc-est {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; text-align: left; cursor: pointer; font: inherit;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-soft);
+}
+.jc-est:hover { border-color: var(--primary); }
+.jc-est-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.jc-est-main strong { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); }
+.jc-est-main span   { font-size: 11.5px; color: var(--text-muted); text-transform: capitalize; }
+.jc-est-void {
+  font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .3px;
+  text-transform: uppercase; padding: 2px 6px; border-radius: 4px;
+  background: #fee2e2; color: #991b1b;
+}
+.jc-est-side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.jc-est-amt {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.jc-pill.is-done { background: #dcfce7; color: #166534; }
+
+[data-theme="dark"] .jc-est-void      { background: #450a0a; color: #fca5a5; }
+[data-theme="dark"] .jc-pill.is-done  { background: #052e16; color: #86efac; }
+
+/* ── What the customer booked (step 2) ───────────────────────────────────────
+   Same row geometry as .jc-est so the booking and the estimates directly below
+   it read as one column rather than two designs. A div, not a button: this is a
+   record of what was agreed and there is nothing here to click into. */
+.jc-bk {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--border);
+  /* Longhand, never the `background` shorthand: React diffs longhands and the
+     shorthand silently resets the ones it does not mention. */
+  background-color: var(--bg-soft);
+}
+.jc-bk-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.jc-bk-main strong { font-size: 13px; color: var(--text); }
+.jc-bk-main span   { font-size: 11.5px; color: var(--text-muted); }
+.jc-bk-side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.jc-bk-amt {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* On a narrow screen the price and its pill drop below the service name instead
+   of squeezing it to two characters. Same behaviour .jc-part already has. */
+@media (max-width: 560px) {
+  .jc-bk { flex-direction: column; align-items: stretch; gap: 7px; }
+  .jc-bk-side { justify-content: flex-start; }
+}
+
+/* ── Authorisation: what the customer agreed to (step 3) ─────────────────────
+   Two pill states the rest of the card did not need. Waiting is amber rather
+   than grey on purpose: a line nobody has answered is an open question, not a
+   neutral one, and grey reads as "fine". */
+.jc-pill.is-wait { background: #fef3c7; color: #92400e; }
+.jc-pill.is-fail { background: #fee2e2; color: #991b1b; }
+[data-theme="dark"] .jc-pill.is-wait { background: #422006; color: #fcd34d; }
+[data-theme="dark"] .jc-pill.is-fail { background: #450a0a; color: #fca5a5; }
+
+/* The headline figures. Quoted and Approved side by side, because the whole
+   point is the gap between them — printed one above the other they read as two
+   unrelated facts. */
+.jc-auth-tot {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 10px 12px; margin-bottom: 4px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background-color: var(--bg-soft);
+}
+.jc-auth-fig { display: flex; flex-direction: column; gap: 1px; min-width: 96px; flex: 1; }
+.jc-auth-fig span   { font-size: 10.5px; font-weight: 700; letter-spacing: .3px;
+                      text-transform: uppercase; color: var(--text-muted); }
+.jc-auth-fig strong { font-size: 17px; color: var(--text); font-variant-numeric: tabular-nums; }
+/* Approved below Quoted means the customer refused something. Colour is the
+   only thing that makes two numbers read as a difference at a glance. */
+.jc-auth-fig.is-short strong { color: #b45309; }
+.jc-auth-fig.is-wait  strong { color: #92400e; }
+[data-theme="dark"] .jc-auth-fig.is-short strong { color: #fbbf24; }
+[data-theme="dark"] .jc-auth-fig.is-wait  strong { color: #fcd34d; }
+
+.jc-auth {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--border);
+  background-color: var(--bg-soft);
+}
+/* A refused line stays on the card as the record of the refusal, and has to
+   look refused — otherwise it reads as work still to do. */
+.jc-auth.is-declined { border-color: #fca5a5; background-color: #fef2f2; }
+[data-theme="dark"] .jc-auth.is-declined { border-color: #7f1d1d; background-color: #1f0d0d; }
+.jc-auth-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.jc-auth-main strong { font-size: 13px; color: var(--text); }
+.jc-auth-main span   { font-size: 11.5px; color: var(--text-muted); }
+.jc-auth-side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.jc-auth-amt {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.jc-auth-act { display: inline-flex; gap: 4px; }
+
+.jc-mini {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; font-size: 11.5px; font-weight: 600; font-family: inherit;
+  border: 1px solid var(--border); border-radius: 7px;
+  background-color: var(--panel); color: var(--text); cursor: pointer;
+}
+.jc-mini:hover:not(:disabled) { border-color: #16a34a; color: #166534; }
+.jc-mini.is-bad:hover:not(:disabled) { border-color: #dc2626; color: #991b1b; }
+/* Disabled means "already the answer", not "broken" — so it dims rather than
+   greying out into something that looks unavailable by mistake. */
+.jc-mini:disabled { opacity: .4; cursor: default; }
+
+@media (max-width: 560px) {
+  .jc-auth { flex-direction: column; align-items: stretch; gap: 7px; }
+  .jc-auth-side { justify-content: flex-start; }
+}
+
+/* ── Billed and paid (step 3d) ───────────────────────────────────────────────
+   Geometry copied from .jc-est rather than the class reused. An invoice is not
+   an estimate, and sharing the class means anything that counts the estimates
+   on this card silently counts invoices as well — which is what a phase-8 test
+   caught within minutes of this section existing. */
+.jc-inv {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; text-align: left; cursor: pointer; font: inherit;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background-color: var(--bg-soft);
+}
+.jc-inv:hover { border-color: var(--primary); }
+.jc-inv-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.jc-inv-main strong { font-size: 13px; color: var(--text); }
+.jc-inv-main span   { font-size: 11.5px; color: var(--text-muted); text-transform: capitalize; }
+.jc-inv-side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.jc-inv-amt {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 560px) {
+  .jc-inv { flex-direction: column; align-items: stretch; gap: 7px; }
+  .jc-inv-side { justify-content: flex-start; }
+}
+
+/* ── Add work (step 3e) ──────────────────────────────────────────────────────
+   A form inside the section rather than a modal: the advisor is reading the
+   lines above it to decide what is missing, and a modal would cover the thing
+   they are looking at. */
+.jc-addwork {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 11px 12px; border-radius: 10px;
+  border: 1px dashed var(--border);
+  background-color: var(--bg-soft);
+}
+.jc-aw-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.jc-aw-row > .form-input, .jc-aw-row > select.form-input { flex: 1; min-width: 0; }
+.jc-aw-f { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 88px; }
+.jc-aw-f > span {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .3px;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.jc-aw-actions { justify-content: flex-end; }
+/* The one place this form raises its voice: adding to something the customer
+   has already answered. */
+.jc-aw-warn {
+  margin: 0; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid #fcd34d; background-color: #fffbeb; color: #92400e;
+}
+[data-theme="dark"] .jc-aw-warn { border-color: #78350f; background-color: #1f1505; color: #fcd34d; }
+
+@media (max-width: 560px) {
+  .jc-aw-row { flex-direction: column; align-items: stretch; }
+  .jc-aw-actions { flex-direction: row; }
+}
+
+/* ── Parts issued and the time log (phase 7) ─────────────────────────────── */
+
+/* A row per issue. The left-hand accent is the whole visual argument of the
+   section: a part nobody can bill is marked where it sits, not summarised at
+   the bottom where it would be read after the decision was made. */
+.jc-part, .jc-lab {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-soft);
+}
+.jc-part.is-leak {
+  border-color: #fcd34d;
+  /* Longhand, never the `background` shorthand: React diffs longhands and the
+     shorthand silently resets the ones it does not mention. */
+  background-color: #fffbeb;
+}
+.jc-part-main, .jc-lab-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.jc-part-main strong, .jc-lab-main strong {
+  font-size: 13px; color: var(--text); overflow-wrap: anywhere;
+}
+.jc-part-main span, .jc-lab-main span {
+  font-size: 11.5px; color: var(--text-muted); overflow-wrap: anywhere;
+}
+.jc-part-back { font-style: normal; color: #b45309; font-weight: 600; }
+
+.jc-part-side, .jc-lab-side {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  /* nowrap on purpose: the two icon buttons belong on the same line as the
+     picker they act on, and wrapping put them in a column beside a row. The
+     phone rule below stacks the whole row instead. */
+  flex-wrap: nowrap; justify-content: flex-end;
+}
+/* Wide enough to read an estimate line, narrow enough not to push the row
+   sideways on a laptop. */
+.jc-part-line { max-width: 180px; font-size: 11.5px; padding: 5px 7px; }
+
+.jc-part-return { margin-top: 2px; }
+.jc-part-return-lbl { font-size: 12px; color: var(--text); font-weight: 600; }
+
+.jc-lab-mins {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums; min-width: 48px; text-align: right;
+}
+
+/* The add forms wrap rather than scroll: on a phone every field gets its own
+   line, and nothing on this page is allowed to widen the document. */
+.jc-partform, .jc-labform {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px; border-radius: 10px;
+  border: 1px dashed var(--border); background: var(--bg-soft);
+}
+.jc-partform .jc-input, .jc-labform .jc-input { flex: 1 1 150px; min-width: 0; }
+.jc-partform .jc-qty, .jc-labform .jc-qty { flex: 0 0 84px; }
+.jc-partform .jc-unit { flex: 0 0 84px; }
+.jc-partform-act { display: flex; gap: 8px; flex: 1 1 100%; }
+
+@media (max-width: 640px) {
+  .jc-part, .jc-lab { flex-direction: column; align-items: stretch; }
+  .jc-part-side, .jc-lab-side { justify-content: flex-start; flex-wrap: wrap; }
+  .jc-part-line { max-width: none; flex: 1; }
+  .jc-lab-mins { text-align: left; }
+}
+
+[data-theme="dark"] .jc-part.is-leak { border-color: #92400e; background-color: #2a1c06; }
+[data-theme="dark"] .jc-part-back    { color: #fcd34d; }
+
+/* ── Offered before, declined (step 5) ───────────────────────────────────────
+   Same row geometry as .jc-bk and .jc-est, so booking, past refusals and
+   estimates read as one column rather than three designs. Amber-edged, not
+   red: this is an opportunity, not a fault. */
+.jc-dec {
+  border: 1px solid var(--border);
+  border-left: 3px solid #f59e0b;
+  border-radius: 10px;
+  /* Longhand, never the `background` shorthand — React diffs longhands and the
+     shorthand silently resets the ones it does not mention. */
+  background-color: var(--bg-soft);
+}
+.jc-dec-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 12px;
+}
+.jc-dec-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.jc-dec-main strong { font-size: 13px; color: var(--text); }
+.jc-dec-main span   { font-size: 11.5px; color: var(--text-muted); }
+.jc-dec-side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.jc-dec-amt {
+  font-size: 13px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* Struck through would say "cancelled". It was refused, not withdrawn, and the
+   figure is still the fact the advisor quotes from. */
+.jc-dec-btn { padding: 3px 9px; font-size: 11.5px; }
+
+/* The re-offer form, inside the row it belongs to rather than floating over the
+   card: a dialog here would hide the other declined lines, which are the
+   context for deciding whether to raise this one at all. */
+.jc-dec-form {
+  display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;
+  padding: 10px 12px; border-top: 1px dashed var(--border);
+}
+.jc-dec-actions { display: flex; gap: 8px; margin-left: auto; }
+
+@media (max-width: 560px) {
+  .jc-dec-row { flex-direction: column; align-items: stretch; gap: 7px; }
+  .jc-dec-side { justify-content: flex-start; }
+  .jc-dec-form { flex-direction: column; align-items: stretch; }
+  .jc-dec-actions { flex-direction: row; margin-left: 0; }
+}
+
+/* ── The reading trail (step 6) ──────────────────────────────────────────────
+   Under the four boxes, not in a section of its own: it is the history of those
+   same four numbers, and splitting them would make somebody read two panels to
+   answer one question. */
+.jc-trail { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.jc-trail-hd {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 7px;
+}
+/* A grid, not a table: five short columns that have to stay in line down the
+   list, inside a panel narrow enough that a real table would scroll. */
+.jc-tr {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) 1fr auto auto minmax(0, 72px);
+  align-items: baseline; gap: 10px;
+  padding: 5px 0; font-size: 12px;
+  border-top: 1px solid var(--border);
+}
+.jc-tr:first-of-type { border-top: 0; }
+.jc-tr-when { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+/* The panel lives in the narrow right-hand column, so the transition goes on
+   its own line under the label rather than wrapping mid-phrase — "Status
+   change" broken across two lines reads as two different things. */
+.jc-tr-what { color: var(--text); min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.jc-tr-what em {
+  font-style: normal; color: var(--text-muted); font-size: 11px;
+}
+.jc-tr-num {
+  font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+/* The distance since the previous reading. Green for forward, because that is
+   the ordinary case and it should not read as an alert. */
+.jc-tr-num em {
+  font-style: normal; font-weight: 700; font-size: 11px;
+  margin-left: 6px; color: #16a34a;
+}
+.jc-tr-num em.is-back { color: #b91c1c; }
+.jc-tr-fuel { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.jc-tr-who {
+  font-size: 11px; color: var(--text-muted); text-align: right;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* A reading below the one before it. Tinted rather than struck through — the
+   figure is kept exactly as it was entered, and struck through would say it had
+   been withdrawn. */
+.jc-tr.is-back { background-color: #fef2f2; }
+[data-theme="dark"] .jc-tr.is-back { background-color: #1f0a0a; }
+
+/* The two reading boxes inside the status prompt. */
+.jc-sc-read { display: flex; gap: 10px; margin-top: 4px; }
+.jc-sc-read .jc-field { flex: 1; min-width: 0; }
+
+@media (max-width: 560px) {
+  /* Five columns do not fit 360px. Two rows of the same row: what and when on
+     top, the numbers and the name under it. */
+  .jc-tr {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "what num" "when who";
+    row-gap: 2px;
+  }
+  .jc-tr-when { grid-area: when; }
+  .jc-tr-what { grid-area: what; }
+  .jc-tr-num  { grid-area: num; }
+  .jc-tr-who  { grid-area: who; }
+  .jc-tr-fuel { display: none; }
+  .jc-sc-read { flex-direction: column; }
+}
+
+/* ── Step 6 UI pass: compliance groups, the fold, and the reading hero ──────
+   Presentation only. Every control these wrap is the one that was already
+   there, doing what it already did. */
+
+.jc-gate-group { display: flex; flex-direction: column; gap: 11px; }
+.jc-gate-group + .jc-gate-group { margin-top: 3px; }
+/* The label that came off the rows. Said once, where it separates things. */
+.jc-group-hd {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .5px;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.jc-group-hd::after { content: ''; flex: 1; height: 1px; background-color: var(--border); }
+.jc-group-none { margin: 0; font-size: 12px; color: var(--text-muted); font-style: italic; }
+
+.jc-fold {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: none; border: 0; font: inherit; font-size: 12.5px;
+  color: var(--text-muted); cursor: pointer; padding: 2px 0;
+}
+.jc-fold:hover { color: var(--text); }
+.jc-fold b { color: var(--text); font-weight: 700; }
+.jc-fold-cv { flex: none; transition: transform .15s; }
+.jc-fold[aria-expanded="true"] .jc-fold-cv { transform: rotate(90deg); }
+.jc-fold-body { display: flex; flex-direction: column; gap: 11px; padding-top: 2px; }
+
+/* Override stops outweighing Confirm.
+   It was bold amber beside a plain bordered button, which put the heavier act —
+   setting a compliance rule aside, logged, super admin only — in the lighter
+   looking control. It is still ONE click, in the same place; it just no longer
+   shouts louder than the ordinary action next to it. */
+.jc-link-btn--warn { color: var(--text-muted); font-weight: 600; font-size: 11.5px; }
+.jc-link-btn--warn:hover { color: #b45309; }
+[data-theme="dark"] .jc-link-btn--warn:hover { color: #fbbf24; }
+
+.jc-pill.is-muted {
+  background-color: var(--bg-soft); color: var(--text-muted); border: 1px solid var(--border);
+}
+/* The status pill in the header. Neutral by default; the two states that mean
+   "stopped" are the only ones that earn a colour. */
+.jc-pill--status { background-color: #dbeafe; color: #1e40af; }
+.jc-pill--status.is-on_hold  { background-color: #fef3c7; color: #92400e; }
+.jc-pill--status.is-cancelled { background-color: #fee2e2; color: #991b1b; }
+.jc-pill--status.is-closed,
+.jc-pill--status.is-delivered { background-color: #dcfce7; color: #166534; }
+[data-theme="dark"] .jc-pill--status { background-color: #172554; color: #93c5fd; }
+[data-theme="dark"] .jc-pill--status.is-on_hold   { background-color: #422006; color: #fcd34d; }
+[data-theme="dark"] .jc-pill--status.is-cancelled { background-color: #450a0a; color: #fca5a5; }
+[data-theme="dark"] .jc-pill--status.is-closed,
+[data-theme="dark"] .jc-pill--status.is-delivered { background-color: #052e16; color: #86efac; }
+
+/* The reading, at the size it is asked about. */
+/* `hidden` alone does nothing here: .jc-readings sets display:grid, and an
+   author display wins over the UA sheet's [hidden]{display:none}. The attribute
+   stays because assistive tech reads it; this makes it mean something. */
+.jc-readings[hidden] { display: none; }
+
+.jc-read-hero { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.jc-read-hero b {
+  font-size: 26px; font-weight: 800; letter-spacing: -.5px;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+.jc-read-hero span { font-size: 12px; color: var(--text-muted); }
+.jc-read-hero .jc-pill { margin-left: auto; }
+
+@media (max-width: 560px) {
+  .jc-read-hero .jc-pill { margin-left: 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   The row list — `jcx-`
+   ═══════════════════════════════════════════════════════════════════════════
+   A prefix of its own inside the page's own prefix, so nothing here can reach
+   a section's internals by accident. The sections keep every `jc-` rule they
+   had; these are the frame around them.
+
+   Two rules run through all of it. Colour is information, never decoration:
+   the palette is the page's own text tokens, and the three semantic colours
+   appear only where they say something (a 2px bar on a row, the figure in a
+   value, the one chevron the car is standing on). And weight carries hierarchy
+   before size does — the labels are all one weight, and bold is kept for the
+   numbers somebody is actually reading.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── The stage rail ──────────────────────────────────────────────────────── */
+/* Chevrons rather than ticks on a line: the shape itself says which way the
+   work flows, so the rail needs no legend and no "you are here" caption. */
+.jcx-rail {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  list-style: none; margin: 0; padding: 0;
+}
+.jcx-st {
+  position: relative;
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 16px 7px 20px; margin-right: -9px;
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+  color: var(--text-muted);
+  background-color: var(--bg-soft);
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%, 9px 50%);
+}
+.jcx-st:first-child {
+  padding-left: 13px;
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%);
+}
+.jcx-st b { font-weight: 500; opacity: .55; font-variant-numeric: tabular-nums; }
+/* Done is quiet. It is context, not news. */
+.jcx-st.is-done { color: var(--text); background-color: var(--border); }
+/* Exactly one chevron is solid, and it is the only ink-filled thing in the
+   header. Not the brand colour: green here competes with the primary button
+   and stops meaning "good" anywhere else on the card. */
+.jcx-st.is-now {
+  color: var(--panel); background-color: var(--text); font-weight: 600;
+}
+.jcx-st.is-now b { opacity: .7; }
+
+/* ── The four facts ──────────────────────────────────────────────────────── */
+.jcx-sum {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--border); border-radius: var(--radius, 8px);
+  overflow: hidden;
+}
+.jcx-tile {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 11px 14px; min-width: 0;
+  border-left: 1px solid var(--border);
+}
+.jcx-tile:first-child { border-left: 0; }
+.jcx-tile span {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; font-weight: 500; color: var(--text-muted);
+}
+.jcx-tile strong {
+  font-size: 17px; font-weight: 700; letter-spacing: -.2px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jcx-tile em {
+  font-style: normal; font-size: 11.5px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jcx-num { font-variant-numeric: tabular-nums; }
+/* Money still owed is the one figure in this strip that is a problem. */
+.jcx-num.is-due { color: #c2410c; }
+
+/* ── What is in the way ──────────────────────────────────────────────────── */
+.jcx-block {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid #fed7aa; border-radius: var(--radius, 8px);
+  background-color: #fff7ed; color: #9a3412;
+  font-size: 13px;
+}
+.jcx-block strong { font-weight: 600; }
+.jcx-blink {
+  margin-left: auto; background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  color: inherit; text-decoration: underline; text-underline-offset: 3px;
+}
+
+/* ── Groups and rows ─────────────────────────────────────────────────────── */
+.jcx-body { display: flex; flex-direction: column; gap: 10px; }
+
+.jcx-group {
+  border: 1px solid var(--border); border-radius: var(--radius, 8px);
+  background-color: var(--panel); overflow: hidden;
+}
+.jcx-ghdr {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 10px 14px;
+  background-color: var(--bg-soft); border: 0; border-bottom: 1px solid transparent;
+  cursor: pointer; font: inherit; text-align: left; color: var(--text-muted);
+}
+.jcx-ghdr[aria-expanded="true"] { border-bottom-color: var(--border); }
+.jcx-ghdr strong {
+  font-size: 11.5px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* The group the car is standing in. A thin outline rather than a filled chip:
+   this is a marker, not an alert. */
+.jcx-now {
+  font-style: normal; font-size: 10.5px; font-weight: 600;
+  padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--primary); color: var(--primary);
+}
+/* Said on the heading so that folding a group hides its detail and never its
+   problem. */
+.jcx-gnote { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+
+.jcx-rows { display: flex; flex-direction: column; }
+
+.jcx-row {
+  position: relative;
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; min-height: 44px; padding: 0 14px;
+  background-color: var(--panel); border: 0; border-top: 1px solid var(--border);
+  cursor: pointer; font: inherit; text-align: left;
+}
+.jcx-rows .jcx-row:first-child { border-top: 0; }
+.jcx-row:hover { background-color: var(--bg-soft); }
+.jcx-row-ic { flex: none; color: var(--text-muted); }
+.jcx-row-t {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 13.5px; font-weight: 500; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The column somebody scans. Right-aligned so the answers line up with each
+   other rather than with the labels. */
+.jcx-row-v {
+  flex: none; font-size: 13px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.jcx-row-go { flex: none; color: var(--border); }
+.jcx-row:hover .jcx-row-go { color: var(--text-muted); }
+
+/* State is a 2px bar on the edge and the colour of the value. Not a badge:
+   seventeen badges down one column is the wall this layout replaced. */
+.jcx-row[data-s="bad"]::before,
+.jcx-row[data-s="warn"]::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+}
+.jcx-row[data-s="bad"]::before  { background-color: #c2410c; }
+.jcx-row[data-s="warn"]::before { background-color: #a16207; }
+.jcx-row[data-s="bad"]  .jcx-row-v { color: #c2410c; font-weight: 600; }
+.jcx-row[data-s="warn"] .jcx-row-v { color: #a16207; }
+.jcx-row[data-s="ok"]   .jcx-row-v { color: var(--text); }
+
+/* ── The section popup ───────────────────────────────────────────────────── */
+/* Wider than the hold prompt, and scrolls inside itself: a body diagram and a
+   44-point inspection are not 440px of content, and the page behind must not
+   be the thing that scrolls. */
+.jc-modal--sec { max-width: 720px; display: flex; flex-direction: column; max-height: 88vh; }
+.jcx-mbody { overflow-y: auto; padding: 14px; }
+.jcx-mnav { display: flex; align-items: center; gap: 6px; }
+.jcx-mnav .jc-icon-btn:disabled { opacity: .35; cursor: default; }
+.jcx-mnav .jc-icon-btn:disabled:hover { color: var(--text-muted); border-color: var(--border); }
+/* The section brings its own panel. Inside the popup the popup IS the panel,
+   so the inner one loses its frame rather than drawing a box in a box. */
+.jcx-mbody > .jc-card { border: 0; border-radius: 0; background: transparent; }
+.jcx-mbody > .jc-card > .jc-card-body { padding: 0; }
+/* The section's own header keeps its one-line description and whatever pill it
+   puts on the right — both are information. What goes is the title and its
+   icon, which the popup's own header has just said. A section that has neither
+   left collapses to nothing rather than leaving an empty bar. */
+.jcx-mbody > .jc-card > .jc-card-hdr {
+  padding: 0 0 12px; border-bottom: 0; background: transparent;
+}
+.jcx-mbody > .jc-card > .jc-card-hdr > .jc-card-title > svg,
+.jcx-mbody > .jc-card > .jc-card-hdr > .jc-card-title strong { display: none; }
+.jcx-mbody > .jc-card > .jc-card-hdr > .jc-card-title span {
+  font-size: 12.5px; color: var(--text-muted); line-height: 1.5;
+}
+
+/* ── Narrow ──────────────────────────────────────────────────────────────── */
+/* Same reason the grid had both: this card renders inside the list's detail
+   rail, where a viewport query is asking about the wrong box. */
+@container jc (max-width: 760px) {
+  .jcx-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .jcx-tile:nth-child(3) { border-left: 0; }
+  .jcx-tile:nth-child(n + 3) { border-top: 1px solid var(--border); }
+}
+@media (max-width: 760px) {
+  .jcx-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .jcx-tile:nth-child(3) { border-left: 0; }
+  .jcx-tile:nth-child(n + 3) { border-top: 1px solid var(--border); }
+  .jcx-st { font-size: 11px; padding: 6px 13px 6px 17px; }
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────── */
+/* The three semantic colours are lightened rather than swapped: the same
+   meanings, at a contrast that works on a dark panel. */
+[data-theme="dark"] .jcx-num.is-due,
+[data-theme="dark"] .jcx-row[data-s="bad"] .jcx-row-v { color: #fdba74; }
+[data-theme="dark"] .jcx-row[data-s="warn"] .jcx-row-v { color: #fcd34d; }
+[data-theme="dark"] .jcx-row[data-s="bad"]::before  { background-color: #fb923c; }
+[data-theme="dark"] .jcx-row[data-s="warn"]::before { background-color: #facc15; }
+[data-theme="dark"] .jcx-block {
+  background-color: #431407; border-color: #9a3412; color: #fed7aa;
+}
+/* is-now fills with the text colour, which is near-white in dark mode, so the
+   label has to flip with it. */
+[data-theme="dark"] .jcx-st.is-now { color: var(--bg); }

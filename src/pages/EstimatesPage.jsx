@@ -2,6 +2,10 @@ import react from 'react';
 import { openDocumentPdf, downloadDocumentPdf } from '../lib/documentPdf.js';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api/client.js';
+// Sends a POINTER to this record to a colleague on internal chat.
+// Renders nothing without USE_CHAT, and brings its own stylesheet.
+import ShareToChat from '../components/chat/ShareToChat.jsx';
+
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { useAppPaths } from '../lib/appPaths.js';
 import InvoiceDateDialog from '../components/InvoiceDateDialog.jsx';
@@ -35,6 +39,8 @@ import {
   Phone, MapPin, Tag, Layers, Landmark, Calendar, Gauge, Loader2,
   // Warning shown before rejecting a line whose work is already completed.
   AlertTriangle,
+  // Work offered on an earlier visit and refused — come back round to it.
+  RotateCcw,
 } from 'lucide-react';
 import '../styles/listLayout.css';
 import '../styles/EstimatesPage.css';
@@ -109,6 +115,44 @@ function WarrantyChip({ it }) {
   );
 }
 
+/* ── What the customer was quoted, when it is not what we are charging ────────
+   A service booked three weeks ago carries the price quoted that day. It is
+   re-priced at today's rate on the way onto the estimate, which is correct —
+   the rules may have changed and the vehicle's segment decides the figure. What
+   was missing is that the advisor could not see the gap. They found out at the
+   counter, with the customer holding a number nobody on this screen had.
+
+   Shown only when the two differ by a rupee or more. A booked price equal to
+   today's rate is noise, and sub-rupee differences are the back-calculation, not
+   a price change.
+
+   `incRate` is inclusive of GST, and so is booked_price — comparing an inc-GST
+   quote against an ex-GST working figure would invent a 18% gap on every line. */
+function BookedChip({ it, incRate }) {
+  const booked = it.booked_price != null ? Number(it.booked_price) : null;
+  if (booked == null) return null;
+  const now = Number(incRate) || 0;
+  const diff = now - booked;
+  if (Math.abs(diff) < 1) return null;
+
+  const up = diff > 0;
+  return (
+    <span
+      style={{
+        fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+        background: up ? '#fef3c7' : '#dbeafe',
+        color: up ? '#92400e' : '#1e40af',
+        whiteSpace: 'nowrap',
+      }}
+      title={up
+        ? `The customer was quoted ₹${booked.toLocaleString('en-IN')} when they booked. Today's rate is ₹${now.toLocaleString('en-IN')} — ₹${Math.abs(diff).toLocaleString('en-IN')} more. Charge either, but tell them.`
+        : `The customer was quoted ₹${booked.toLocaleString('en-IN')} when they booked. Today's rate is ₹${now.toLocaleString('en-IN')} — ₹${Math.abs(diff).toLocaleString('en-IN')} less.`}
+    >
+      booked at ₹{booked.toLocaleString('en-IN')}
+    </span>
+  );
+}
+
 // ── Work status badge ─────────────────────────────────────────────────────────
 const WS_STYLE = {
   pending: { bg: '#f3f4f6', color: '#6b7280', border: '#d1d5db', label: 'Pending' },
@@ -138,7 +182,31 @@ function WorkStatusSelect({ value, onChange, disabled }) {
         padding: '4px 22px 4px 10px',
         borderRadius: 99,
         border: `1.5px solid ${current.border}`,
-        background: current.bg,
+        /* backgroundColor, NOT the `background` shorthand — this is a real bug
+           that shipped, and it looks like a rendering glitch rather than a CSS
+           one, so it is worth spelling out.
+
+           React applies a style object by assigning each key, and ON AN UPDATE
+           it only assigns the keys whose VALUE CHANGED. When a line moves
+           Pending → Done, `background`, `color`, `border` and `backgroundImage`
+           all change, so all four are re-assigned. `backgroundRepeat`,
+           `backgroundPosition` and `backgroundSize` are IDENTICAL for every
+           status, so React skips them.
+
+           `background` is a shorthand: assigning it resets background-repeat to
+           `repeat` and background-size to `auto`. Nothing then restores them,
+           because React decided they had not changed. The 10×6 chevron tiles
+           across the whole pill and the control turns into a field of little
+           triangles with the label buried underneath.
+
+           It only ever showed on an UPDATE — on first paint React writes every
+           key, so a freshly loaded page looked fine. Marking the whole estimate
+           done at once is what made it obvious: every pill changed on screen at
+           the same moment.
+
+           backgroundColor touches only the colour and leaves the other
+           background longhands alone, so there is nothing to restore. */
+        backgroundColor: current.bg,
         color: current.color,
         cursor: disabled ? 'default' : 'pointer',
         appearance: 'none', WebkitAppearance: 'none',
@@ -680,7 +748,7 @@ function RevisionModal({ estimateId, onClose, onDone }) {
 // ═════════════════════════════════════════════════════════════════════════════
 // Create / Edit Modal
 // ═════════════════════════════════════════════════════════════════════════════
-function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, userHubId = '', initialAppointmentId = '', initialStandaloneContext = null }) {
+function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, userHubId = '', initialAppointmentId = '', initialStandaloneContext = null, parentEstimateId = null }) {
   const isEdit = !!editEstimate?.id;
   useEscapeClose(onClose);
 
@@ -740,6 +808,7 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   // Vehicle context from selected appointment — used for pricing lookup
   const [vehicleCtx, setVehicleCtx] = react.useState(null);
 
+
   // Hub service picker state
   const [hubCategories, setHubCategories] = react.useState([]); // from GET /api/hubs/:id/services
   const [selectedCatId, setSelectedCatId] = react.useState(null);
@@ -748,6 +817,78 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
   const [showPartPicker, setShowPartPicker] = react.useState(false);
   const [partPickerSearch, setPartPickerSearch] = react.useState('');
   const [partPickerCat, setPartPickerCat] = react.useState('All');
+  /* ── Quick-add a part without leaving the estimate ──────────────────────
+     Before this, a part that was not in the master was a dead end: close the
+     estimate, open Parts, create it, come back, start again. The form lives
+     INSIDE this modal rather than opening a second one — a dialog stacked on
+     a dialog loses people, and this one has to hand the new part straight
+     back to the list behind it. */
+  const [newPart, setNewPart] = react.useState(null);   // null = form closed
+  const [savingPart, setSavingPart] = react.useState(false);
+  const [newPartErr, setNewPartErr] = react.useState('');
+  /* Matches what parts.routes.js enforces, so nobody is shown a button that
+     comes back 403. */
+  const canCreatePart = useCan('CREATE_PART') || useCan('MANAGE_PARTS') || useCan('MANAGE_MASTER_DATA');
+
+  function openNewPart() {
+    setNewPartErr('');
+    setNewPart({
+      /* Whatever was typed in the search is the name they were looking for —
+         asking them to type it a second time is the kind of thing that makes
+         people go back to doing it the long way. */
+      name: partPickerSearch.trim(),
+      category: partPickerCat !== 'All' ? partPickerCat : '',
+      /* 'both' rather than guessing from the vehicle on the estimate.
+         vehicleCtx carries vehicle_type_ID, not a name, and quietly marking a
+         part 2W-only because it happened to be created on a bike job would
+         hide it from every car estimate afterwards. Wrong by default is worse
+         than unset by default here. */
+      vehicle_type: 'both',
+      customer_rate: '',
+      gst_percent: '18',
+      hsn_code: '',
+    });
+  }
+
+  async function saveNewPart() {
+    const d = newPart;
+    if (!d) return;
+    if (!d.name.trim()) { setNewPartErr('Give the part a name.'); return; }
+    /* HSN is REQUIRED here even though the API allows it to be null.
+       A part created without one produces an invoice line with no HSN, which
+       lands as a GSTR-1 blocker — "N lines have no HSN/SAC code, Table 12
+       under-reports by their value" — months later, when nobody remembers
+       which part it was. This is the one moment somebody knows what the part
+       actually is, so it is the right moment to ask. */
+    if (!String(d.hsn_code).trim()) { setNewPartErr('HSN code is required — without it this part files wrong on GSTR-1.'); return; }
+    if (d.gst_percent === '' || d.gst_percent === null) { setNewPartErr('Give the GST rate.'); return; }
+
+    setSavingPart(true); setNewPartErr('');
+    try {
+      const res = await api('/api/parts', {
+        method: 'POST',
+        body: {
+          name: d.name.trim(),
+          category: d.category.trim() || null,
+          vehicle_type: d.vehicle_type,
+          customer_rate: d.customer_rate === '' ? null : Number(d.customer_rate),
+          gst_percent: Number(d.gst_percent),
+          hsn_code: String(d.hsn_code).trim(),
+        },
+      });
+      const created = res.item || res;
+      /* Into the local list AND onto the estimate. Creating the part was never
+         the goal — putting it on this estimate was. */
+      setParts(prev => [...prev, created].sort((a, b) => String(a.name).localeCompare(String(b.name))));
+      await addPartItem(created);
+      setNewPart(null);
+      setPartPickerSearch('');
+    } catch (e) {
+      /* The API answers a duplicate name with a 409 and a sentence worth
+         showing as-is. */
+      setNewPartErr(e.message || 'Could not save the part.');
+    } finally { setSavingPart(false); }
+  }
 
   // Form state — hub users get their hub pre-filled
   const [form, setForm] = react.useState({
@@ -785,7 +926,15 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
         inc_rate: incRate > 0 ? incRate.toFixed(2) : '',
         gst_percent: gst,
         hsn_sac: it.hsn_sac || '',
-        is_fixed: it.is_fixed_from_appointment || false,
+        /* `is_from_appointment` is the column. This used to read
+           `it.is_fixed_from_appointment`, a name that exists nowhere in the
+           backend, so the "Fixed" badge was always false on a saved estimate and
+           had never once appeared. */
+        is_fixed: it.is_from_appointment || false,
+        /* What the customer was quoted at booking, inc-GST (migration 195).
+           NULL on any line that was typed in rather than carried over, and on
+           every line written before that migration. */
+        booked_price: it.booked_price != null ? Number(it.booked_price) : null,
         discount_type: it.discount_type || null,
         discount_value: parseFloat(it.discount_value) || 0,
         discount_source: it.discount_source || null,
@@ -802,6 +951,36 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       };
     })
   );
+
+  /* ── What this car was offered before and refused ────────────────────────
+     Asked by APPOINTMENT id wherever there is one, never by mobile: hub logins
+     see customer numbers masked to 98382xxxxx (maskCustomerContact), so a hub
+     screen does not hold the number it would have to send. The backend reads
+     the pair off the appointment row, where nothing is masked, and excludes
+     that visit's own lines — they are already on the form.
+
+     A standalone estimate has no appointment, so it falls back to the pair it
+     does hold. That path is staff-only in practice for the same masking
+     reason, and an empty list is the honest outcome for a hub rather than a
+     wrong one. */
+  const [declinedWork, setDeclinedWork] = react.useState([]);
+  react.useEffect(() => {
+    const apptId = form?.appointment_id;
+    const mob    = standaloneCtx?.customer?.mobile;
+    const plate  = standaloneCtx?.vehicle?.vehicle_number;
+    if (!apptId && !(mob && plate)) { setDeclinedWork([]); return; }
+
+    let live = true;
+    const qs = apptId
+      ? `appointment_id=${encodeURIComponent(apptId)}`
+      : `mobile=${encodeURIComponent(mob)}&number=${encodeURIComponent(plate)}`;
+    api(`/api/estimates/declined-work?${qs}`)
+      .then(r => { if (live) setDeclinedWork(r.items || []); })
+      /* Silent. This panel is an assist; a customer with no history and a
+         customer the lookup failed for should both just see the form. */
+      .catch(() => { if (live) setDeclinedWork([]); });
+    return () => { live = false; };
+  }, [form?.appointment_id, standaloneCtx?.customer?.mobile, standaloneCtx?.vehicle?.vehicle_number]);
 
   const [saving, setSaving] = react.useState(false);
   const [error, setError] = react.useState(null);
@@ -1063,6 +1242,13 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
             gst_percent: gst,
             hsn_sac: s.sac_code || '',
             is_fixed: true,
+            /* The booked price, carried at last. `s.price` is
+               appointment_services.price — what this customer was quoted when
+               they rang, inc-GST. It was already in this response and was being
+               read and thrown away: only the re-priced figure survived, so
+               nobody at the desk could see that the customer had heard a
+               different number. Kept on the line and saved with it. */
+            booked_price: s.price != null ? Number(s.price) : null,
             discount_type,
             discount_value,
             discount_source,
@@ -1400,6 +1586,17 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
             quantity: Number(it.quantity) || 1,
             customer_rate: parseFloat(parseFloat(it.unit_rate).toFixed(4)) || 0,
             gst_percent: parseFloat(it.gst_percent) || 0,
+            /* Both of these were computed in local state and then dropped on the
+               floor. `is_from_appointment` has been accepted, stored and
+               returned by the API since the table was created and nothing ever
+               sent it true, so every saved line claimed to be hand-typed.
+               `booked_price` is new in migration 195 and is what lets the desk
+               see that the customer was quoted a different number.
+
+               The server treats booked_price as write-once: sending it again, or
+               sending null, cannot change what is already recorded. */
+            is_from_appointment: !!it.is_fixed,
+            booked_price: it.booked_price ?? null,
             discount_type: forceZero ? null : (it.discount_type || null),
             discount_value: forceZero ? 0 : (it.discount_value || 0),
             discount_amount: forceZero ? 0 : discountAmount,
@@ -1424,6 +1621,11 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
       if (!isEdit) {
         if (mode === 'appointment') {
           payload.appointment_id = Number(form.appointment_id);
+          /* A supplementary estimate — extra work found after the customer
+             approved the first one. Sent only on create: which estimate this
+             extends is settled when it is raised and never edited afterwards.
+             See migration 193. */
+          if (parentEstimateId) payload.parent_estimate_id = Number(parentEstimateId);
         } else {
           const { customer, vehicle } = standaloneCtx || {};
           payload.customer_name = customer?.customer_name?.trim() || null;
@@ -1936,6 +2138,9 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                                   {it.is_fixed && (
                                     <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: '#fef3c7', color: '#92400e' }}>Fixed</span>
                                   )}
+                                  {/* The quote the customer is holding, when it
+                                      is not the figure in the rate box. */}
+                                  <BookedChip it={it} incRate={it.inc_rate} />
                                   <WarrantyChip it={it} />
                                 </div>
                               </div>
@@ -2039,6 +2244,85 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                       })}
                     </tbody>
                   </table>
+                </div>
+              )}
+
+              {/* ── Offered before, declined ──────────────────────────────────
+                  The one thing this form could never see. It knows what the
+                  customer booked, it knows the service master and it knows the
+                  pricing rules — it has never known that the same pads were
+                  offered in March at ₹2,000 and turned down. So the advisor
+                  either re-discovers it by opening old estimates, or does not
+                  offer it at all.
+
+                  Adding goes through addServiceItem / addPartItem, the same
+                  two functions the picker below calls, so a re-offered line
+                  gets today's rule price, today's discount and today's
+                  warranty exactly as a freshly picked one does. The historical
+                  figure beside it is shown as history, never used as a price.
+
+                  A line that was free-typed has no master row to re-price from,
+                  so it is listed without a button rather than added at a rate
+                  this form would have to invent. */}
+              {declinedWork.length > 0 && (
+                <div style={{ border: '1px solid var(--border)', borderLeft: '3px solid #f59e0b', borderRadius: 12, overflow: 'hidden', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--bg-soft)', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <RotateCcw size={13} style={{ color: '#b45309' }} />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                        Offered before, declined
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99, background: '#fef3c7', color: '#92400e' }}>
+                      {declinedWork.length}
+                    </span>
+                  </div>
+                  {declinedWork.map(d => {
+                    const svc  = d.service_id ? services.find(s => String(s.id) === String(d.service_id)) : null;
+                    const part = d.part_id    ? parts.find(p => String(p.id) === String(d.part_id))       : null;
+                    const already = items.some(it =>
+                      (d.service_id && it.type === 'service' && String(it.item_id) === String(d.service_id)) ||
+                      (d.part_id    && it.type === 'part'    && String(it.item_id) === String(d.part_id))   ||
+                      (!d.service_id && !d.part_id &&
+                        String(it.description || '').trim().toLowerCase() ===
+                        String(d.description  || '').trim().toLowerCase()));
+                    return (
+                      <div key={d.item_key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, color: 'var(--text)' }}>{d.description}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            Declined {d.declined_on || '—'} · quoted {fmt(d.quoted_at)}
+                            {d.times_declined > 1 ? ` · ${d.times_declined}× declined` : ''}
+                          </div>
+                        </div>
+                        {already ? (
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            <Check size={13} /> On this estimate
+                          </span>
+                        ) : svc ? (
+                          <button type="button" className="btn-ghost-sm"
+                            style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: 'var(--primary)', background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}
+                            onClick={() => addServiceItem({
+                              id: svc.id, name: svc.name,
+                              gst_percent: svc.gst_percent ?? 0, sac_code: svc.sac_code || '',
+                              category_id: svc.category_id || null,
+                            })}>
+                            <Plus size={12} /> Add
+                          </button>
+                        ) : part ? (
+                          <button type="button"
+                            style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: 'var(--primary)', background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}
+                            onClick={() => addPartItem(part)}>
+                            <Plus size={12} /> Add
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>
+                            typed by hand — add it below
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -2189,7 +2473,10 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
               {showPartPicker && (
                 <div
                   style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  onMouseDown={e => { if (e.target === e.currentTarget) setShowPartPicker(false); }}
+                  /* A click on the backdrop no longer closes the picker while
+                     the new-part form is open and half typed — losing a form to
+                     a stray click is the reason people stop trusting a dialog. */
+                  onMouseDown={e => { if (e.target === e.currentTarget && !newPart) setShowPartPicker(false); }}
                 >
                   <div style={{ background: 'var(--bg)', borderRadius: 14, width: 600, maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 8px 40px rgba(0,0,0,0.18)' }}
                     onMouseDown={e => e.stopPropagation()}>
@@ -2246,11 +2533,25 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
 
                       {/* Right: parts list */}
                       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-                        {parts.length === 0 ? (
-                          <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No parts available</div>
-                        ) : pickerParts.length === 0 ? (
-                          <div style={{ padding: 20, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
-                            {partPickerSearch ? 'No parts found' : 'No parts in this category'}
+                        {parts.length === 0 || pickerParts.length === 0 ? (
+                          /* The dead end, turned into the shortest path to what
+                             they were actually trying to do. */
+                          <div style={{ padding: 24, textAlign: 'center' }}>
+                            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                              {parts.length === 0 ? 'No parts available'
+                                : partPickerSearch ? `No part matches “${partPickerSearch}”`
+                                : 'No parts in this category'}
+                            </div>
+                            {canCreatePart && !newPart && (
+                              <button
+                                type="button"
+                                onClick={openNewPart}
+                                style={{ marginTop: 12, background: 'var(--primary)', border: 'none', color: '#fff', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                              >
+                                <Plus size={13} />
+                                {partPickerSearch ? `Add “${partPickerSearch}” as a new part` : 'Add a new part'}
+                              </button>
+                            )}
                           </div>
                         ) : (
                           pickerParts.map(p => {
@@ -2315,14 +2616,130 @@ function EstimateModal({ editEstimate, onClose, onSaved, isHubUser = false, user
                       </div>
                     </div>
 
+                    {/* ── New part, inline ──────────────────────────────
+                        Above the footer, inside the same modal. Saving it puts
+                        the part in the master AND on this estimate, because
+                        creating the part was never the goal. */}
+                    {newPart && (
+                      /* Capped and scrollable: the modal is maxHeight 80vh, and
+                         without a cap this block squeezes the parts list behind
+                         it down to nothing on a laptop screen. */
+                      <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-soft)', padding: '12px 18px', maxHeight: '46vh', overflowY: 'auto', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>New part</span>
+                          <button type="button" onClick={() => { setNewPart(null); setNewPartErr(''); }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
+                            <X size={14} />
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <label style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--text-muted)' }}>
+                            Part name
+                            <input className="form-input" autoFocus
+                              style={{ fontSize: 12.5, padding: '6px 8px', marginTop: 3 }}
+                              value={newPart.name}
+                              onChange={e => setNewPart(v => ({ ...v, name: e.target.value }))} />
+                          </label>
+
+                          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            Category
+                            {/* A free-text box backed by the categories that
+                                already exist: picking one keeps the left-hand
+                                list from growing a near-duplicate every time
+                                somebody types "Brakes " with a space. */}
+                            <input className="form-input" list="est-part-cats"
+                              style={{ fontSize: 12.5, padding: '6px 8px', marginTop: 3 }}
+                              value={newPart.category}
+                              onChange={e => setNewPart(v => ({ ...v, category: e.target.value }))} />
+                            <datalist id="est-part-cats">
+                              {partCategories.filter(c => c !== 'All').map(c => <option key={c} value={c} />)}
+                            </datalist>
+                          </label>
+
+                          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            Fits
+                            <select className="form-input"
+                              style={{ fontSize: 12.5, padding: '6px 8px', marginTop: 3 }}
+                              value={newPart.vehicle_type}
+                              onChange={e => setNewPart(v => ({ ...v, vehicle_type: e.target.value }))}>
+                              <option value="both">Both 2W and 4W</option>
+                              <option value="2W">2W only</option>
+                              <option value="4W">4W only</option>
+                            </select>
+                          </label>
+
+                          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            HSN code <span style={{ color: '#b91c1c' }}>*</span>
+                            <input className="form-input" inputMode="numeric"
+                              style={{ fontSize: 12.5, padding: '6px 8px', marginTop: 3 }}
+                              placeholder="e.g. 87141090"
+                              value={newPart.hsn_code}
+                              onChange={e => setNewPart(v => ({ ...v, hsn_code: e.target.value }))} />
+                          </label>
+
+                          <label style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            GST % <span style={{ color: '#b91c1c' }}>*</span>
+                            <select className="form-input"
+                              style={{ fontSize: 12.5, padding: '6px 8px', marginTop: 3 }}
+                              value={newPart.gst_percent}
+                              onChange={e => setNewPart(v => ({ ...v, gst_percent: e.target.value }))}>
+                              {['0', '5', '12', '18', '28'].map(r => <option key={r} value={r}>{r}%</option>)}
+                            </select>
+                          </label>
+
+                          <label style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--text-muted)' }}>
+                            Rate (including GST) — optional
+                            <input className="form-input" inputMode="decimal"
+                              style={{ fontSize: 12.5, padding: '6px 8px', marginTop: 3 }}
+                              placeholder="Leave blank to price it on the estimate"
+                              value={newPart.customer_rate}
+                              onChange={e => setNewPart(v => ({ ...v, customer_rate: e.target.value }))} />
+                          </label>
+                        </div>
+
+                        <p style={{ margin: '9px 0 0', fontSize: 11, lineHeight: 1.55, color: 'var(--text-muted)' }}>
+                          HSN is required. A part saved without one becomes an invoice line with no
+                          HSN, which shows up months later as a GSTR-1 blocker with nobody left to
+                          ask what the part was.
+                        </p>
+
+                        {newPartErr && (
+                          <p style={{ margin: '8px 0 0', fontSize: 12, color: '#b91c1c' }}>{newPartErr}</p>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+                          <button type="button" onClick={() => { setNewPart(null); setNewPartErr(''); }}
+                            style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--text)' }}>
+                            Cancel
+                          </button>
+                          <button type="button" onClick={saveNewPart} disabled={savingPart}
+                            className="btn btn-primary" style={{ fontSize: 12.5, padding: '6px 16px' }}>
+                            {savingPart ? 'Saving…' : 'Save and add'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Footer */}
-                    <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                       <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         {addedPartIds.size > 0 ? `${addedPartIds.size} part${addedPartIds.size > 1 ? 's' : ''} added` : 'No parts added yet'}
                       </span>
-                      <button type="button" className="btn btn-primary" style={{ fontSize: 13, padding: '6px 18px' }} onClick={() => setShowPartPicker(false)}>
-                        Done
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {/* Also here, not only in the empty state: the part you
+                            cannot find is often one you only realise is missing
+                            after scrolling a full list. */}
+                        {canCreatePart && !newPart && (
+                          <button type="button" onClick={openNewPart}
+                            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 12px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', color: 'var(--text)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <Plus size={13} /> New part
+                          </button>
+                        )}
+                        <button type="button" className="btn btn-primary" style={{ fontSize: 13, padding: '6px 18px' }} onClick={() => setShowPartPicker(false)}>
+                          Done
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2625,6 +3042,131 @@ function InvoiceSyncWarningModal({ hasPi, piPaid, hasCi, ciPaid, syncBusy, canSy
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Work Done Modal — finish several lines in one pass
+//
+// A CHECKLIST, not a confirmation. "Mark everything done, are you sure?" asks
+// the operator to agree with a sentence; this asks them to look at the actual
+// work and tick it off, which is the same thing they were doing one dropdown at
+// a time, collected onto one screen.
+//
+// Pre-ticked, because the common case by far is that the whole job is finished
+// — the ticking exists so the uncommon case (three of four done) is possible at
+// all, not because the operator should have to do it every time.
+//
+// Only APPROVED lines appear. A rejected line is not work anybody owes, and a
+// line still awaiting the customer cannot be started, so neither belongs on a
+// list of things to mark finished. The server refuses them too.
+// ═════════════════════════════════════════════════════════════════════════════
+function WorkDoneModal({ items, busy, onCancel, onConfirm }) {
+  useEscapeClose(onCancel, !busy);
+
+  const approved = items.filter(i => i.customer_approved === true);
+  /* Already finished lines are shown, ticked and disabled, rather than hidden.
+     Hiding them makes the list shrink every time it is opened and leaves the
+     operator wondering where the first two services went. */
+  const open = approved.filter(i => i.work_status !== 'completed');
+
+  const [picked, setPicked] = react.useState(() => new Set(open.map(i => i.id)));
+  const toggle = id => setPicked(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const allOn = open.length > 0 && picked.size === open.length;
+  const some  = picked.size > 0 && picked.size < open.length;
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-box" onClick={e => e.stopPropagation()} style={{ maxWidth: 440, display: 'flex', flexDirection: 'column', maxHeight: '88vh' }}>
+        <div className="modal-header">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <CheckCircle2 size={18} style={{ color: 'var(--primary)' }} />
+            Work done
+          </h3>
+        </div>
+
+        {/* Master toggle. Indeterminate is set through a ref because React has
+            no attribute for it — `indeterminate` is a DOM property only, and
+            without it a partial selection reads as "none selected". */}
+        <label
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px',
+            background: 'var(--bg-soft)', borderBottom: '1px solid var(--border)',
+            cursor: open.length ? 'pointer' : 'default', userSelect: 'none',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={allOn}
+            disabled={open.length === 0 || busy}
+            ref={el => { if (el) el.indeterminate = some; }}
+            onChange={e => setPicked(e.target.checked ? new Set(open.map(i => i.id)) : new Set())}
+            style={{ width: 17, height: 17, accentColor: 'var(--primary)', cursor: 'inherit' }}
+          />
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+            Select all ({open.length})
+          </span>
+        </label>
+
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {approved.length === 0 && (
+            <div style={{ padding: '22px 20px', fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
+              No approved items to complete.
+            </div>
+          )}
+          {approved.map(it => {
+            const done = it.work_status === 'completed';
+            return (
+              <label
+                key={it.id}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 11, padding: '12px 20px',
+                  borderBottom: '1px solid var(--border)',
+                  cursor: done || busy ? 'default' : 'pointer',
+                  opacity: done ? 0.62 : 1,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={done || picked.has(it.id)}
+                  disabled={done || busy}
+                  onChange={() => toggle(it.id)}
+                  style={{ width: 17, height: 17, flexShrink: 0, accentColor: 'var(--primary)', cursor: 'inherit' }}
+                />
+                <span style={{
+                  flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {it.description || it.service_name || it.part_name || `Item #${it.id}`}
+                </span>
+                <WorkStatusBadge status={it.work_status || 'pending'} />
+              </label>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 20px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
+            {picked.size} selected
+          </span>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn btn-ghost" onClick={onCancel} disabled={busy}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              disabled={busy || picked.size === 0}
+              onClick={() => onConfirm([...picked])}
+            >
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Delete Confirm Modal
 // ─────────────────────────────────────────────────────────────────────────────
 function DeleteConfirmModal({ estimate, deleting, onCancel, onConfirm }) {
@@ -2811,6 +3353,8 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
   const [syncBusy, setSyncBusy] = react.useState(false);
   const [showKebab, setShowKebab] = react.useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = react.useState(false);
+  const [showWorkDone, setShowWorkDone] = react.useState(false);
+  const [workDoneBusy, setWorkDoneBusy] = react.useState(false);
   const [deleting, setDeleting] = react.useState(false);
 
   /* background: this fetch is a REFRESH of an estimate already on screen, so
@@ -2909,6 +3453,36 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
       if (res?.resync_message) showToast(res.resync_message);
     } catch (err) {
       showToast(err.message || 'Failed to update work status', 'error');
+    }
+  }
+
+  /* The bulk sibling of handleWorkStatusChange above. Deliberately the same
+     shape — replace the drawer's copy from the response, tell the parent list,
+     surface the resync line — because the two do the same job and the only
+     difference worth having is how many lines they move.
+
+     ONE request, not a loop over the per-item endpoint: that route re-derives
+     the estimate status, advances the appointment and re-syncs both invoices
+     every time it is called, so a four-line job would fire four resyncs and
+     four toasts, and a failure halfway would leave the work half-recorded with
+     nothing saying which half. */
+  async function handleWorkDone(itemIds) {
+    setWorkDoneBusy(true);
+    try {
+      const res = await api(`/api/estimates/${estimateId}/items/work-status-bulk`, {
+        method: 'PATCH',
+        body: { item_ids: itemIds },
+      });
+      estimateRef.current = res.item;
+      setEstimate(res.item);
+      onUpdated && onUpdated(res.item);
+      setShowWorkDone(false);
+      if (res?.resync_message) showToast(res.resync_message);
+      else showToast(`${res.updated} item${res.updated === 1 ? '' : 's'} marked completed.`);
+    } catch (err) {
+      showToast(err.message || 'Failed to update work status', 'error');
+    } finally {
+      setWorkDoneBusy(false);
     }
   }
 
@@ -3251,6 +3825,11 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             {/* Server-rendered themed PDF — same template system as customer
                 and purchase invoices, so the estimate now honours the
                 configured theme, logo and accent colour. */}
+            {/* Guarded — this header renders before `estimate` has arrived. */}
+            {estimate && (
+              <ShareToChat refType="estimate" refId={estimate.id}
+                           label={`EST-${String(estimate.id).padStart(6, '0')}`} compact />
+            )}
             <button
               disabled={estPdfLoading}
               onClick={async () => {
@@ -3682,9 +4261,19 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                               }}>
                                 {it.item_type === 'service' ? 'Service' : 'Part'}
                               </span>
-                              {it.is_fixed_from_appointment && (
+                              {/* `is_from_appointment` is the column the API
+                                  returns. This read `is_fixed_from_appointment`,
+                                  which exists nowhere in the backend, so this
+                                  badge had never appeared on a saved estimate. */}
+                              {it.is_from_appointment && (
                                 <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: '#fef3c7', color: '#92400e' }}>Fixed</span>
                               )}
+                              {/* Inc-GST both sides: the saved row holds an
+                                  ex-GST customer_rate, so the comparison figure
+                                  has to be built back up before comparing. */}
+                              <BookedChip
+                                it={it}
+                                incRate={(Number(it.customer_rate) || 0) * (1 + (Number(it.gst_percent) || 0) / 100)} />
                               <WarrantyChip it={it} />
                             </div>
                           </td>
@@ -3853,12 +4442,33 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
             if (allDone) return null;
             return (
               <div className="est-no-print" style={{ background: 'var(--bg-soft)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
                   <span>Work Progress</span>
-                  <span style={{ color: allDone ? '#166534' : 'var(--text-muted)' }}>
-                    {completedItems.length} of {approvedItems.length} items completed
-                    {allDone && ' ✓'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <span style={{ color: allDone ? '#166534' : 'var(--text-muted)' }}>
+                      {completedItems.length} of {approvedItems.length} items completed
+                      {allDone && ' ✓'}
+                    </span>
+                    {/* Sits HERE rather than in the action row below because this
+                        panel is already the answer to "how much is left" — the
+                        button belongs beside the number it changes.
+
+                        Hidden once every line is done: the panel itself is
+                        hidden at 100% (see allDone above), so this is belt and
+                        braces for the moment between the last tick and the
+                        re-render. The per-row dropdowns are untouched and stay
+                        the way to move a single line, or to move one back. */}
+                    {!allDone && approvedItems.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ padding: '6px 13px', fontSize: 12 }}
+                        onClick={() => setShowWorkDone(true)}
+                      >
+                        <CheckCircle2 size={14} /> Mark work done
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div style={{ height: 8, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: allDone ? '#16a34a' : '#f59e0b', borderRadius: 99, transition: 'width 0.3s ease' }} />
@@ -4073,6 +4683,15 @@ function DetailDrawer({ estimateId, onClose, onUpdated, showToast, isHubUser = f
                 showToast('Estimate updated.');
               }
             }}
+          />
+        )}
+
+        {showWorkDone && estimate && (
+          <WorkDoneModal
+            items={items}
+            busy={workDoneBusy}
+            onCancel={() => { if (!workDoneBusy) setShowWorkDone(false); }}
+            onConfirm={handleWorkDone}
           />
         )}
 
@@ -4323,6 +4942,9 @@ export default function EstimatesPage() {
   // rather than location.state, since it's a create-flow — no token exists yet
   // for an estimate that hasn't been created.
   const createForAppointmentIdParam = new URLSearchParams(location.search).get('createForAppointmentId');
+  /* Arrives the same way, from the job card's "Supplementary estimate" button.
+     Absent on every ordinary create, which is the whole of the old behaviour. */
+  const parentEstimateIdParam = new URLSearchParams(location.search).get('parentEstimateId');
   const [showCreate, setShowCreate] = react.useState(() => !!createForAppointmentIdParam);
   const [createApptId, setCreateApptId] = react.useState(() => createForAppointmentIdParam ?? null);
   // "New Customer" — direct, standalone estimate creation: no appointment
@@ -5015,6 +5637,7 @@ export default function EstimatesPage() {
         <EstimateModal
           editEstimate={null}
           initialAppointmentId={createApptId || ''}
+          parentEstimateId={parentEstimateIdParam}
           initialStandaloneContext={standaloneCreateCtx}
           onClose={() => { setShowCreate(false); setCreateApptId(null); setStandaloneCreateCtx(null); if (createForAppointmentIdParam) navigate(P.estimates, { replace: true }); }}
           onSaved={(item) => { onCreated(item); setStandaloneCreateCtx(null); }}

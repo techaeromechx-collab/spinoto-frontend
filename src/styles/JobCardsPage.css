@@ -1,0 +1,139 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Job Cards.
+
+   Deliberately thin. The layout comes from splitPane.css and listLayout.css —
+   the same rail, toolbar, table and pager every other list page here uses —
+   and this file only adds what is specific to a job card: the status strip and
+   the table's own columns.
+
+   The first version of this screen had its own grid, its own rail and its own
+   pager, which is why it looked like a different product. Everything that
+   duplicated the shared layout has been deleted rather than restyled.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── The status strip ────────────────────────────────────────────────────
+   ONE row that scrolls, never a wrapping pile. Thirteen statuses wrapped to
+   five rows pushed the table below the fold and made the filter the loudest
+   thing on the page. */
+.jcl-toolbar { gap: 0; }
+
+.jcl-tabs {
+  display: flex; gap: 6px; align-items: center;
+  flex: 1; min-width: 0;
+  overflow-x: auto; overflow-y: hidden;
+  /* Room for the scrollbar so it cannot sit over the chips. */
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+.jcl-tabs::-webkit-scrollbar { height: 4px; }
+.jcl-tabs::-webkit-scrollbar-thumb { background-color: var(--border); border-radius: 999px; }
+
+.jcl-tab {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  padding: 5px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--border); background-color: var(--bg-soft);
+  font: inherit; font-size: 12px; color: var(--text-muted);
+}
+.jcl-tab:hover { color: var(--text); border-color: var(--text-muted); }
+.jcl-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.jcl-tab em {
+  font-style: normal; font-weight: 700; font-size: 11.5px;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+/* A status nobody is at keeps its place and goes quiet. Hiding it would make
+   the strip jump about under the cursor as the floor changes. */
+.jcl-tab--empty { opacity: .5; }
+.jcl-tab--empty em { color: var(--text-muted); }
+.jcl-tab--on {
+  background-color: color-mix(in srgb, var(--primary) 14%, transparent);
+  border-color: var(--primary); color: var(--text); opacity: 1;
+}
+.jcl-tab--on em { color: var(--text); }
+
+/* ── The table ──────────────────────────────────────────────────────────
+   Full bleed, horizontal dividers only — the same shape as the invoice and
+   estimate tables, so the three read as one product. */
+.jcl-table-wrap { width: 100%; }
+
+.jcl-table {
+  width: 100%; min-width: 860px; border-collapse: collapse; font-size: 13px;
+}
+.jcl-table th {
+  text-align: left; padding: 10px 14px; white-space: nowrap;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+  background-color: var(--bg-soft);
+}
+.jcl-table td {
+  padding: 11px 14px; border-bottom: 1px solid var(--border);
+  color: var(--text); vertical-align: middle;
+}
+.jcl-table tbody tr:last-child td { border-bottom: 0; }
+.jcl-tr { cursor: pointer; }
+.jcl-table tbody tr:hover td {
+  background-color: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.jcl-code  { font-weight: 700; font-size: 12px; color: var(--primary); white-space: nowrap; }
+.jcl-name  { font-weight: 600; }
+.jcl-hub   { color: var(--text-muted); font-size: 12.5px; }
+.jcl-num   { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.jcl-status { font-weight: 700; font-size: 11.5px; white-space: nowrap; }
+
+.jcl-veh { display: block; font-weight: 600; }
+.jcl-veh-sub { display: block; font-size: 11.5px; color: var(--text-muted); }
+
+/* A card open a week or more is the one somebody has forgotten. The only
+   colour in the table that is a warning rather than a category. */
+.jcl-stale { color: #b45309; font-weight: 700; }
+
+.jcl-err {
+  display: flex; align-items: center; gap: 6px; margin: 0 14px 10px;
+  padding: 9px 11px; border-radius: 9px; font-size: 12.5px;
+  background-color: #fef2f2; color: #991b1b; border: 1px solid #fca5a5;
+}
+
+/* ── The detail header bar ──────────────────────────────────────────────
+   Same shape as the invoice and estimate bars, written out here rather than
+   borrowing `.est-detail-header`: that class lives in CustomerInvoicesPage.css,
+   so reusing it would make this header's layout depend on which page the user
+   happened to open first. */
+.jcl-dhead {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--bg-soft);
+  border-radius: 12px 12px 0 0;
+}
+.jcl-dh-left  { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.jcl-dh-right { display: flex; align-items: center; gap: 8px; flex: none; }
+.jcl-dh-code {
+  font-weight: 700; font-size: 16px; color: var(--text); overflow-wrap: anywhere;
+}
+.jcl-dh-status {
+  font-weight: 700; font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.jcl-dh-close {
+  display: grid; place-items: center; width: 30px; height: 30px; flex: none;
+  border-radius: 8px; border: 1px solid var(--border); cursor: pointer;
+  background-color: var(--panel); color: var(--text-muted);
+}
+.jcl-dh-close:hover { color: var(--text); border-color: var(--text-muted); }
+.jcl-dh-close:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* The embedded card drops the page's own outer chrome — the split pane is the
+   frame now, and a second set of margins inside it costs the width the card
+   needs for its two columns. */
+.jc-page--embedded { padding: 0 !important; max-width: none !important; }
+
+@media (max-width: 760px) {
+  .jcl-toolbar { padding: 8px 12px; }
+  .jcl-tab { font-size: 11.5px; padding: 5px 9px; }
+  .jcl-err { margin: 0 12px 8px; }
+  .jcl-dhead { padding: 11px 13px; }
+  .jcl-dh-code { font-size: 14px; }
+}
+
+[data-theme="dark"] .jcl-stale { color: #fcd34d; }
+[data-theme="dark"] .jcl-err   { background-color: #450a0a; color: #fca5a5; border-color: #991b1b; }

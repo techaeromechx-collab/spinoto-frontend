@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Fragment } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 // search state is local to AppShell — no API change
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -7,60 +7,11 @@ import { useUpload } from '../context/UploadContext.jsx';
 import { usePushNotifications } from '../hooks/usePushNotifications.js';
 import { useAppPaths } from '../lib/appPaths.js';
 import {
-  LayoutDashboard,
-  MapPin,
-  Car,
-  Wrench,
-  Store,
-  Users,
-  UserCog,
-  Users2,
-  UploadCloud,
-  BarChart3,
-  LogOut,
-  ChevronDown,
-  ChevronRight,
-  Database,
-  Moon,
-  Sun,
-  Menu,
-  X,
-  Tag,
-  Building2,
-  Bell,
-  UserCheck,
-  CheckCheck,
-  AlertTriangle,
-  Flame,
-  Clock,
-  Target,
-  ZapOff,
-  TrendingUp,
-  Copy,
-  UserPlus,
-  UserMinus,
-  Trophy,
-  Activity,
-  User,
-  Settings,
-  Lock,
-  MoreVertical,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Network,
-  Calendar,
-  CalendarPlus,
-  FileText,
-  FilePlus,
-  Package,
-  ReceiptText,
-  Receipt,
-  Wallet,
-  Shield,
-  Zap,
-  Percent,
-  ShieldCheck,
-  CreditCard,
+  LayoutDashboard, Users, LogOut, ChevronDown, ChevronRight, Database, Moon,
+  Sun, Menu, X, Bell, CheckCheck, AlertTriangle, Flame, Clock, Target,
+  ZapOff, TrendingUp, Copy, UserPlus, UserMinus, Trophy, Activity, User,
+  Settings, Lock, MoreVertical, PanelLeftClose, PanelLeftOpen, Calendar,
+  CalendarPlus, FileText, FilePlus, Receipt, Shield, Zap, Percent,
 } from 'lucide-react';
 
 // ── Notification type → { icon, bg, color, label } ────────────────────────
@@ -91,46 +42,24 @@ function getNotifMeta(type) {
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import NewLeadModal from './NewLeadModal.jsx';
 import WhatsAppInbox from './WhatsAppInbox.jsx';
+// Internal chat's badge. Self-contained the same way WhatsAppInbox is — its own
+// fetch, its own socket subscription, its own poll backstop — so it adds one
+// line of JSX below and no state to this shell.
+import ChatInbox from './ChatInbox.jsx';
 import { api } from '../api/client.js';
+import socket from '../lib/socket.js';
 import { useTopbarSearch, clearPageSearch } from '../lib/pageSearchStore.js';
 import { useCrumbLabel } from '../lib/pageCrumbStore.js';
+import { NAV_ITEMS, NAV_SECTIONS } from '../lib/navItems.js';
+import useShortcuts from '../hooks/useShortcuts.js';
+import { buildCatalogue } from '../lib/shortcuts.js';
+import { useShortcutOverrides, loadShortcutOverrides } from '../lib/shortcutsStore.js';
+import ShortcutHelp from './ShortcutHelp.jsx';
 import '../styles/AppShell.css';
 
-// Each nav item declares the permissions it requires (any of). An empty
-// `permissions` array means "any authenticated user". Sub-items inherit
-// visibility from their own `permissions` field.
-// Fixed section order for the grouped sidebar — a section header only
-// renders if at least one of its items survives permission filtering.
-/**
- * Sidebar sections.
- *
- * These used to be plain uppercase captions — decoration above a list. They are
- * now collapsible groups, so the sidebar rests at ~6 rows instead of 13 links
- * and you open the ones you want. Any number can stand open at once — see
- * openSections below for why that is no longer restricted.
- *
- *   key         matches NAV_ITEMS[].section
- *   label       shown on the header row. Sentence case, not the old ALL CAPS:
- *               a caption can be shouty, a button people click should not be.
- *   collapsible false → the items render flat with no header at all. OVERVIEW
- *               holds only Dashboard, and a dropdown you open to reveal a
- *               single link is worse than the link.
- */
-const NAV_SECTIONS = [
-  { key: 'OVERVIEW',    label: null,          collapsible: false },
-  { key: 'MASTER DATA', label: 'Master Data', collapsible: true  },
-  { key: 'WORKFLOW',    label: 'Workflow',    collapsible: true  },
-  { key: 'SALES',       label: 'Sales',       collapsible: true  },
-  { key: 'ACCOUNTING',  label: 'Accounting',  collapsible: true  },
-  { key: 'CUSTOMERS',   label: 'Customers',   collapsible: true  },
-  { key: 'SYSTEM',      label: 'System',      collapsible: true  },
-  /* Reports sits below the card, flat, the way Dashboard sits above it. It is
-     a destination people go to directly and often, and burying it a click deep
-     inside System — beside Bulk Upload, which is touched once a quarter — costs
-     that click every time to save one row. It takes the same
-     `collapsible: false` path OVERVIEW already uses; no new render branch. */
-  { key: 'TOOLS',       label: null,          collapsible: false },
-];
+/* NAV_SECTIONS and NAV_ITEMS moved to lib/navItems.js — the shortcut
+   settings need the same list, and a second copy is how the three lead-scope
+   copies drifted. See the header there. */
 
 // Remembering which group was open is worth a line of storage: without it,
 // every navigation collapses the group you were just working in.
@@ -186,80 +115,6 @@ const NAV_MOTION_NONE = {
   open:      { height: 'auto', opacity: 1, transition: { duration: 0 } },
 };
 
-const NAV_ITEMS = [
-  // ── Overview ──────────────────────────────────────────────────────────────
-  { label: 'Dashboard',    to: '/',           permissions: [],                            icon: LayoutDashboard, section: 'OVERVIEW' },
-
-  // ── Master Data ───────────────────────────────────────────────────────────
-  // These were `children` of a "Master Data" item nested inside WORKFLOW. With
-  // sections themselves collapsible that would have been a dropdown inside a
-  // dropdown — two clicks to reach a page. They are now an ordinary section, so
-  // the whole nested-item code path is gone.
-  //
-  // The old parent also carried its own permission list, which had to be kept
-  // in union with its children's or the group vanished for someone who could
-  // see a page inside it. A section is shown when at least one of its items
-  // survives the filter, so there is nothing left to keep in sync.
-  { label: 'Locations',            to: '/master/locations',     permissions: ['MANAGE_MASTER_DATA'],                                          icon: MapPin,     section: 'MASTER DATA' },
-  { label: 'Vehicles',             to: '/master/vehicles',      permissions: ['VIEW_VEHICLE','CREATE_VEHICLE','UPDATE_VEHICLE','MANAGE_MASTER_DATA'], icon: Car,   section: 'MASTER DATA' },
-  { label: 'Services & Pricing',   to: '/master/services',      permissions: ['VIEW_SERVICE','VIEW_PRICING_RULE','MANAGE_MASTER_DATA','MANAGE_PRICING'], icon: Wrench, section: 'MASTER DATA' },
-  { label: 'Lead Status',          to: '/master/lead-statuses', permissions: ['MANAGE_MASTER_DATA'],                                          icon: Tag,        section: 'MASTER DATA' },
-  { label: 'Departments',          to: '/master/departments',   permissions: ['MANAGE_MASTER_DATA'],                                          icon: Building2,  section: 'MASTER DATA' },
-  { label: 'Parts',                to: '/master/parts',         permissions: ['MANAGE_PARTS','CREATE_PART','EDIT_PART','DELETE_PART','MANAGE_MASTER_DATA'], icon: Package, section: 'MASTER DATA' },
-  { label: 'Discounts',            to: '/master/discounts',     permissions: ['MANAGE_DISCOUNTS','CREATE_DISCOUNT','EDIT_DISCOUNT','DELETE_DISCOUNT','MANAGE_MASTER_DATA'], icon: Percent, section: 'MASTER DATA' },
-  { label: 'Warranty & Guarantee', to: '/master/warranties',    permissions: ['MANAGE_WARRANTIES','CREATE_WARRANTY','EDIT_WARRANTY','DELETE_WARRANTY','MANAGE_MASTER_DATA'], icon: ShieldCheck, section: 'MASTER DATA' },
-
-  // ── Workflow ──────────────────────────────────────────────────────────────
-  // Above HUBs: a Workshop is the stage before one, and the nav should read in
-  // the order the work happens.
-  { label: 'Workshops',    to: '/workshops',    permissions: ['VIEW_WORKSHOP','CREATE_WORKSHOP','EDIT_WORKSHOP','MANAGE_HUBS'], icon: Store, section: 'WORKFLOW' },
-  { label: 'HUBs',         to: '/hubs',         permissions: ['VIEW_HUB','MANAGE_HUBS','CREATE_HUB','EDIT_HUB'], icon: Network, section: 'WORKFLOW' },
-  { label: 'Leads',        to: '/leads',        permissions: ['VIEW_LEAD','VIEW_TEAM_LEADS','VIEW_OWN_LEADS','CREATE_LEAD'], icon: Users, section: 'WORKFLOW' },
-  /* Directly under Leads: it is a view OF leads, and the two are worked
-     together. Permissions mirror canFollowUp in routes/lead_events.routes.js —
-     offering a tab the API will refuse is worse than not offering it. */
-  { label: 'Follow-ups',   to: '/follow-ups',   permissions: ['MANAGE_FOLLOW_UPS','VIEW_LEAD','VIEW_TEAM_LEADS','VIEW_OWN_LEADS','CREATE_LEAD','EDIT_LEAD'], icon: Clock, section: 'WORKFLOW' },
-  { label: 'Appointments', to: '/appointments', permissions: ['VIEW_APPOINTMENT','VIEW_LEAD','CREATE_APPOINTMENT'], icon: Calendar, section: 'WORKFLOW' },
-
-  // ── Sales ─────────────────────────────────────────────────────────────────
-  { label: 'Estimates',          to: '/estimates',         permissions: ['VIEW_ESTIMATE','CREATE_ESTIMATE','EDIT_ESTIMATE'],     icon: FileText, section: 'SALES' },
-  { label: 'Customer Invoices', to: '/customer-invoices', permissions: ['VIEW_INVOICE','CREATE_INVOICE','EDIT_INVOICE'],         icon: Receipt, section: 'SALES' },
-
-  // ── Accounting ────────────────────────────────────────────────────────────
-  { label: 'Purchase Invoices', to: '/purchase-invoices', permissions: ['VIEW_PURCHASE_INVOICE','CREATE_PURCHASE_INVOICE','APPROVE_PURCHASE_INVOICE'], icon: ReceiptText, section: 'ACCOUNTING' },
-  // Mirrors canView in backend/src/routes/hub_payouts.routes.js — that list is
-  // canonical, this one follows it, and test/hubpayoutperms.test.js fails if
-  // they differ. VIEW_HUB used to be here and is not on the backend, so the
-  // link appeared for people whose every request on the page then 403'd;
-  // VIEW_HUB_PAYOUTS was missing, so the permission named for this screen did
-  // nothing at all.
-  { label: 'Hub Payouts',       to: '/payouts',           permissions: ['VIEW_HUB_PAYOUTS','MANAGE_HUBS','VIEW_PURCHASE_INVOICE','VIEW_PAYMENTS'], icon: Wallet, section: 'ACCOUNTING' },
-  { label: 'Hub Ledger',        to: '/payables',          permissions: ['VIEW_PURCHASE_INVOICE','VIEW_HUB_PAYOUTS','MANAGE_HUBS'], icon: Wallet, section: 'ACCOUNTING' },
-  // Money IN, beside the two screens for money out.
-  //
-  // Gated on VIEW_PAYMENTS alone, not the usual any-of list. COLLECT_PAYMENT is
-  // an action taken from an invoice a person is already looking at; being
-  // trusted to take one payment is not the same as being shown the ledger of
-  // every payment the company has ever received.
-  { label: 'Payments',          to: '/payments',          permissions: ['VIEW_PAYMENTS'],                                        icon: CreditCard, section: 'ACCOUNTING' },
-
-  // ── Customers ─────────────────────────────────────────────────────────────
-  { label: 'Customers',         to: '/customers',         permissions: ['VIEW_CUSTOMER','VIEW_LEAD','CREATE_LEAD'],              icon: Users2, section: 'CUSTOMERS' },
-  { label: 'Claims',            to: '/warranty-claims',   permissions: ['VIEW_CLAIM','CREATE_CLAIM','APPROVE_CLAIM','RESOLVE_CLAIM','MANAGE_CLAIMS'], icon: ShieldCheck, section: 'CUSTOMERS' },
-
-  // ── System ────────────────────────────────────────────────────────────────
-  { label: 'Bulk Upload', to: '/bulk-upload', permissions: ['BULK_UPLOAD'],             icon: UploadCloud, section: 'SYSTEM' },
-  // 'Users'/'My Team' and 'Super Admins' used to be separate top-level items
-  // pointing at /users and /super-admins — both pages now live as tabs
-  // inside the consolidated Settings module (those two routes just redirect
-  // there now). A single 'Settings' entry replaces all three; internal tab
-  // visibility (Manage Users / Super Admins / etc.) is gated inside
-  // SettingsPage.jsx itself, same as /profile's tabs always were.
-  { label: 'Settings',     to: '/settings',     permissions: [],                                                        icon: Settings, section: 'SYSTEM'  },
-
-  // ── Tools (flat, below the card) ──────────────────────────────────────────
-  { label: 'Reports',     to: '/reports',     permissions: ['VIEW_REPORTS'],            icon: BarChart3, section: 'TOOLS' },
-];
 
 /**
  * The section a URL belongs to, or null.
@@ -447,6 +302,64 @@ export default function AppShell({ children }) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [pageSearch.active]);
+
+  /* ── KEYBOARD SHORTCUTS ──────────────────────────────────────────────────
+     One listener for the whole app, here rather than per page — see
+     hooks/useShortcuts.js. The catalogue is built from NAV_ITEMS filtered by
+     this user's permissions, so a shortcut can never reach a screen the
+     sidebar would not show them either.
+
+     The overrides live in lib/shortcutsStore.js rather than in this component's
+     own useState, because the settings panel changes them and the panel is not a
+     child of this. The store's header has the whole reason; the short version is
+     that a local copy here meant changing a key redrew the panel and left this
+     listener on the old map until a full reload.
+
+     The socket refetch is for this person's OTHER tabs and devices. It cannot
+     serve the tab that did the saving, because emitInvalidateTo skips the
+     originating tab on purpose — the store is what covers that one. */
+  const scOverrides = useShortcutOverrides();
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  useEffect(() => { loadShortcutOverrides(); }, []);
+  useEffect(() => {
+    function onInvalidate({ topic }) {
+      if (topic === 'shortcuts') loadShortcutOverrides({ force: true });
+    }
+    socket.on('invalidate', onInvalidate);
+    return () => socket.off('invalidate', onInvalidate);
+  }, []);
+
+  const scCatalogue = useMemo(() => buildCatalogue(can, scOverrides), [can, scOverrides]);
+
+  /* key → what to do. Rebuilt only when a binding actually changes. */
+  const scBindings = useMemo(() => {
+    const m = {};
+    for (const s of scCatalogue.all) if (s.keys) m[s.keys] = s;
+    return m;
+  }, [scCatalogue]);
+
+  const onShortcut = useCallback((hit) => {
+    if (!hit || hit.type === 'arm') return;            // a sequence is arming
+    if (hit.kind === 'nav') { navigate(hit.to); return; }
+    switch (hit.id) {
+      case 'action:search':
+        /* Same control ⌘K focuses, and the same guard: a page that has not
+           claimed the search box has nothing to focus. */
+        if (pageSearch.active) searchRef.current?.focus();
+        break;
+      case 'action:help':  setHelpOpen((v) => !v); break;
+      case 'action:close': setHelpOpen(false); break;
+      case 'action:new':
+        /* The page owns what "new" means. Nothing listens yet, so this is a
+           no-op rather than a guess — a shortcut that opens the wrong dialog
+           is worse than one that does nothing. */
+        break;
+      default: break;
+    }
+  }, [navigate, pageSearch.active]);
+
+  useShortcuts({ bindings: scBindings, onFire: onShortcut });
 
   // ── Profile password modal ─────────────────────────────────────────────────
   const [pwOpen, setPwOpen]       = useState(false);
@@ -681,6 +594,10 @@ export default function AppShell({ children }) {
   // If these two ever disagree the symptom is either a dead icon or an
   // invisible feature, so they are worth keeping side by side in a search.
   const canWhatsApp = can('SEND_WHATSAPP', 'VIEW_WHATSAPP_LOGS');
+
+  // Same single code the /chat route and the nav item use. One permission for
+  // all three, so there is no way to see the badge and be refused the page.
+  const canChat = can('USE_CHAT');
 
   const canQuickLead = !!P.leads && can('CREATE_LEAD');
   const canQuickAppt = !!P.appointments && can('CREATE_APPOINTMENT');
@@ -994,7 +911,12 @@ export default function AppShell({ children }) {
                 // Detail views (/entity/:token) get a 3-level crumb —
                 // Home > Entity > token — so the entity name isn't lost
                 // behind the opaque token. Entity crumb links back to the list.
-                const TOKEN_ENTITIES = ['leads', 'appointments', 'estimates', 'purchase-invoices', 'customer-invoices', 'customers'];
+                /* 'job-cards' belongs here for the same reason the rest do:
+                   /job-cards/106 is a detail route whose last segment is an id,
+                   and without it the crumb fell through to the generic branch
+                   and printed "Home > 106". The page publishes the card number
+                   through usePageCrumb, which the span below reads. */
+                const TOKEN_ENTITIES = ['leads', 'appointments', 'estimates', 'purchase-invoices', 'customer-invoices', 'customers', 'job-cards'];
                 if (segments.length === 2 && TOKEN_ENTITIES.includes(segments[0])) {
                   return (
                     <>
@@ -1075,6 +997,13 @@ export default function AppShell({ children }) {
                 system that EXPIRE. A list sorted by age has nowhere to put
                 "40 minutes left". */}
             {canWhatsApp && <WhatsAppInbox />}
+
+            {/* ── Internal chat ──
+                Beside the WhatsApp badge on purpose, and teal where that one is
+                green: one means a CUSTOMER is waiting, the other means a
+                COLLEAGUE is. Two icons the same colour would be two counts
+                nobody can tell apart at a glance. */}
+            {canChat && <ChatInbox />}
 
             {/* ── Notification Bell ── */}
             <div className="notif-wrap" ref={notifRef}>
@@ -1323,6 +1252,12 @@ export default function AppShell({ children }) {
           </section>
         </div>
       </main>
+
+      {/* The cheat sheet. Rendered here, beside the other overlays, so it sits
+          above the whole shell rather than inside whichever page is open. */}
+      {helpOpen && (
+        <ShortcutHelp catalogue={scCatalogue} onClose={() => setHelpOpen(false)} />
+      )}
 
       <NewLeadModal 
         isOpen={isLeadModalOpen} 

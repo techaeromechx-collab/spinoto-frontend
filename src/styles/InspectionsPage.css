@@ -1,0 +1,127 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Inspections queue.
+
+   Thin on purpose: `lb-page`, `lb-toolbar`, `lb-list`, `lb-control` and
+   PaginationBar come from listLayout.css and carry the layout. This file adds
+   the state tabs, the table's own columns and the progress cell.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.ins-toolbar .lb-toolbar-left {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+
+.ins-tabs { display: flex; gap: 6px; align-items: center; }
+.ins-tab {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background-color: var(--bg-soft);
+  font: inherit; font-size: 12px; color: var(--text-muted);
+}
+.ins-tab:hover { color: var(--text); border-color: var(--text-muted); }
+.ins-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.ins-tab em {
+  font-style: normal; font-weight: 700; font-size: 11.5px;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+.ins-tab--on {
+  background-color: color-mix(in srgb, var(--primary) 14%, transparent);
+  border-color: var(--primary); color: var(--text);
+}
+
+/* ── The table ────────────────────────────────────────────────────────── */
+.ins-table-wrap { width: 100%; }
+
+.ins-table { width: 100%; min-width: 1000px; border-collapse: collapse; font-size: 13px; }
+.ins-table th {
+  text-align: left; padding: 10px 14px; white-space: nowrap;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+  background-color: var(--bg-soft);
+}
+.ins-table td {
+  padding: 11px 14px; border-bottom: 1px solid var(--border);
+  color: var(--text); vertical-align: middle;
+}
+.ins-table tbody tr:last-child td { border-bottom: 0; }
+.ins-tr { cursor: pointer; }
+.ins-table tbody tr:hover td {
+  background-color: color-mix(in srgb, var(--text) 4%, transparent);
+}
+/* A finished sheet is a record, not a job. It stays fully readable and simply
+   stops competing for attention with the ones that need somebody. */
+.ins-tr--done td { background-color: var(--bg-soft); }
+
+.ins-th-state, .ins-state-cell { width: 34px; padding-right: 0 !important; }
+.ins-ico { color: #b45309; display: block; }
+.ins-ico--done { color: #15803d; }
+
+.ins-veh   { font-weight: 700; white-space: nowrap; }
+.ins-sheet { max-width: 260px; }
+.ins-code  { font-weight: 700; font-size: 12px; color: var(--primary); white-space: nowrap; }
+.ins-muted { color: var(--text-muted); font-size: 12.5px; }
+.ins-when  { white-space: nowrap; font-size: 12.5px; color: var(--text-muted); }
+.ins-age   { display: block; font-size: 11px; font-weight: 700; color: var(--text); }
+
+/* ── Progress ─────────────────────────────────────────────────────────── */
+.ins-prog { display: inline-flex; flex-direction: column; gap: 4px; }
+.ins-pill {
+  display: inline-block; font-size: 11px; font-weight: 700;
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+}
+.ins-pill--open { background-color: #fef3c7; color: #92400e; }
+.ins-pill--warn { background-color: #fef3c7; color: #92400e; }
+.ins-pill--bad  { background-color: #fee2e2; color: #991b1b; }
+.ins-pill--ok   { background-color: #dcfce7; color: #166534; }
+
+/* Decorative only — the count beside it is the fact, this is its shape. */
+.ins-bar {
+  display: block; width: 110px; height: 4px; border-radius: 999px;
+  background-color: var(--border); overflow: hidden;
+}
+.ins-bar i { display: block; height: 100%; background-color: var(--primary); }
+
+.ins-err {
+  display: flex; align-items: center; gap: 6px; margin: 0 14px 10px;
+  padding: 9px 11px; border-radius: 9px; font-size: 12.5px;
+  background-color: #fef2f2; color: #991b1b; border: 1px solid #fca5a5;
+}
+
+/* ── Phone cards ──────────────────────────────────────────────────────── */
+.ins-cardlist { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+.ins-card {
+  display: flex; flex-direction: column; gap: 3px;
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  padding: 11px 12px; border-radius: 11px;
+  border: 1px solid var(--border); background-color: var(--panel);
+}
+.ins-card:hover { border-color: var(--primary); }
+.ins-card--done { background-color: var(--bg-soft); }
+.ins-card-top {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+.ins-card-top strong { font-size: 14px; color: var(--text); overflow-wrap: anywhere; }
+.ins-card-sub {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  font-size: 12px; color: var(--text); overflow-wrap: anywhere;
+}
+.ins-card-meta { font-size: 11.5px; color: var(--text-muted); overflow-wrap: anywhere; }
+.ins-kind {
+  font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .3px;
+  text-transform: uppercase; padding: 2px 6px; border-radius: 4px;
+  background-color: var(--bg); color: var(--text-muted); border: 1px solid var(--border);
+}
+
+@media (max-width: 760px) {
+  .ins-toolbar { padding: 8px 12px; }
+  .ins-tab { font-size: 11.5px; padding: 5px 9px; }
+  .ins-err { margin: 0 12px 8px; }
+}
+
+[data-theme="dark"] .ins-pill--open,
+[data-theme="dark"] .ins-pill--warn { background-color: #422006; color: #fcd34d; }
+[data-theme="dark"] .ins-pill--bad  { background-color: #450a0a; color: #fca5a5; }
+[data-theme="dark"] .ins-pill--ok   { background-color: #052e16; color: #86efac; }
+[data-theme="dark"] .ins-ico        { color: #fcd34d; }
+[data-theme="dark"] .ins-ico--done  { color: #86efac; }
+[data-theme="dark"] .ins-err        { background-color: #450a0a; color: #fca5a5; border-color: #991b1b; }

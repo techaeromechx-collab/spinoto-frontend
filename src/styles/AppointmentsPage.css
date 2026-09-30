@@ -290,6 +290,16 @@
   margin-bottom: 5px;
 }
 
+/* Explanatory line UNDER a control, as opposed to .ca-lbl above it. Sentence
+   case and not uppercase on purpose: this is a sentence to read, and .ca-lbl's
+   letter-spaced caps are a label to scan. */
+.appt-backdrop .ca-hint {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 .appt-backdrop .ca-input {
   width: 100%;
   padding: 8px 12px;
@@ -1244,6 +1254,76 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
+}
+
+/* ── Assignee dropdown ───────────────────────────────────────────────────
+   Reads as the plain value it replaced until it is hovered or focused. The
+   rest of this panel is read-only, so a control that announces itself with a
+   border and a chevron makes the whole card look editable when only this one
+   field is.
+
+   Every declaration here is also on .apptv-sched-sub-val: matching it by hand
+   rather than sharing the class, because the class is applied to a <div> and a
+   <select> ignores half of what a div inherits — font and colour do not cross
+   the form-control boundary in any browser without being asked. */
+.apptv-assign-select {
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text);
+  width: 100%;
+  /* -2px/-6px pulls the box back so the TEXT lines up with the label above it,
+     rather than the padding. Without it the name sits visibly right of "Hub". */
+  margin: -2px 0 0 -6px;
+  padding: 2px 22px 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  /* Chevron drawn in, not an icon font: the sub-grid has no room for a
+     positioned element and this survives the cell being resized. */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+}
+
+/* The chevron is hidden until there is a reason to look at it — the name
+   itself is always fully legible, which is the point of the control being
+   invisible at rest. */
+.apptv-assign-select:not(:hover):not(:focus) {
+  background-image: none;
+}
+
+.apptv-assign-select:hover:not(:disabled) {
+  border-color: var(--border);
+  background-color: var(--bg-soft);
+}
+
+.apptv-assign-select:focus-visible {
+  border-color: var(--primary);
+  background-color: var(--panel);
+  outline: none;
+}
+
+.apptv-assign-select:disabled {
+  cursor: progress;
+  opacity: .55;
+}
+
+/* Unassigned reads as absent, the same way '—' did in the div it replaced. */
+.apptv-assign-select:has(option[value=""]:checked) {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* The menu itself is drawn by the OS and does not inherit the transparent
+   background above — without this it renders white-on-white in dark mode. */
+.apptv-assign-select option {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 500;
 }
 
 /* Reschedule form */
