@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
   User, Building2, Palette, Printer, UserCog, Bell, Shield, ArrowLeft, Lock, KeyRound, Scale,
-  MessageCircle, Percent, Keyboard,
+  MessageCircle, Percent, Keyboard, Activity,
 } from 'lucide-react';
 import { useAuth, useCan } from '../auth/AuthContext.jsx';
 import { useUnsavedGuard } from '../components/UnsavedChangesGuard.jsx';
@@ -26,6 +26,7 @@ import WhatsAppSettings from '../components/settings/WhatsAppSettings.jsx';
 import ShortcutSettings from '../components/settings/ShortcutSettings.jsx';
 import PaymentSettings from '../components/settings/PaymentSettings.jsx';
 import RoleCreatorPanel from '../components/settings/RoleCreatorPanel.jsx';
+import SystemHealth from '../components/settings/SystemHealth.jsx';
 import UsersPage from './UsersPage.jsx';
 import SuperAdminsPage from './SuperAdminsPage.jsx';
 
@@ -94,6 +95,14 @@ export default function SettingsPage() {
     { key: 'payments',      label: 'Payments',        Icon: Percent,  show: canManagePayments },
     { key: 'whatsapp',      label: 'WhatsApp',        Icon: MessageCircle, show: canManageWhatsApp },
     { key: 'super-admins',  label: 'Super Admins',    Icon: Shield,   show: isSuperAdmin },
+    /* Last, and super admin only. It reports whether this server's migrations
+       have actually been applied and reconciles today's inbound WhatsApp
+       against the leads it produced — both of which live in the database and
+       had no screen, which is a problem when nobody here has console access to
+       that database. Not a permission code: a permission would need its own
+       migration to exist, and this page cannot depend on a migration having run
+       when its whole job is telling you that migrations have not run. */
+    { key: 'system',        label: 'System Health',   Icon: Activity, show: isSuperAdmin },
   ].filter(t => t.show);
 
   const [params, setParams] = useSearchParams();
@@ -175,6 +184,7 @@ export default function SettingsPage() {
         {activeTab === 'api-keys'     && canManageApiKeys  && <ApiKeysSettings />}
         {activeTab === 'payments'     && canManagePayments && <PaymentSettings />}
         {activeTab === 'whatsapp'     && canManageWhatsApp && <WhatsAppSettings />}
+        {activeTab === 'system'       && isSuperAdmin && <SystemHealth />}
         {activeTab === 'super-admins' && isSuperAdmin && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <SuperAdminsPage />

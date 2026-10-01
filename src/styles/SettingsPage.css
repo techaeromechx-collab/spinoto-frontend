@@ -729,3 +729,265 @@
   .ob-row__actions { grid-column: 1 / -1; justify-content: flex-end; }
   .ob-edit { grid-template-columns: 1fr; }
 }
+
+/* ── Settings → System Health ────────────────────────────────────────────────
+   Read-only diagnostics, super admin only. The whole block is prefixed `sh-`
+   and nothing in it is reused elsewhere.
+
+   ── The one design rule here ────────────────────────────────────────────────
+   This page is opened BECAUSE somebody suspects a problem. So the problem has
+   to be the first thing on it, and the normal state has to be quiet. The
+   pending-migration block is the only thing allowed to shout; everything else
+   is a row of plain text. A screen that looks alarming when nothing is wrong
+   teaches people to ignore it, and then it is useless on the day it matters. */
+
+/* The alarm. Amber, not red: pending migrations are a thing to do, not a thing
+   that has broken — red on this screen is reserved for a message that reached a
+   customer and produced nothing. */
+.sh-pending {
+  margin-top: 14px;
+  border: 1.5px solid #fcd34d;
+  background: #fffbeb;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.sh-pending-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 750;
+  color: #92400e;
+}
+
+/* Monospace, because these are filenames somebody will read character by
+   character to check a number, and a proportional font makes 201 and 2O1 look
+   the same. */
+.sh-pending-list {
+  margin: 10px 0 0;
+  padding: 0 0 0 2px;
+  list-style: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.85;
+  color: #78350f;
+}
+
+.sh-pending-foot {
+  margin-top: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #92400e;
+}
+
+.sh-pending-foot code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #fef3c7;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* The quiet state. Deliberately one line — "everything is fine" deserves a
+   sentence, not a panel. */
+.sh-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 11px 14px;
+  border: 1.5px solid #a7f3d0;
+  background: #ecfdf5;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 650;
+  color: #065f46;
+}
+
+/* Label on the left, fact on the right. */
+.sh-rows {
+  margin-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.sh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.sh-row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+}
+
+.sh-row > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 650;
+  color: var(--text);
+  text-align: right;
+}
+
+.sh-dim { color: var(--text-muted); font-weight: 400; }
+.sh-good { color: #059669; }
+
+/* The six figures, as a deliberate 3 x 2 rather than auto-fit.
+   auto-fit packed five across and left "failed" alone on a second row, which
+   reads as though that one is separate from the rest. It is not — the six are
+   one reconciliation and should look like one block. */
+.sh-stats {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .sh-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.sh-stat {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 10px;
+  text-align: center;
+  background: var(--bg-soft);
+}
+
+.sh-stat-n {
+  font-size: 22px;
+  font-weight: 750;
+  line-height: 1.1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Only the NUMBER takes the colour. A tile that turns red reads as "this panel
+   is broken" rather than "this figure is the problem". */
+.sh-stat-n--good { color: #059669; }
+.sh-stat-n--warn { color: #b45309; }
+.sh-stat-n--bad  { color: #dc2626; }
+
+.sh-stat-l {
+  margin-top: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+/* The customers who wrote in and got nothing back. The only red on the page. */
+.sh-problems {
+  margin-top: 16px;
+  border: 1.5px solid #fecaca;
+  background: #fef2f2;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.sh-problems-hd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 750;
+  color: #991b1b;
+  margin-bottom: 8px;
+}
+
+.sh-problems-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.sh-problems-tbl td {
+  padding: 5px 8px 5px 0;
+  vertical-align: top;
+  color: #7f1d1d;
+}
+
+.sh-p-time { white-space: nowrap; color: #b91c1c; width: 1%; }
+
+/* Monospace and selectable — the point of showing the number is that somebody
+   copies it and rings them. */
+.sh-p-num {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 650;
+  white-space: nowrap;
+  width: 1%;
+  user-select: all;
+}
+
+.sh-p-why { line-height: 1.45; }
+
+.sh-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.sh-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.sh-refresh:hover:not(:disabled) { background: var(--bg-soft); }
+.sh-refresh:disabled { opacity: 0.6; cursor: default; }
+
+.sh-spin { animation: sh-spin 0.9s linear infinite; }
+@keyframes sh-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) { .sh-spin { animation: none; } }
+
+/* ── Dark mode ───────────────────────────────────────────────────────────────
+   The amber and red blocks above are fixed light tints, which on a dark panel
+   would glow like a torch. Re-tinted rather than left alone — this page is read
+   at the end of a bad day as often as the start of a good one. */
+[data-theme="dark"] .sh-pending {
+  background: rgba(180, 83, 9, 0.16);
+  border-color: #b45309;
+}
+[data-theme="dark"] .sh-pending-hd,
+[data-theme="dark"] .sh-pending-foot { color: #fbbf24; }
+[data-theme="dark"] .sh-pending-list { color: #fcd34d; }
+[data-theme="dark"] .sh-pending-foot code { background: rgba(251, 191, 36, 0.15); }
+
+[data-theme="dark"] .sh-ok {
+  background: rgba(5, 150, 105, 0.16);
+  border-color: #047857;
+  color: #6ee7b7;
+}
+
+[data-theme="dark"] .sh-problems {
+  background: rgba(220, 38, 38, 0.14);
+  border-color: #b91c1c;
+}
+[data-theme="dark"] .sh-problems-hd { color: #fca5a5; }
+[data-theme="dark"] .sh-problems-tbl td { color: #fecaca; }
+[data-theme="dark"] .sh-p-time { color: #f87171; }
+
+[data-theme="dark"] .sh-good { color: #34d399; }
+[data-theme="dark"] .sh-stat-n--good { color: #34d399; }
+[data-theme="dark"] .sh-stat-n--warn { color: #fbbf24; }
+[data-theme="dark"] .sh-stat-n--bad  { color: #f87171; }
