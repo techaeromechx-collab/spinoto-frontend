@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   Archive, ArrowLeft, Lock, MessageSquarePlus, Pin, PinOff, Search, Users, X,
 } from 'lucide-react';
@@ -11,6 +11,7 @@ import { listStamp } from '../lib/dayLabel.js';
 import { systemPreview } from '../lib/systemLine.js';
 import ChatThread from '../components/chat/ChatThread.jsx';
 import ChatNewModal from '../components/chat/ChatNewModal.jsx';
+import { ChatSourceSwitch, WhatsAppRail, WhatsAppPane } from '../components/chat/WhatsAppChat.jsx';
 import '../styles/ChatPage.css';
 
 /**
@@ -43,8 +44,9 @@ function initials(name) {
 }
 
 export default function ChatPage() {
-  const { conversationId } = useParams();
+  const { conversationId, mobile: waMobile } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { can, user } = useAuth();
   const isMobile = useMediaQuery(MOBILE_LIST_QUERY);
 
@@ -70,6 +72,34 @@ export default function ChatPage() {
 
   const openId = conversationId ? Number(conversationId) : null;
   const canModerate = can('MANAGE_CHAT');
+
+  /* ── Team ⇄ WhatsApp ──────────────────────────────────────────────────────
+     Driven by the URL, not by state, so a thread stays linkable: /chat/41 is a
+     colleague and /chat/wa/919824512345 is a customer. The route is declared in
+     App.jsx; `wa` is a static segment so it wins over /chat/:conversationId.
+
+     Everything below this block that concerns team chat is UNCHANGED. The
+     WhatsApp side renders in its place, and the team fetch keeps running either
+     way — which is deliberate, because the Team badge on the switch has to stay
+     live while somebody is reading WhatsApp. */
+  const canWhatsApp = can('SEND_WHATSAPP', 'VIEW_WHATSAPP_LOGS');
+  const isWa = canWhatsApp && location.pathname.startsWith('/chat/wa');
+  const [waRow, setWaRow] = useState(null);
+  const [waUnread, setWaUnread] = useState(0);
+
+  /* The WhatsApp unread count while the TEAM tab is showing. The rail reports
+     its own number once it is mounted (see onCount below), but when it is not
+     mounted nothing would — and a switch whose badge only appears after you
+     press it is a badge that cannot do its job. */
+  useEffect(() => {
+    if (!canWhatsApp || isWa) return;
+    let live = true;
+    const pull = () => api('/api/whatsapp/inbox/unread-count')
+      .then(r => { if (live) setWaUnread(r.count || 0); })
+      .catch(() => {});
+    pull();
+    return () => { live = false; };
+  }, [canWhatsApp, isWa, reloadSignal]);
 
   const load = useCallback(async () => {
     try {
@@ -210,23 +240,42 @@ export default function ChatPage() {
 
   const railRef = useRef(null);
 
+  /* A deep link straight to /chat/wa/919824512345 — a refresh, or a link from a
+     colleague — arrives with no row in hand. The rail hands it over once its
+     list lands; until then the pane opens on what the URL alone can say, which
+     is enough for the thread to load and resolve the rest itself. */
+  const waOpen = isWa && waMobile
+    ? (waRow && waRow.mobile === `+${waMobile}`
+        ? waRow
+        : { mobile: `+${waMobile}`, display_name: `+${waMobile}`, lead_id: null })
+    : null;
+
   /* On a phone the rail and the thread cannot share the width, so it is one or
      the other: the list, until something is open. */
-  const showRail = !isMobile || !active;
-  const showDetail = !isMobile || !!active;
+  const anyOpen = isWa ? !!waOpen : !!active;
+  const showRail = !isMobile || !anyOpen;
+  const showDetail = !isMobile || anyOpen;
 
   return (
     <div className="ch-page">
-      <div className={`ch-split${active ? ' ch-split--open' : ''}`}>
+      <div className={`ch-split${anyOpen ? ' ch-split--open' : ''}`}>
         {showRail && (
           <aside className="ch-rail" ref={railRef}>
             <div className="ch-rail-hd">
               <h2>
                 {archivedView ? 'Archived' : 'Chat'}
-                {!archivedView && unread > 0 && (
+                {!archivedView && !isWa && unread > 0 && (
                   <span className="ch-rail-count">{unread}</span>
                 )}
               </h2>
+              {/* Archive and New belong to team chat. You do not start a
+                  WhatsApp conversation — the customer does — and there is
+                  nothing to archive, so neither is rendered on that side.
+
+                  NOT the `hidden` attribute, which this span's own
+                  `display: flex` overrides — the buttons stayed on screen and
+                  the browser test caught it. */}
+              {!isWa && (
               <span className="ch-rail-hd-acts">
                 {/* Its own class, NOT a second .ch-new. Two buttons sharing that
                     class made every existing `.ch-new` selector ambiguous — which
@@ -244,9 +293,28 @@ export default function ChatPage() {
                   <MessageSquarePlus size={16} />
                 </button>
               </span>
+              )}
             </div>
 
-            {!archivedView && (
+            {canWhatsApp && !archivedView && (
+              <ChatSourceSwitch
+                source={isWa ? 'wa' : 'team'}
+                teamUnread={unread}
+                waUnread={waUnread}
+                onPick={(k) => navigate(k === 'wa' ? '/chat/wa' : '/chat')}
+              />
+            )}
+
+            {isWa && (
+              <WhatsAppRail
+                selected={waMobile ? `+${waMobile}` : null}
+                onPick={(row) => { setWaRow(row); navigate(`/chat/wa/${String(row.mobile).replace(/\D/g, '')}`); }}
+                onResolve={setWaRow}
+                onCount={setWaUnread}
+              />
+            )}
+
+            {!isWa && !archivedView && (
               <div className="ch-tabs" role="tablist" aria-label="Filter conversations">
                 {TABS.map((t) => (
                   <button key={t.key} type="button" role="tab"
@@ -264,6 +332,7 @@ export default function ChatPage() {
               </div>
             )}
 
+            {!isWa && (<>
             <div className="ch-rail-search">
               <Search size={13} />
               <input
@@ -391,22 +460,35 @@ export default function ChatPage() {
                 </div>
               )}
             </div>
+            </>)}
           </aside>
         )}
 
         {showDetail && (
           <section className="ch-pane">
-            {isMobile && active && (
-              <button type="button" className="ch-back" onClick={() => navigate('/chat')}>
+            {isMobile && anyOpen && (
+              <button type="button" className="ch-back"
+                      onClick={() => navigate(isWa ? '/chat/wa' : '/chat')}>
                 <ArrowLeft size={14} /> All conversations
               </button>
             )}
-            <ChatThread
-              conversation={active ? { ...active, reloadSignal } : null}
-              onChanged={load}
-              canModerate={canModerate}
-              meId={user?.id}
-            />
+            {isWa ? (
+              /* Keyed on the number: switching customers remounts the pane, so
+                 the lead id it resolved for the last one cannot linger on the
+                 Open Lead button for the next. */
+              <WhatsAppPane
+                key={waOpen?.mobile || 'none'}
+                row={waOpen}
+                onNavigateLead={(id) => navigate('/leads', { state: { openLeadId: id } })}
+              />
+            ) : (
+              <ChatThread
+                conversation={active ? { ...active, reloadSignal } : null}
+                onChanged={load}
+                canModerate={canModerate}
+                meId={user?.id}
+              />
+            )}
           </section>
         )}
       </div>

@@ -1509,3 +1509,256 @@
 /* The pin control moves with the tighter row. */
 .ch-conv-pinbtn { top: 6px; }
 .ch-conv--unread .ch-conv-pinbtn { top: 24px; }
+
+/* ══ Team ⇄ WhatsApp ════════════════════════════════════════════════════════
+   The switch, and the WhatsApp rail's extra row furniture. Everything above
+   this line is the team chat and is untouched; the WhatsApp rail deliberately
+   REUSES .ch-conv, .ch-tabs and .ch-rail-search rather than cloning them, so a
+   conversation row looks identical whichever list it is in. Only what WhatsApp
+   has and team chat does not — the lead chips, the pane header — is new, and
+   it is prefixed chw-. */
+
+/* ── The switch ─────────────────────────────────────────────────────────────
+   A segmented control, NOT a fourth .ch-tab. The tabs below it filter one list;
+   this picks which list. Making it look like a tab would say the opposite — that
+   WhatsApp is a filter of team chat — and the whole point is that they are two
+   different places. */
+.ch-src {
+  display: flex;
+  gap: 4px;
+  margin: 12px 12px 0;
+  padding: 3px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.ch-src-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ch-src-btn:hover { color: var(--text); }
+.ch-src-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.ch-src-btn--on {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .08);
+}
+
+/* Red, like every other unread count on this page. The whole reason both sides
+   carry one is that "who needs me" is usually answered on one side only. */
+.ch-src-n {
+  background: var(--danger);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 750;
+  line-height: 15px;
+  border-radius: 999px;
+  padding: 0 5px;
+}
+
+/* The avatar for a customer. Teal rather than the team rail's colour, so a
+   glance at the rail says which list you are in even if the switch is scrolled
+   out of view on a short window. */
+.ch-conv-av--wa {
+  background: #16b994;
+  color: #fff;
+}
+
+/* ── The two facts worth knowing before opening a conversation ──────────────
+   Where the lead stands, and whose it is. They sit under the preview rather
+   than beside the name, because the name is what the eye lands on and a row
+   with three things competing on the top line reads as none. */
+.chw-chips {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.chw-chip {
+  font-size: 9.5px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.chw-chip--st  { background: #eff6ff; color: #1d4ed8; }
+.chw-chip--who { background: var(--bg-soft); color: var(--text-muted); }
+
+/* Amber, and the only coloured chip that means something is MISSING: a customer
+   messaged and no lead was created for them. Invisible everywhere else in the
+   CRM, which is half the reason this page exists. */
+.chw-chip--none { background: #fef3c7; color: #92400e; }
+
+/* ── The pane ───────────────────────────────────────────────────────────────
+   A header strip, then WhatsAppThread exactly as the lead page renders it. */
+.chw-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.chw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chw-head-l { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.chw-head-id { min-width: 0; }
+.chw-head-id strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 750;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chw-head-id span { font-size: 11.5px; color: var(--text-muted); }
+
+.chw-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.chw-lead:hover { background: var(--primary-hover); }
+.chw-lead:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Shown rather than hidden when there is no lead. The absence IS the
+   information — somebody messaged and nothing was created for them — and a
+   control that simply is not there says nothing at all. */
+.chw-lead--none {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  cursor: default;
+}
+
+/* The thread owns the rest of the height. min-height:0 so it can scroll inside
+   the flex column instead of pushing the composer off the bottom. */
+.chw-thread { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chw-thread > * { flex: 1; min-height: 0; }
+
+/* ── Lifting the thread's own ceiling, HERE and nowhere else ────────────────
+   WhatsAppThread.css caps its message area at `max-height: 420px`, and that cap
+   is right where the component normally lives: inside a lead panel, where an
+   unbounded message list would push everything below it off the screen.
+
+   On this page there is no panel — the thread has the whole pane. Measured at a
+   pane height of 800px: the header took 35, the messages stopped dead at 440,
+   the composer took 102, and the remaining 223px sat underneath as blank white.
+   Because .wat-panel and .wat are both white, that gap read as one enormous
+   reply bar rather than as empty space, which is how it was reported.
+
+   Scoped to .chw-thread so the lead page and the customer page keep their cap
+   untouched. Same measurement with this rule: 661px of messages, 2px left over. */
+.chw-thread .wat-scroll { max-height: none; }
+
+/* The thread draws itself as a card — rounded, outlined — because in a lead
+   panel it is one. Filling a pane edge to edge it is not, and the outline reads
+   as a box drawn inside a box. */
+.chw-thread .wat {
+  border: 0;
+  border-radius: 0;
+}
+
+.chw-blank {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+.chw-blank p { margin: 0; font-size: 13px; }
+
+/* ── How long they have been waiting ────────────────────────────────────────
+   The one line on the row that is about TIME rather than about the lead, so it
+   sits on its own above the chips instead of among them. Colour carries the
+   urgency and the words repeat it, because a red pill means nothing to somebody
+   who cannot tell this red from the chip red beside it. */
+.chw-wait {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+/* Under 15 minutes — somebody is on it. Deliberately the quietest of the three:
+   most rows will be here and a list where every row shouts says nothing. */
+.chw-wait--ok   { background: var(--bg-soft); color: var(--text-muted); }
+/* A quarter of an hour. Worth noticing, not worth panicking about. */
+.chw-wait--warn { background: #fef3c7; color: #92400e; }
+/* An hour. This is the point at which somebody rings a competitor instead. */
+.chw-wait--bad  { background: #fee2e2; color: #b91c1c; }
+
+/* ── The unread count ───────────────────────────────────────────────────────
+   Replaces the dot. Positioned where the dot was, so a row with a count and a
+   row with a dot — which is what an older server still sends — sit identically
+   and the list does not jump. */
+.chw-n {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 17px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="dark"] .chw-wait--warn { background: rgba(180, 83, 9, .22); color: #fbbf24; }
+[data-theme="dark"] .chw-wait--bad  { background: rgba(220, 38, 38, .20); color: #fca5a5; }
+
+[data-theme="dark"] .chw-chip--st   { background: rgba(37, 99, 235, .18); color: #93c5fd; }
+[data-theme="dark"] .chw-chip--none { background: rgba(180, 83, 9, .22);  color: #fbbf24; }

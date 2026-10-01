@@ -230,6 +230,16 @@ export default function App() {
                     directory query). See chat.directory.controller.js for why
                     both: maskMobile cannot mask a phone number typed into a
                     sentence. */}
+                {/* WhatsApp lives on the same page behind a Team/WhatsApp switch, so
+                    a customer thread is linkable the way a colleague's is. `wa` is a
+                    static segment and therefore outranks :conversationId below — no
+                    ordering dependency, React Router scores it.
+
+                    Same USE_CHAT gate: the page is the chat page either way. Which
+                    HALF somebody sees is decided inside it, from the WhatsApp
+                    permissions — so a user without them simply has no switch, rather
+                    than a route that 403s. */}
+                <Route path="/chat/wa/:mobile?" element={<RequirePermission codes={['USE_CHAT']}><ChatPage /></RequirePermission>} />
                 <Route path="/chat/:conversationId?" element={<RequirePermission codes={['USE_CHAT']}><ChatPage /></RequirePermission>} />
 
                 {/* Master data — readable by anyone authenticated; writes are gated inside pages */}
