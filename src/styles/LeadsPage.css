@@ -6229,11 +6229,12 @@
 /* ── The row rail ────────────────────────────────────────────────────────────
    A 3px strip down the left edge of a row that needs attention today.
 
-   ── One rail, three tones, in priority order ────────────────────────────────
+   ── One rail, four tones, in priority order ─────────────────────────────────
    A lead can be overdue AND due for retargeting, and there is only one strip.
    rowRailTone() in LeadsPage.jsx picks, in the order somebody should deal with
    them: overdue (a promise already broken) → today (one about to be) →
-   retarget (an opportunity, which keeps).
+   enquiry (a customer messaging us this minute) → retarget (an opportunity,
+   which keeps).
 
    ── A future follow-up gets no rail, deliberately ───────────────────────────
    Most leads in a worked pipeline have a follow-up booked for some future date.
@@ -6278,6 +6279,20 @@
   --rail: #f97316;
 }
 
+/* Indigo: the customer messaged us again on WhatsApp and the lead floated back
+   up the list because of it.
+
+   Indigo rather than another orange for two reasons. The retarget rail directly
+   above already owns #f97316, and two conditions sharing a colour is the same
+   as having no colour — somebody seeing the strip could not tell whether a
+   person is waiting on them or a car is merely due. And indigo is the tone the
+   internal-chat toast uses for a direct message, so "a human is talking to you,
+   right now" looks the same in both places on purpose. */
+.lp-row--rail-enquiry,
+.lp-mobile-card--rail-enquiry {
+  --rail: #4f46e5;
+}
+
 /* The caption under the customer name, in both the table and the card. Sized
    and spaced to match .lp-lost-reason-sub directly above it — a lost lead can
    show both, and two sub-lines of different sizes look like a bug. */
@@ -6294,6 +6309,40 @@
 
 [data-theme="dark"] .lp-retarget-sub {
   color: #fdba74;
+}
+
+/* "⟳ Messaged again 10m ago". Same geometry as .lp-retarget-sub above, because
+   a lead can carry both and two sub-lines of different sizes look like a bug —
+   only the colour differs, and it matches that row's rail.
+
+   This replaced a RE-ENQUIRED chip. The chip read as a fourth badge on a row
+   that already has status, Converted and the follow-up badge; the line says the
+   same thing, and says WHEN, without competing with them. */
+.lp-enquiry-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 650;
+  color: #4338ca;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .lp-enquiry-sub {
+  color: #a5b4fc;
+}
+
+/* The big line in the date column when it is showing the re-enquiry instead of
+   the creation date. Tinted so a glance down the column shows which rows are
+   ordered by something other than when they were made — the small line beneath
+   it still carries "made 05 Jul". */
+.lp-date-day--enquiry {
+  color: #4338ca;
+}
+
+[data-theme="dark"] .lp-date-day--enquiry {
+  color: #a5b4fc;
 }
 
 /* "Comes Back — 10 Jun 2026" in the lead's own panel. A pill rather than plain

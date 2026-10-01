@@ -441,6 +441,31 @@ function isRetargetDue(lead) {
   return !!lead?.has_open_retarget;
 }
 
+/* How long a re-enquiry stays MARKED on the row.
+ *
+ * last_enquiry_at is permanent once written — it is the sort key, and a sort
+ * key that expired would reshuffle the list on its own. The rail and the
+ * caption are a different job: they say "this person messaged us again and
+ * nobody has dealt with it yet". Without a window, every lead that has ever
+ * come back carries the marker forever, and the note on rowRailTone below is
+ * about exactly why that is worse than no marker at all.
+ *
+ * Seven days because that is the span over which a re-enquiry is still news.
+ * Past that the lead is back in the normal pipeline and its status says where
+ * it stands. */
+const ENQUIRY_FRESH_MS = 7 * 24 * 60 * 60 * 1000;
+
+/* Came back on their own — the customer messaged us again on a number we
+ * already had a lead for, so waInboundLead.service.js stamped last_enquiry_at
+ * rather than creating a duplicate lead. That stamp is what floats the row
+ * back to the top of the list; this is the "and say so" half. */
+function isReEnquired(lead) {
+  if (!lead?.last_enquiry_at) return false;
+  const t = new Date(lead.last_enquiry_at).getTime();
+  if (isNaN(t)) return false;
+  return Date.now() - t < ENQUIRY_FRESH_MS;
+}
+
 /* Where a lead's next follow-up stands, or null when it does not have one.
  *
  * Extracted from the Next Follow-up cell, which computed it inline and was the
@@ -473,7 +498,12 @@ function followUpState(lead, statusList = []) {
  *
  *   overdue   a promise that has already been broken
  *   today     a promise about to be
+ *   enquiry   the customer is messaging us RIGHT NOW and is waiting
  *   retarget  an opportunity, and one that keeps until somebody gets to it
+ *
+ * enquiry sits above retarget because there is a person on the other end of it
+ * holding their phone. It sits below the follow-up tones because those are
+ * promises this workshop made, and a broken promise outranks a new one.
  *
  * ── Why a future follow-up gets NO rail ─────────────────────────────────────
  *
@@ -487,6 +517,7 @@ function rowRailTone(lead, statusList = []) {
   const fu = followUpState(lead, statusList);
   if (fu?.isOverdue) return 'overdue';
   if (fu?.isToday)   return 'today';
+  if (isReEnquired(lead))  return 'enquiry';
   if (isRetargetDue(lead)) return 'retarget';
   return null;
 }
@@ -5725,11 +5756,29 @@ export default function LeadsPage() {
                         setSelectedLeads(next);
                       }} />
                   </td>
+                  {/* ── The date column, and why it has two faces ──────────
+                      The list is sorted by LAST ACTIVITY, not by creation (see
+                      DEFAULT_SORT in leads.controller.js). A column that only
+                      ever showed created_at would therefore show dates in no
+                      order at all the moment one lead came back, and a date
+                      column out of order reads as a bug.
+
+                      So on a lead that has re-enquired, the big line is the
+                      thing it is sorted by and the small line keeps the
+                      creation date — prefixed "made" so the two can never be
+                      confused for each other. */}
                   <td>
-                    <div className="lp-date-cell">
-                      <span className="lp-date-day">{new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
-                      <span className="lp-date-time">{new Date(l.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
+                    {isReEnquired(l) ? (
+                      <div className="lp-date-cell">
+                        <span className="lp-date-day lp-date-day--enquiry">{timeAgo(l.last_enquiry_at)}</span>
+                        <span className="lp-date-time">made {new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                      </div>
+                    ) : (
+                      <div className="lp-date-cell">
+                        <span className="lp-date-day">{new Date(l.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                        <span className="lp-date-time">{new Date(l.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    )}
                   </td>
                   <td>
                     <div className="lp-customer-row">
@@ -5824,6 +5873,15 @@ export default function LeadsPage() {
                     {isRetargetDue(l) && (
                       <div className="lp-retarget-sub" title="This vehicle is due for service again">
                         <RefreshCw size={10} /> Due for retargeting
+                      </div>
+                    )}
+                    {/* Deliberately a LINE and not a chip. A chip here was the
+                        first version and the row already carries three of them
+                        — status, Converted, the follow-up badge — so a fourth
+                        stopped being a signal and became clutter. */}
+                    {isReEnquired(l) && (
+                      <div className="lp-enquiry-sub" title="This customer messaged us again on WhatsApp">
+                        <RefreshCw size={10} /> Messaged again {timeAgo(l.last_enquiry_at)}
                       </div>
                     )}
                   </td>
@@ -5972,7 +6030,7 @@ export default function LeadsPage() {
                   of noise per row buying nothing. It is still on the row in the
                   table and in the lead's own panel. */}
 
-              {(l.is_converted || (l.lost_reason && isLostStatus(l.status, statusList)) || isRetargetDue(l)) && (
+              {(l.is_converted || (l.lost_reason && isLostStatus(l.status, statusList)) || isRetargetDue(l) || isReEnquired(l)) && (
                 <div className="lp-mc-flags">
                   {l.is_converted && (
                     <span className="lp-mc-conv"><CheckCircle2 size={10} /> Converted to Appt.</span>
@@ -5986,6 +6044,11 @@ export default function LeadsPage() {
                   {isRetargetDue(l) && (
                     <span className="lp-retarget-sub">
                       <RefreshCw size={10} /> Due for retargeting
+                    </span>
+                  )}
+                  {isReEnquired(l) && (
+                    <span className="lp-enquiry-sub">
+                      <RefreshCw size={10} /> Messaged again {timeAgo(l.last_enquiry_at)}
                     </span>
                   )}
                 </div>
