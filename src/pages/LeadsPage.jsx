@@ -147,6 +147,7 @@ import {
   IndianRupee, ChevronDown, UserCheck, Wrench, Plus, Info,
   SlidersHorizontal, Bell, Clock, Send, MessageSquare, Activity, Download, Lock,
   Copy, Check, RefreshCw,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import '../styles/LeadsPage.css';
@@ -327,38 +328,150 @@ function segBadgeStyle(letter) {
   return SEGMENT_BADGE_COLORS[letter?.toUpperCase()] || { bg: '#f1f5f9', color: '#475569' };
 }
 
+/**
+ * The Make / Model / Body Type dropdown in the edit form.
+ *
+ * ══ KEYBOARD ═══════════════════════════════════════════════════════════════
+ *
+ * It opened with Enter or Space and after that you were on your own — the list
+ * could only be clicked. Somebody editing fifty leads a day never touches the
+ * mouse for the fields either side of this (the Status, Source and Location
+ * dropdowns are native <select>s and have always had arrow keys), so these
+ * three were the point at which a keyboard run through the form stopped.
+ *
+ *   Tab            reaches the closed control
+ *   Enter/Space/↓  opens it, focus lands in the search box
+ *   a letter       opens it AND starts the search with that letter, the way a
+ *                  native <select> jumps on first letter
+ *   ↑ / ↓          move the highlight, scrolling it into view
+ *   Home / End     first / last match — a make list runs to three figures
+ *   ↑ at the top   back to the search box, so you can keep typing
+ *   Enter          picks the highlighted option
+ *   Esc            closes the dropdown and puts focus back on the control
+ *   Tab            closes it and moves on, rather than leaving it hanging open
+ *
+ * ── Escape has to stop propagating ─────────────────────────────────────────
+ * useEscapeClose listens on WINDOW, so an un-stopped Escape in here bubbles
+ * past the dropdown and closes the whole Edit Lead modal — losing every change
+ * the user had typed, because they pressed Escape meaning "close this list".
+ * The stopPropagation below is the only thing standing between those two
+ * outcomes. React attaches its own listener at the root container, which is
+ * BELOW window in the bubble path, so stopping there does reach window.
+ *
+ * ── Focus goes back to the trigger ─────────────────────────────────────────
+ * The search input is inside the popup and the popup unmounts when it closes.
+ * Without moving focus first it lands on <body>, and the next Tab restarts from
+ * the top of the page instead of continuing to the next field.
+ */
 function SearchableSelect({
   value, onChange, options = [], placeholder = 'Select…',
   disabled = false, loading = false, emptyMsg = 'No options', clearable = false,
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  /* -1 is "nothing highlighted", and it is where every open starts: pressing
+     Enter the instant the list appears must not commit whatever happens to be
+     at the top. */
+  const [focusedIndex, setFocusedIndex] = useState(-1);
   const wrapRef = useRef(null);
   const inputRef = useRef(null);
+  const listRef = useRef(null);
+  const triggerRef = useRef(null);
   const selected = options.find(o => String(o.id) === String(value));
   const filtered = query
     ? options.filter(o => o.name.toLowerCase().includes(query.toLowerCase()))
     : options;
 
   useEffect(() => {
-    function onOut(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false); setQuery(''); } }
+    function onOut(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false); setQuery(''); setFocusedIndex(-1);
+      }
+    }
     document.addEventListener('mousedown', onOut);
     return () => document.removeEventListener('mousedown', onOut);
   }, []);
 
-  function handleOpen() {
+  /* Typing narrows the list, so whatever was highlighted is probably no longer
+     there — and worse, index 3 of the new list is a different row. Clearing is
+     the only honest answer. */
+  useEffect(() => { setFocusedIndex(-1); }, [query]);
+
+  /* block:'nearest' so a highlight already on screen does not jerk the list
+     around; it scrolls only when it has to. */
+  useEffect(() => {
+    if (focusedIndex < 0 || !listRef.current) return;
+    listRef.current.children[focusedIndex]?.scrollIntoView({ block: 'nearest' });
+  }, [focusedIndex]);
+
+  function handleOpen(seedQuery = null) {
     if (disabled || loading) return;
     setOpen(true);
+    setFocusedIndex(-1);
+    if (seedQuery !== null) setQuery(seedQuery);
     setTimeout(() => inputRef.current?.focus(), 30);
   }
-  function pick(id) { onChange(id); setOpen(false); setQuery(''); }
+  function close({ refocus = true } = {}) {
+    setOpen(false); setQuery(''); setFocusedIndex(-1);
+    if (refocus) triggerRef.current?.focus();
+  }
+  function pick(id) { onChange(id); close(); }
+
+  function handleTriggerKeyDown(e) {
+    if (disabled || loading) return;
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+      // preventDefault or Space scrolls the modal and Enter submits the form.
+      e.preventDefault();
+      handleOpen();
+      return;
+    }
+    /* First-letter jump, the one habit people bring from a native <select>.
+       Guarded on length 1 and no modifier so Ctrl+C, Tab, F5 and friends are
+       left alone. */
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      handleOpen(e.key);
+    }
+  }
+
+  function handleInputKeyDown(e) {
+    if (e.key === 'Escape') {
+      // See the note in the header — without this the whole modal closes.
+      e.preventDefault(); e.stopPropagation(); close(); return;
+    }
+    if (e.key === 'Tab') { close({ refocus: false }); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setFocusedIndex(i => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      // -1 is the search box, so ↑ off the top row returns you to typing.
+      setFocusedIndex(i => (i <= 0 ? -1 : i - 1));
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      if (filtered.length) setFocusedIndex(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      if (filtered.length) setFocusedIndex(filtered.length - 1);
+    } else if (e.key === 'Enter') {
+      // Always prevented: this control sits inside a form, and a bare Enter
+      // here would submit it.
+      e.preventDefault();
+      if (focusedIndex >= 0 && filtered[focusedIndex]) pick(String(filtered[focusedIndex].id));
+    }
+  }
 
   return (
     <div ref={wrapRef} className="ess-wrap">
       <div
+        ref={triggerRef}
         className={`ess-trigger${open ? ' ess-open' : ''}${disabled || loading ? ' ess-disabled' : ''}`}
-        onClick={handleOpen} tabIndex={disabled ? -1 : 0}
-        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && handleOpen()}
+        onClick={() => handleOpen()} tabIndex={disabled ? -1 : 0}
+        onKeyDown={handleTriggerKeyDown}
+        role="combobox"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-disabled={disabled || loading}
       >
         <span className={selected ? 'ess-val' : 'ess-ph'} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
           {loading ? 'Loading…' : selected ? (
@@ -374,7 +487,7 @@ function SearchableSelect({
         </span>
         {clearable && selected && !disabled && (
           <span
-            onMouseDown={e => { e.stopPropagation(); onChange(''); setOpen(false); setQuery(''); }}
+            onMouseDown={e => { e.stopPropagation(); onChange(''); setOpen(false); setQuery(''); setFocusedIndex(-1); }}
             style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--text-muted)', marginRight: 2 }}
           ><X size={12} /></span>
         )}
@@ -390,15 +503,23 @@ function SearchableSelect({
             <div className="ess-search-row">
               <Search size={12} className="ess-si" />
               <input ref={inputRef} className="ess-si-input" value={query}
-                onChange={e => setQuery(e.target.value)} placeholder="Search…" />
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={handleInputKeyDown}
+                placeholder="Search…" aria-autocomplete="list" />
               {query && <button className="lp-clear-btn" onMouseDown={() => setQuery('')}><X size={11} /></button>}
             </div>
-            <div className="ess-list">
+            <div className="ess-list" ref={listRef} role="listbox">
               {filtered.length === 0
                 ? <div className="ess-empty">{query ? `No match for "${query}"` : emptyMsg}</div>
-                : filtered.map(o => (
+                : filtered.map((o, idx) => (
                   <div key={o.id}
-                    className={`ess-opt${String(o.id) === String(value) ? ' ess-opt-sel' : ''}`}
+                    role="option"
+                    aria-selected={String(o.id) === String(value)}
+                    className={`ess-opt${String(o.id) === String(value) ? ' ess-opt-sel' : ''}${idx === focusedIndex ? ' ess-opt-focused' : ''}`}
+                    /* Moving the mouse moves the highlight too, so the pointer
+                       and the arrow keys never disagree about which row Enter
+                       would take. */
+                    onMouseEnter={() => setFocusedIndex(idx)}
                     onMouseDown={() => pick(String(o.id))}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
                       {o.name}
@@ -486,6 +607,53 @@ function followUpState(lead, statusList = []) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((d - today) / 86400000);
   return { diff, isOverdue: diff < 0, isToday: diff === 0, isTomorrow: diff === 1, date: d };
+}
+
+/**
+ * A sortable column header.
+ *
+ * Deliberately the same markup and the same four classes the Appointments list
+ * uses (.lb-th-sort / .lb-sorted / .lb-sort-btn / .lb-sort-icon, all in
+ * styles/listLayout.css) so a sortable header looks and behaves identically
+ * wherever somebody meets one. No new CSS — if that styling ever changes, it
+ * changes in both places at once, which is the point.
+ *
+ * ── One difference from Appointments: there are THREE states here ───────────
+ * Click cycles ascending → descending → OFF, and off is not an accident. This
+ * list has a meaningful default order — latest activity, which is what floats
+ * a customer who has just messaged again back to the top (DEFAULT_SORT in
+ * leads.controller.js). Appointments has no such default to lose, so two states
+ * are enough there. With two states here, one click on a header would take that
+ * ordering away with no way back short of reloading the page, and nothing on
+ * screen would tell you that was what had happened.
+ *
+ * aria-sort sits on the th, which is where assistive tech looks for it; an
+ * arrow alone tells a sighted user the list is sorted and tells everybody else
+ * nothing.
+ */
+function SortTh({ label, col, sortBy, sortDir, onSort }) {
+  const on   = sortBy === col;
+  const Icon = !on ? ArrowUpDown : sortDir === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <th
+      className={`lb-th-sort${on ? ' lb-sorted' : ''}`}
+      aria-sort={on ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <button
+        type="button"
+        className="lb-sort-btn"
+        onClick={() => onSort(col)}
+        title={!on
+          ? `Sort by ${label}`
+          : sortDir === 'asc'
+            ? `Sorted by ${label}, soonest first — click to reverse`
+            : `Sorted by ${label}, latest first — click to clear`}
+      >
+        {label}
+        <Icon size={12} className="lb-sort-icon" aria-hidden="true" />
+      </button>
+    </th>
+  );
 }
 
 /* The 3px rail down the left edge of a row.
@@ -4067,14 +4235,45 @@ export default function LeadsPage() {
   const [sourceChip, setSourceChip] = useState(ls.sourceChip ?? 'all');
   const [ownerChip, setOwnerChip]   = useState(ls.ownerChip ?? 'all');
 
+  /* ── Column sort ─────────────────────────────────────────────────────────
+     '' means "no column sort" and the server applies its own default, which is
+     latest activity. That empty string is a real third state, not a missing
+     value — see SortTh for why the header cycles back through it.
+
+     Persisted with the filters, so coming back from a lead's detail pane does
+     not silently re-order the table under somebody who had just sorted it. */
+  const [sortBy,  setSortBy]  = useState(ls.sortBy ?? '');
+  const [sortDir, setSortDir] = useState(ls.sortDir === 'desc' ? 'desc' : 'asc');
+
+  /* asc → desc → off. A different column always starts at asc: clicking a new
+     header should show you the soonest/first of THAT column, not inherit a
+     direction you picked for something else.
+
+     Written as three plain branches rather than one setSortBy(prev => …) with
+     setSortDir called inside it. An updater function has to be pure — React is
+     free to run it twice, and does in development — so a second setState inside
+     one is a bug waiting for the day its two calls stop agreeing. Both values
+     are already in scope here; there is nothing an updater would buy.
+
+     Page 1 every time: staying on page 4 through a re-sort drops you into the
+     middle of a list whose beginning you have not seen. */
+  const onSort = useCallback((col) => {
+    setPage(1);
+    if (sortBy !== col)    { setSortBy(col); setSortDir('asc'); return; }
+    if (sortDir === 'asc') { setSortDir('desc'); return; }
+    setSortBy(''); setSortDir('asc');
+  }, [sortBy, sortDir]);
+
   // Persist whenever any of these change
   useEffect(() => {
     writeListState('sp_leads_list_v1', {
       page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
       dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip,
+      sortBy, sortDir,
     });
   }, [page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
-      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip]);
+      dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource, sourceChip, ownerChip,
+      sortBy, sortDir]);
 
   useListScrollRestore('sp_leads_list_v1', !loading);
 
@@ -4442,6 +4641,10 @@ export default function LeadsPage() {
       if (fSource)                qs.set('source_exact', fSource);
       if (sourceChip && sourceChip !== 'all') qs.set('source', sourceChip);
       if (ownerChip && ownerChip !== 'all')   qs.set('owner', ownerChip);
+      /* Both or neither. Sending dir without sort would be read against the
+         server's default column, which is not what any header was clicked to
+         mean. Left out entirely, the server sorts by latest activity. */
+      if (sortBy) { qs.set('sort', sortBy); qs.set('dir', sortDir); }
 
       const key = qs.toString();
       const cached = leadsCache.current.get(key);
@@ -4493,7 +4696,7 @@ export default function LeadsPage() {
        the one that gets forgotten is a filter that silently does nothing. */
   }, [page, pageSize, search, statusFilters, assigneeFilters, creatorFilter,
       dateFrom, dateTo, fState, fCity, fArea, fVType, fMake, fModel, fSource,
-      sourceChip, ownerChip, applyLeadsResponse]);
+      sourceChip, ownerChip, sortBy, sortDir, applyLeadsResponse]);
 
   /* Not wrapped in useCallback: it is passed to exactly one onClick and
      nothing depends on its identity. */
@@ -5719,7 +5922,8 @@ export default function LeadsPage() {
                 <th><div className="th-cell">Service</div></th>
                 <th>Status</th>
                 <th><div className="th-cell">Assign To</div></th>
-                <th><div className="th-cell">Next Follow-up</div></th>
+                <SortTh label="Next Follow-up" col="next_follow_up"
+                        sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
                 <th><div className="th-cell">Recent Activity</div></th>
                 <th><div className="th-cell">Created By</div></th>
                 <th style={{ width: 44 }} />

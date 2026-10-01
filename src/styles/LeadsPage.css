@@ -4990,6 +4990,30 @@
   font-weight: 600;
 }
 
+/* The row the ARROW KEYS are on, which is a third thing — not :hover above
+   (driven by the mouse) and not .ess-opt-sel (the value already saved).
+
+   The 2px bar is what keeps those three apart. A tint alone could not: the
+   highlighted row and the saved row would be the same shade of blue, and the
+   whole question a keyboard user is asking the screen is "which one does Enter
+   take". Two rows may share a background and still be unmistakable when one of
+   them has an edge.
+
+   onMouseEnter sets the same index, so moving the mouse moves this bar — the
+   pointer and the arrow keys never point at different rows.
+
+   No dark-mode override, because nothing else in this block has one and the
+   tint is deliberately from the same family as .ess-opt-sel: whenever somebody
+   does add one, it is one rule covering both. */
+.ess-opt-focused {
+  background: #eff6ff;
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+.ess-opt-sel.ess-opt-focused {
+  background: #dbeafe;
+}
+
 .ess-seg-badge {
   display: inline-flex;
   align-items: center;
