@@ -480,3 +480,198 @@
   border-color: color-mix(in srgb, var(--warn) 40%, var(--border));
   color: var(--warn-ink);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   The chat toast — `cht-`
+   ═══════════════════════════════════════════════════════════════════════════
+   Same corner as the WhatsApp cards, on purpose: two notification stacks in two
+   places is two things to learn. What separates them is the silhouette — those
+   are square-cornered with a hard bar down the left edge, this is a rounded
+   bubble with a tail. A shape is recognised before it is read; a colour has to
+   be looked at and thought about.
+
+   One dot carries the state and nothing else changes colour, so the card never
+   shouts. Indigo waits, amber leaves, rose was named.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.cht-stack {
+  position: fixed; right: 20px; bottom: 20px;
+  z-index: 1200;                 /* the same storey as .wat-toasts: above the
+                                    app, below a modal backdrop. A card floating
+                                    over a dialog somebody is filling in is
+                                    worse than one that waits. */
+  display: flex; flex-direction: column; gap: 14px; align-items: flex-end;
+  pointer-events: none;          /* the gaps between cards must not swallow
+                                    clicks meant for the page underneath */
+}
+.cht-stack > * { pointer-events: auto; }
+
+.cht {
+  position: relative; width: 332px;
+  padding: 13px 14px 11px;
+  background-color: var(--panel);
+  border: 1px solid var(--border);
+  /* Three round corners and one square. The square one is where the tail is. */
+  border-radius: 16px 16px 16px 4px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, .15);
+  animation: cht-in .2s cubic-bezier(.2, .9, .3, 1.2);
+}
+/* In only. Nothing animates out, because every exit here is something the
+   person just clicked and they should see it go at once. */
+@keyframes cht-in {
+  from { opacity: 0; transform: translateY(10px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+/* The tail. A notch cut out of the card's own corner, not a triangle stuck on
+   underneath — so it inherits the border and the panel colour and cannot end up
+   a different shade in dark mode. */
+.cht::after {
+  content: ''; position: absolute; left: -1px; bottom: -10px;
+  width: 15px; height: 13px;
+  background-color: var(--panel);
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0 0 0 5px;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+@media (prefers-reduced-motion: reduce) { .cht { animation: none; } }
+
+/* ── The label row ───────────────────────────────────────────────────────── */
+.cht-k { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.cht-dot {
+  width: 8px; height: 8px; flex: none; border-radius: 999px;
+  background-color: #4f46e5;
+}
+.cht-ic { flex: none; color: #4f46e5; }
+.cht-k b {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: #4f46e5; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cht-k small {
+  margin-left: auto; flex: none;
+  font-size: 10.5px; font-weight: 500; color: var(--text-muted);
+}
+.cht-x {
+  display: grid; place-items: center; width: 20px; height: 20px; flex: none;
+  margin: -3px -4px -3px 2px;
+  border: 0; border-radius: 6px; cursor: pointer;
+  background: transparent; color: var(--text-muted);
+}
+.cht-x:hover { background-color: var(--bg-soft); color: var(--text); }
+.cht-x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ── Who, and what they said ─────────────────────────────────────────────── */
+.cht-row { display: flex; gap: 10px; align-items: flex-start; }
+.cht-av {
+  display: grid; place-items: center; width: 31px; height: 31px; flex: none;
+  border-radius: 999px;
+  font-size: 11.5px; font-weight: 700;
+  background-color: #eef2ff; color: #4f46e5;
+}
+.cht-t { flex: 1; min-width: 0; }
+.cht-t b {
+  display: block; font-size: 13px; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cht-t p {
+  margin: 2px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--text-muted);
+  /* Two lines. One loses the half of the message that says what they want. */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+.cht-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+  margin-top: 7px; padding: 3px 9px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background-color: var(--bg-soft);
+  font-size: 11px; color: var(--text-muted);
+}
+
+.cht-f {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 11px;
+}
+.cht-meta { font-size: 10.5px; color: var(--text-muted); }
+/* Outlined, not filled. A solid button on every card in a stack of three is
+   three things shouting; the border is enough to find and click. */
+.cht-o {
+  flex: none; border: 1px solid #4f46e5; border-radius: 999px;
+  background-color: transparent; color: #4f46e5;
+  font: inherit; font-size: 11.5px; font-weight: 700;
+  padding: 5px 16px; cursor: pointer;
+}
+.cht-o:hover { background-color: #4f46e5; color: #fff; }
+.cht-o:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── A group card, which leaves by itself ────────────────────────────────── */
+.cht--auto .cht-dot { background-color: #f59e0b; }
+.cht--auto .cht-ic,
+.cht--auto .cht-k b { color: #b45309; }
+.cht-bar {
+  position: absolute; left: 14px; right: 14px; bottom: 5px;
+  height: 2px; border-radius: 2px; background-color: #f59e0b;
+  transform-origin: left;
+  animation-name: cht-drain; animation-timing-function: linear; animation-fill-mode: forwards;
+}
+@keyframes cht-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .cht-bar { animation: none; opacity: .4; } }
+
+/* ── Named. Ready for the day @mentions exist. ───────────────────────────── */
+.cht--ping { border-color: #e11d48; }
+.cht--ping::after { border-color: #e11d48; }
+.cht--ping .cht-dot {
+  background-color: #e11d48;
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, .22);
+}
+.cht--ping .cht-ic,
+.cht--ping .cht-k b { color: #e11d48; }
+.cht--ping .cht-av { background-color: #fff1f2; color: #e11d48; }
+.cht--ping .cht-o  { border-color: #e11d48; color: #e11d48; }
+.cht--ping .cht-o:hover { background-color: #e11d48; color: #fff; }
+
+/* ── The overflow strip ──────────────────────────────────────────────────── */
+/* Three cards is already a lot of screen; eight would be a wall. Nothing is
+   dropped — this counts the rest and opens the full list. */
+.cht-more {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background-color: var(--panel); color: var(--text-muted);
+  font: inherit; font-size: 11.5px; font-weight: 700;
+  padding: 6px 13px; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .10);
+}
+.cht-more:hover { color: var(--text); border-color: var(--text-muted); }
+
+/* ── Phone ───────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  /* Full width, and above the thumb rather than under it. */
+  .cht-stack { left: 12px; right: 12px; bottom: 12px; align-items: stretch; }
+  .cht { width: auto; }
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────── */
+/* The three semantic colours are lightened rather than swapped: same meanings,
+   at a contrast that works on a dark panel. */
+[data-theme="dark"] .cht-dot { background-color: #818cf8; }
+[data-theme="dark"] .cht-ic,
+[data-theme="dark"] .cht-k b { color: #a5b4fc; }
+[data-theme="dark"] .cht-av { background-color: #312e81; color: #c7d2fe; }
+[data-theme="dark"] .cht-o  { border-color: #818cf8; color: #a5b4fc; }
+[data-theme="dark"] .cht-o:hover { background-color: #818cf8; color: #1e1b4b; }
+
+[data-theme="dark"] .cht--auto .cht-dot { background-color: #fbbf24; }
+[data-theme="dark"] .cht--auto .cht-ic,
+[data-theme="dark"] .cht--auto .cht-k b { color: #fbbf24; }
+[data-theme="dark"] .cht-bar { background-color: #fbbf24; }
+
+[data-theme="dark"] .cht--ping { border-color: #fb7185; }
+[data-theme="dark"] .cht--ping::after { border-color: #fb7185; }
+[data-theme="dark"] .cht--ping .cht-dot {
+  background-color: #fb7185; box-shadow: 0 0 0 3px rgba(251, 113, 133, .22);
+}
+[data-theme="dark"] .cht--ping .cht-ic,
+[data-theme="dark"] .cht--ping .cht-k b { color: #fb7185; }
+[data-theme="dark"] .cht--ping .cht-av { background-color: #4c0519; color: #fda4af; }
+[data-theme="dark"] .cht--ping .cht-o  { border-color: #fb7185; color: #fb7185; }
+[data-theme="dark"] .cht--ping .cht-o:hover { background-color: #fb7185; color: #4c0519; }
