@@ -1757,6 +1757,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The bottom of the list, once there is no more. Said out loud because an
+   infinite-scroll list that simply stops gives you no way to tell "that is
+   everything" from "it is still loading" — and this one replaced a ceiling that
+   silently hid conversations, so saying how many there are is the point. */
+.chw-end {
+  padding: 14px 16px 18px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 [data-theme="dark"] .chw-wait--warn { background: rgba(180, 83, 9, .22); color: #fbbf24; }
 [data-theme="dark"] .chw-wait--bad  { background: rgba(220, 38, 38, .20); color: #fca5a5; }
 

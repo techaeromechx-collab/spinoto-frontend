@@ -16,13 +16,17 @@
 // it does not reimplement any of it. That is the whole reason the thread you
 // see here and the thread inside a lead can never drift apart: they are one
 // component reading one endpoint.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock, ExternalLink, MessageCircle, Search, Users, X } from 'lucide-react';
 import { api } from '../../api/client.js';
 import useSync from '../../hooks/useSync.js';
 import { listStamp } from '../../lib/dayLabel.js';
 import { toNational } from '../../lib/phone.js';
 import WhatsAppThread from '../WhatsAppThread.jsx';
+
+/* One screen and a bit. Small enough that the first paint is quick on a phone,
+   big enough that a desktop rail is not fetching again before you have moved. */
+const PAGE = 30;
 
 /**
  * How long this customer has been waiting for a reply — or null when they are
@@ -116,29 +120,92 @@ export function ChatSourceSwitch({ source, onPick, teamUnread, waUnread }) {
  * buy nothing. Searching the whole history is a different feature.
  */
 export function WhatsAppRail({ selected, onPick, onResolve, onCount }) {
-  const [items, setItems] = useState([]);
+  const [items, setItems]   = useState([]);
+  const [counts, setCounts] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [q, setQ] = useState('');
-  const [tab, setTab] = useState('all');
+  const [more, setMore]     = useState(false);
+  const [err, setErr]       = useState('');
+  const [q, setQ]           = useState('');
+  const [query, setQuery]   = useState('');   // q, after the debounce
+  const [tab, setTab]       = useState('all');
+  const listRef = useRef(null);
+  /* Guards the scroll handler against firing a second page while the first is
+     still in flight. State would be a render behind and let two fire. */
+  const busy = useRef(false);
+
+  /* 300ms. Long enough that typing a name is one request rather than nine,
+     short enough that it still feels like the list is following you. */
+  useEffect(() => {
+    const id = setTimeout(() => setQuery(q.trim()), 300);
+    return () => clearTimeout(id);
+  }, [q]);
+
+  const url = useCallback((offset) => {
+    const p = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
+    if (query) p.set('q', query);
+    // Searching ignores the tab. Somebody typing a customer's name wants that
+    // customer, not that customer if they also happen to be unread.
+    else if (tab !== 'all') p.set('filter', tab);
+    return `/api/whatsapp/inbox?${p}`;
+  }, [query, tab]);
 
   const load = useCallback(async () => {
+    busy.current = true;
+    setLoading(true);
     try {
-      const r = await api('/api/whatsapp/inbox?limit=50');
+      const r = await api(url(0));
       setItems(r.items || []);
+      setHasMore(!!r.has_more);
+      // null while searching — the tabs describe the inbox, not the search, so
+      // the previous numbers are kept rather than blanked.
+      if (r.counts) setCounts(r.counts);
       setErr('');
     } catch (e) {
       setErr(e?.message || 'Could not load WhatsApp conversations.');
     } finally {
-      setLoading(false);
+      setLoading(false); busy.current = false;
     }
-  }, []);
+  }, [url]);
 
   useEffect(() => { load(); }, [load]);
 
-  /* The same socket topic the topbar dropdown listens on. A customer message
-     lands here without a refresh, and without this page inventing a second
-     signal for an event that already has one. */
+  /* ── The rest of the list, as it is scrolled to ───────────────────────────
+     The 50-row ceiling this replaces was not a page: it was the end. On a day
+     taking fifty customers an hour the list showed the last forty-five minutes
+     and everything older was simply absent — not further down, GONE, and
+     unsearchable with it. */
+  const loadMore = useCallback(async () => {
+    if (busy.current || !hasMore) return;
+    busy.current = true;
+    setMore(true);
+    try {
+      const r = await api(url(items.length));
+      /* Concatenated by MOBILE rather than blindly: a message arriving between
+         two pages shifts every row by one, and the same conversation would
+         otherwise appear in both. */
+      setItems(prev => {
+        const seen = new Set(prev.map(x => x.mobile));
+        return [...prev, ...(r.items || []).filter(x => !seen.has(x.mobile))];
+      });
+      setHasMore(!!r.has_more);
+    } catch { /* the rows already on screen are still good */ }
+    finally { setMore(false); busy.current = false; }
+  }, [url, items.length, hasMore]);
+
+  function onScroll(e) {
+    const el = e.currentTarget;
+    // 240px of runway, so the next page is usually there before the bottom is.
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 240) loadMore();
+  }
+
+  /* The socket topic the topbar dropdown uses. A customer message lands here
+     without a refresh, and without this page inventing a second signal for an
+     event that already has one.
+
+     It reloads page ONE only. Re-fetching eight pages because somebody said
+     hello would be a lot of database for one new row, and the new row belongs
+     at the top anyway. */
   useSync(['wa_inbox'], load);
 
   useEffect(() => {
@@ -147,89 +214,110 @@ export function WhatsAppRail({ selected, onPick, onResolve, onCount }) {
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [load]);
 
-  const unread = items.filter(c => c.is_unread).length;
+  /* ── Clearing the badge the moment it is read ─────────────────────────────
+     WhatsAppThread tells the SERVER it has been read, then fires a
+     `wa-conversation-read` event for anything on the page showing a count. The
+     topbar dropdown has listened for it since it was added; this rail did not,
+     so the number sat there over a conversation you were looking at until the
+     next socket nudge or tab switch.
 
-  /* Reported upward so the switch's badge is this list's own number rather than
-     a separate count query that could disagree with the rows on screen. */
-  useEffect(() => { onCount?.(unread); }, [unread, onCount]);
+     ── The comparison is on the last ten digits, and it has to be ────────────
+     The event carries what WhatsAppThread calls `national` — ten digits,
+     9726316878 — while every row here carries E.164, +919726316878. A `===`
+     between those two is false forever, which is a badge that never clears and
+     no error anywhere to say why. */
+  const clearUnreadFor = useCallback((mobileLike) => {
+    const d = String(mobileLike || '').replace(/\D/g, '').slice(-10);
+    if (d.length !== 10) return;
+    let hit = false;
+    setItems(prev => prev.map(x => {
+      if (String(x.mobile || '').replace(/\D/g, '').slice(-10) !== d) return x;
+      if (x.is_unread) hit = true;
+      return { ...x, is_unread: false, unread_n: 0 };
+    }));
+    // The tab number has to come down with the row, or "Unread 3" sits above a
+    // list with two unread rows in it.
+    if (hit) setCounts(c => (c ? { ...c, unread: Math.max(0, c.unread - 1) } : c));
+  }, []);
 
-  /* A deep link arrived with a number and nothing else. Once the list lands,
-     hand the full row up so the header can show a name, a status and an owner
-     instead of the number twice. Fires after a click too, with the same row the
-     click already supplied, which costs one no-op set. */
+  useEffect(() => {
+    const onRead = (e) => clearUnreadFor(e.detail?.mobile);
+    window.addEventListener('wa-conversation-read', onRead);
+    return () => window.removeEventListener('wa-conversation-read', onRead);
+  }, [clearUnreadFor]);
+
+  /* Reported upward so the switch's badge is this list's own number. Taken from
+     the server's whole-inbox count, not from the rows loaded — a badge that
+     grew as you scrolled would be describing your scrolling. */
+  useEffect(() => { if (counts) onCount?.(counts.unread); }, [counts, onCount]);
+
+  /* A deep link arrived with a number and nothing else — a refresh, or a link
+     from a colleague. Once the list lands, hand the full row up so the header
+     can show a name, a status and an owner instead of the number twice.
+
+     Lost in the rewrite that added paging, and the browser test caught it: the
+     header sat on the bare number forever. Restored, and now also covering the
+     case where the conversation turns up on a LATER page, since `items` grows
+     as the rail is scrolled. */
   useEffect(() => {
     if (!selected || !items.length) return;
     const hit = items.find(c => c.mobile === selected);
     if (hit) onResolve?.(hit);
   }, [items, selected, onResolve]);
 
-  const needle = q.trim().toLowerCase();
-  const digits = needle.replace(/\D/g, '');
-  const shown = items.filter((c) => {
-    if (tab === 'unread' && !c.is_unread) return false;
-    if (tab === 'mine' && c.assigned_user_id) return false;
-    if (!needle) return true;
-    // Typed digits match the NUMBER; anything else matches the name. Somebody
-    // searching "9824" means a phone number, and matching that against a name
-    // finds nothing and looks broken.
-    if (digits.length >= 3) return String(c.mobile || '').includes(digits);
-    return String(c.display_name || '').toLowerCase().includes(needle);
-  });
-
-  /* Unassigned is a filter and not a sort, deliberately. A customer nobody has
-     picked up is not more urgent than one who has been waiting two hours — it is
-     a different question ("is anything falling through?"), asked at a different
-     moment, usually at the start of a shift. */
-  const unassigned = items.filter(c => !c.assigned_user_id).length;
   const TABS = [
-    { key: 'all',    label: 'All',        count: items.length },
-    { key: 'unread', label: 'Unread',     count: unread },
-    { key: 'mine',   label: 'Unassigned', count: unassigned },
+    { key: 'all',        label: 'All',        count: counts?.all },
+    { key: 'unread',     label: 'Unread',     count: counts?.unread },
+    { key: 'unassigned', label: 'Unassigned', count: counts?.unassigned },
+    { key: 'mine',       label: 'Mine',       count: counts?.mine },
   ];
 
   return (
     <>
-      <div className="ch-tabs" role="tablist" aria-label="Filter conversations">
-        {TABS.map(t => (
-          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
-                  className={`ch-tab${tab === t.key ? ' ch-tab--on' : ''}`}
-                  onClick={() => setTab(t.key)}>
-            {t.label}
-            {t.count > 0 && (
-              <span className={`ch-tab-n${t.key === 'unread' ? ' ch-tab-n--alert' : ''}`}>
-                {t.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* Hidden while searching: a tab is a filter on the inbox and the search
+          already replaced that filter, so leaving them lit would claim a
+          narrowing that is not being applied. */}
+      {!query && (
+        <div className="ch-tabs" role="tablist" aria-label="Filter conversations">
+          {TABS.map(t => (
+            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key}
+                    className={`ch-tab${tab === t.key ? ' ch-tab--on' : ''}`}
+                    onClick={() => setTab(t.key)}>
+              {t.label}
+              {t.count > 0 && (
+                <span className={`ch-tab-n${t.key === 'unread' ? ' ch-tab-n--alert' : ''}`}>
+                  {t.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="ch-rail-search">
         <Search size={13} />
         <input value={q} onChange={e => setQ(e.target.value)}
-               placeholder="Name or number"
-               aria-label="Filter WhatsApp conversations" />
+               placeholder="Search every conversation"
+               aria-label="Search WhatsApp conversations" />
         {q && (
           <button type="button" className="ch-rail-clear" onClick={() => setQ('')}
-                  aria-label="Clear filter"><X size={12} /></button>
+                  aria-label="Clear search"><X size={12} /></button>
         )}
       </div>
 
       {err && <div className="ch-alert" role="alert">{err}</div>}
 
-      <div className="ch-rail-list">
+      <div className="ch-rail-list" ref={listRef} onScroll={onScroll}>
         {loading && <div className="ch-rail-loading">Loading…</div>}
 
         {!loading && !items.length && (
           <div className="ch-empty">
-            No WhatsApp conversations yet. They appear here when a customer messages you.
-          </div>
-        )}
-
-        {!loading && items.length > 0 && !shown.length && (
-          <div className="ch-empty">
-            {needle ? `Nothing matches “${q}”.` : 'Nothing unread.'}
-            {!needle && tab === 'unread' && (
+            {query ? `Nothing matches \u201c${query}\u201d.`
+              : tab === 'unread' ? 'Nothing unread.'
+              : tab === 'unassigned' ? 'Everything has an owner.'
+              : tab === 'mine' ? 'Nothing is assigned to you.'
+              : 'No WhatsApp conversations yet. They appear here when a customer messages you.'}
+            {!query && tab !== 'all' && (
               <button type="button" className="ch-empty-cta" onClick={() => setTab('all')}>
                 Show everything
               </button>
@@ -237,14 +325,19 @@ export function WhatsAppRail({ selected, onPick, onResolve, onCount }) {
           </div>
         )}
 
-        {shown.map((c) => {
+        {items.map((c) => {
           const ini = initials(c.display_name);
           const waiting = waitingFor(c);
           return (
             <button key={c.mobile} type="button"
                     className={`ch-conv${c.mobile === selected ? ' ch-conv--on' : ''}`
                       + `${c.is_unread ? ' ch-conv--unread' : ''}`}
-                    onClick={() => onPick(c)}>
+                    /* Cleared here as well as on the event. The event arrives
+                       once the thread has mounted and its effect has run; the
+                       click is now, and a count that lingers for even half a
+                       second on the row you just pressed reads as not having
+                       registered the press. */
+                    onClick={() => { clearUnreadFor(c.mobile); onPick(c); }}>
               <span className="ch-conv-av ch-conv-av--wa" aria-hidden="true">
                 {ini || <MessageCircle size={14} />}
               </span>
@@ -296,6 +389,11 @@ export function WhatsAppRail({ selected, onPick, onResolve, onCount }) {
             </button>
           );
         })}
+
+        {more && <div className="ch-rail-loading">Loading more…</div>}
+        {!loading && !more && !hasMore && items.length > PAGE && (
+          <div className="chw-end">That is all {items.length} of them.</div>
+        )}
       </div>
     </>
   );
