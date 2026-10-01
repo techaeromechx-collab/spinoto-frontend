@@ -131,7 +131,12 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [stats,        setStats]        = useState(null);
   const [dashStats,    setDashStats]    = useState(null);
+  /* `leads` is now FIVE rows, and five is all it is for: the Recent Leads
+     list. Every lead NUMBER on this page comes from leadMetrics, counted in
+     SQL. See the fetch below for what went wrong when they came from here. */
   const [leads,        setLeads]        = useState([]);
+  const [leadMetrics,  setLeadMetrics]  = useState(null);
+  const [lmLoading,    setLmLoading]    = useState(true);
   const [statusList,   setStatusList]   = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [now,          setNow]          = useState(new Date());
@@ -282,7 +287,17 @@ export default function DashboardPage() {
     Promise.all([
       canViewAnyDash ? api('/api/reports/summary').catch(() => null) : Promise.resolve(null),
       canViewAnyDash ? api('/api/reports/dashboard').catch(() => null) : Promise.resolve(null),
-      canViewDashLeads ? api('/api/leads').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+      /* page_size=5 — the Recent Leads list wants five, and nothing else on
+         this page reads these rows any more.
+
+         This call used to have no page_size, which meant the server's default
+         of TEN, and the whole dashboard then counted those ten in the browser:
+         Total Leads, the pipeline donut, the status breakdown, the conversion
+         rate, the pipeline value, the Created/Assigned chips and all three
+         sparklines. Every one of them read 10, or less, forever. The counting
+         moved to /api/leads/dashboard-metrics; this is back to being what it
+         looks like — a short list. */
+      canViewDashLeads ? api('/api/leads?page_size=5').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       canViewDashLeads ? api('/api/lead-statuses').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       canViewDashFollowups ? api('/api/lead-events?filter=today').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       // limit=1 — we only need the `total` count, not the rows themselves.
@@ -301,6 +316,23 @@ export default function DashboardPage() {
       setApptsCreatedByMe(apptsCreated?.total || 0);
     }).finally(() => setLoading(false));
   }, []);
+
+  /* ── Lead numbers, counted server-side ──────────────────────────────────
+     Keyed on pipelineFilter because the Pipeline Overview card's window is
+     part of the question. The all-time half of the response does not depend on
+     the dropdown and is re-fetched with it anyway — one extra query set when
+     somebody changes a period they change rarely, in exchange for one endpoint
+     and one piece of state instead of two of each. */
+  useEffect(() => {
+    if (!canViewDashLeads) { setLmLoading(false); return; }
+    let live = true;
+    setLmLoading(true);
+    api(`/api/leads/dashboard-metrics?period=${pipelineFilter}`)
+      .then(r => { if (live) setLeadMetrics(r); })
+      .catch(() => { if (live) setLeadMetrics(null); })
+      .finally(() => { if (live) setLmLoading(false); });
+    return () => { live = false; };
+  }, [pipelineFilter, canViewDashLeads]);
 
   // Widget data fetch
   useEffect(() => {
@@ -404,80 +436,67 @@ export default function DashboardPage() {
       .finally(() => setFuStatsLoading(false));
   }, [fuStatsUser, fuStatsPeriod, canViewDashFollowups]);
 
-  // ── Derived metrics ──────────────────────────────────────────────────
-  const todayStr      = now.toDateString();
-  const todayLeads    = leads.filter(l => new Date(l.created_at).toDateString() === todayStr).length;
+  /* ── Derived metrics ──────────────────────────────────────────────────────
+   *
+   * Everything here used to be a .filter() or a .reduce() over `leads`, which
+   * was the first page of the leads list — ten rows. So Total Leads said 10,
+   * the donut said 10, the conversion rate was a percentage of 10, and the
+   * sparklines drew the last seven days of ten leads. The dropdown on the
+   * Pipeline card appeared to work, because filtering ten rows by date does
+   * produce different numbers; they were just all wrong.
+   *
+   * The counts now come from GET /api/leads/dashboard-metrics, which counts in
+   * SQL under the same visibility scope the leads page uses. Two shapes:
+   *
+   *   overall   scope-wide, all time. The stat cards and the KPI chips.
+   *   window    the period the dropdown selects. The Pipeline card only.
+   *
+   * `?? 0` throughout rather than a spinner for each number: the card-level
+   * `loading` / `lmLoading` flags already decide whether a skeleton or a value
+   * is on screen, and a 0 that is never rendered does no harm. */
+  const lm            = leadMetrics;
   const pipelineVal   = dashStats ? Number(dashStats.pipeline_value || 0) : 0;
-  const totalLeads    = leads.length;
-  const myId          = Number(user?.id);
-  const assignedLeads = leads.filter(l => Number(l.assigned_to) === myId && Number(l.created_by) !== myId).length;
-  // Created / Assigned KPI chips — independent counts (a lead where you're both
-  // the creator and the assignee counts in BOTH, it isn't split or deduped).
-  // created_by_id / assigned_to_id are the aliased columns listLeads actually
-  // returns (raw l.created_by isn't selected, so we don't rely on it here).
-  const myCreatedLeadsCount  = leads.filter(l => Number(l.created_by_id) === myId).length;
-  const myAssignedLeadsCount = leads.filter(l => Number(l.assigned_to_id ?? l.assigned_to) === myId).length;
 
-  const statusCounts = useMemo(() => {
-    const map = {};
-    for (const l of leads) map[l.status] = (map[l.status] || 0) + 1;
-    return map;
-  }, [leads]);
+  const todayLeads    = lm?.overall?.created_today ?? 0;
+  const totalLeads    = lm?.overall?.total ?? 0;
 
-  const topStatuses = useMemo(() => {
-    return statusList
-      .filter(s => statusCounts[s.name])
-      .map(s => ({ ...s, count: statusCounts[s.name] }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6);
-  }, [statusList, statusCounts]);
-
-  const totalInPipeline = topStatuses.reduce((s, x) => s + x.count, 0);
+  /* Created / Assigned KPI chips — independent counts (a lead where you're both
+     the creator and the assignee counts in BOTH, it isn't split or deduped).
+     assigned_not_created is the Assigned-to-me-by-someone-else number, and the
+     SQL behind it carries a note about the NULL created_by case, which the
+     browser version got right only by accident. */
+  const myCreatedLeadsCount  = lm?.overall?.mine?.created ?? 0;
+  const myAssignedLeadsCount = lm?.overall?.mine?.assigned ?? 0;
+  const assignedLeads        = lm?.overall?.mine?.assigned_not_created ?? 0;
 
   // ── Pipeline Overview derived data ───────────────────────────────────────
-  const pipelineLeads = useMemo(() => {
-    const now = new Date();
-    return leads.filter(l => {
-      const d = new Date(l.created_at);
-      if (pipelineFilter === 'today') {
-        return d.toDateString() === now.toDateString();
-      }
-      if (pipelineFilter === 'week') {
-        const weekAgo = new Date(now); weekAgo.setDate(now.getDate() - 7);
-        return d >= weekAgo;
-      }
-      if (pipelineFilter === 'month') {
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      }
-      return true;
-    });
-  }, [leads, pipelineFilter]);
+  /* The server returns every status in the window, sorted by count. The top
+     five and the colour come from here, because how many rows fit in the card
+     and what colour a status is are both things the frontend owns.
 
-  const statusRevenue = useMemo(() => {
-    const map = {};
-    for (const l of leads) map[l.status] = (map[l.status] || 0) + Number(l.total_price || 0);
-    return map;
-  }, [leads]);
-
-  const pipelineStatusCounts = useMemo(() => {
-    const map = {};
-    for (const l of pipelineLeads) map[l.status] = (map[l.status] || 0) + 1;
-    return map;
-  }, [pipelineLeads]);
-
+     `revenue` is now the value of the leads IN THE WINDOW. It used to be the
+     value of every lead ever, in every period — picking "Today" changed the
+     counts and left the money beside them alone. Nobody decided that; it was
+     two useMemos reading two different arrays. */
   const pipelineTopStatuses = useMemo(() => {
+    const rows = lm?.window?.by_status || [];
+    if (!rows.length) return [];
+    const byName = new Map(rows.map(r => [r.name, r]));
     return statusList
-      .filter(s => pipelineStatusCounts[s.name])
-      .map(s => ({ ...s, count: pipelineStatusCounts[s.name], revenue: statusRevenue[s.name] || 0 }))
+      .filter(s => byName.has(s.name))
+      .map(s => ({ ...s, count: byName.get(s.name).count, revenue: byName.get(s.name).value }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
-  }, [statusList, pipelineStatusCounts, statusRevenue]);
+  }, [statusList, lm]);
 
-  const pipelineTotal      = pipelineLeads.length;
+  const pipelineTotal      = lm?.window?.total ?? 0;
+  const pipelineValue      = lm?.window?.value ?? 0;
+  const pipelineConvRate   = lm?.window?.conversion_rate ?? 0;
+  /* The legend's percentages are out of the five statuses SHOWN, not out of
+     pipelineTotal — otherwise they do not add to 100 whenever a sixth status
+     exists, and a reader cannot tell whether the remainder is a rounding error
+     or a hidden row. Unchanged from before. */
   const pipelineInPipeline = pipelineTopStatuses.reduce((s, x) => s + x.count, 0);
-  const pipelineValue      = pipelineLeads.reduce((s, l) => s + Number(l.total_price || 0), 0);
-  const pipelineConvRate   = pipelineTotal > 0
-    ? Math.round((pipelineLeads.filter(l => l.is_converted).length / pipelineTotal) * 100) : 0;
 
   const recentLeads     = leads.slice(0, 5);
   const visibleEvents   = todayEvents.filter(e => !eventsDone[e.id]);
@@ -494,9 +513,6 @@ export default function DashboardPage() {
     } catch (e) { console.error(e); }
   }
 
-  // Donut chart data
-  const donutData = topStatuses.map(s => ({ name: s.name, value: s.count, color: s.color }));
-
   // Activity icon map
   const activityIcon = (entity) => {
     const map = { lead: Users, appointment: CalendarDays, invoice: FileText, estimate: ClipboardList, hub: Building2 };
@@ -509,36 +525,25 @@ export default function DashboardPage() {
   };
 
   // ── Personal dashboard stats (Caller scope) ──────────────────────────
-  const myConvertedLeads  = leads.filter(l => l.is_converted).length;
-  const myConversionRate  = leads.length > 0 ? Math.round((myConvertedLeads / leads.length) * 100) : 0;
-  const myPipelineValue   = leads.reduce((s, l) => s + Number(l.total_price || 0), 0);
+  const myConvertedLeads  = lm?.overall?.converted ?? 0;
+  const myConversionRate  = lm?.overall?.conversion_rate ?? 0;
+  const myPipelineValue   = lm?.overall?.value ?? 0;
   const myFollowupsToday  = visibleEvents.length;
 
-  // ── Sparkline data derived from leads by day (last 7 days) ─────────────
-  // Build last-7-days date strings once
-  const last7Days = useMemo(() => [...Array(7)].map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i));
-    return d.toDateString();
-  }), []);
+  /* ── Sparklines: seven days, from the server ─────────────────────────────
+     `lm.spark` is always seven entries, oldest first, IST calendar days, with
+     a 0 for a day nothing happened on — the endpoint uses generate_series so
+     an empty day is a point and not a gap. The browser built the same shape
+     out of the ten rows it had, which drew a flat line at 0 most days.
 
-  // Leads created per day — used for Lead Conversion card
-  const sparkLeads = useMemo(() =>
-    last7Days.map(d => ({ v: leads.filter(l => new Date(l.created_at).toDateString() === d).length })),
-  [leads, last7Days]);
-
-  // Converted leads (has appointment) per day — used for Appointments card
-  const sparkAppts = useMemo(() =>
-    last7Days.map(d => ({
-      v: leads.filter(l => l.is_converted && new Date(l.updated_at).toDateString() === d).length,
-    })),
-  [leads, last7Days]);
-
-  // Pending invoices proxy — leads with total_price > 0 per day, used for Pending Invoices card
-  const sparkInvoices = useMemo(() =>
-    last7Days.map(d => ({
-      v: leads.filter(l => Number(l.total_price) > 0 && new Date(l.created_at).toDateString() === d).length,
-    })),
-  [leads, last7Days]);
+     Three series, three cards, same seven days:
+       created    leads made that day            → Lead Conversion
+       converted  leads that became appointments → Appointments
+       priced     leads with a value on them     → Pending Invoices (a proxy,
+                  and the same proxy as before) */
+  const sparkLeads    = useMemo(() => (lm?.spark || []).map(d => ({ v: d.created })),   [lm]);
+  const sparkAppts    = useMemo(() => (lm?.spark || []).map(d => ({ v: d.converted })), [lm]);
+  const sparkInvoices = useMemo(() => (lm?.spark || []).map(d => ({ v: d.priced })),    [lm]);
 
   // Revenue trend — monthly, last 7 months
   const sparkRevenue = useMemo(() => revTrend.slice(-7).map(r => ({ v: Number(r.revenue || 0) })), [revTrend]);
@@ -655,7 +660,7 @@ export default function DashboardPage() {
             <KpiCard
               icon={<Users size={18} />} color="#3b82f6"
               label="My Leads"
-              value={loading ? '—' : String(leads.length)}
+              value={loading || lmLoading ? '—' : String(totalLeads)}
               sub={`${myCreatedLeadsCount} created · ${myAssignedLeadsCount} assigned`}
               sparkData={sparkLeads} sparkColor="#3b82f6"
               to="/leads"
@@ -664,7 +669,7 @@ export default function DashboardPage() {
               icon={<TrendingUp size={18} />} color="#10b981"
               label="My Conversion"
               value={loading ? '—' : myConversionRate + '%'}
-              sub={`${myConvertedLeads} of ${leads.length} leads`}
+              sub={`${myConvertedLeads} of ${totalLeads} leads`}
               sparkData={sparkLeads} sparkColor="#10b981"
               to="/leads"
             />
@@ -690,15 +695,15 @@ export default function DashboardPage() {
               ) : id === 'strip' ? (
       <div className="db-strip">
         {/* 1. Total Leads */}
-        <StatChip icon={<Users size={14} />} color="#3b82f6" label="Total Leads" value={loading ? '…' : totalLeads} />
+        <StatChip icon={<Users size={14} />} color="#3b82f6" label="Total Leads" value={loading || lmLoading ? '…' : totalLeads} />
         <div className="db-strip-div" />
 
         {/* 1b. Created by Me */}
-        <StatChip icon={<UserPlus size={14} />} color="#8b5cf6" label="Created by Me" value={loading ? '…' : myCreatedLeadsCount} />
+        <StatChip icon={<UserPlus size={14} />} color="#8b5cf6" label="Created by Me" value={loading || lmLoading ? '…' : myCreatedLeadsCount} />
         <div className="db-strip-div" />
 
         {/* 1c. Assigned to Me */}
-        <StatChip icon={<Users size={14} />} color="#06b6d4" label="Assigned to Me" value={loading ? '…' : myAssignedLeadsCount} />
+        <StatChip icon={<Users size={14} />} color="#06b6d4" label="Assigned to Me" value={loading || lmLoading ? '…' : myAssignedLeadsCount} />
         <div className="db-strip-div" />
 
         {/* 2. Pipeline Value */}
@@ -718,7 +723,7 @@ export default function DashboardPage() {
         )}
 
         {/* 4. New Today */}
-        <StatChip icon={<Activity size={14} />} color="#f59e0b" label="New Today" value={loading ? '…' : todayLeads} />
+        <StatChip icon={<Activity size={14} />} color="#f59e0b" label="New Today" value={loading || lmLoading ? '…' : todayLeads} />
         <div className="db-strip-div" />
 
         {/* 5. Unassigned Leads */}
@@ -786,7 +791,10 @@ export default function DashboardPage() {
               </select>
             </div>
 
-            {loading ? <SkeletonList n={4} h={28} /> : pipelineTopStatuses.length === 0 ? (
+            {/* lmLoading as well as loading: the metrics come from their own
+                request, and without this the card flashed "No leads yet."
+                every time somebody changed the period. */}
+            {loading || lmLoading ? <SkeletonList n={4} h={28} /> : pipelineTopStatuses.length === 0 ? (
               <EmptyState label="No leads yet." />
             ) : (
               <>
@@ -1103,7 +1111,10 @@ export default function DashboardPage() {
               <div className="db-card-title">
                 <span className="db-card-dot" style={{ background: '#3b82f6' }} />
                 Recent Leads
-                {!loading && <span className="db-count-badge">{recentLeads.length} of {leads.length}</span>}
+                {/* "5 of 1,240" — the five on screen out of the real total.
+                    It said "10 of 10" before, which is a true statement about
+                    the wrong set. */}
+                {!loading && !lmLoading && <span className="db-count-badge">{recentLeads.length} of {totalLeads}</span>}
               </div>
               <Link to="/leads" className="db-view-all">View all <ArrowRight size={12} /></Link>
             </div>
